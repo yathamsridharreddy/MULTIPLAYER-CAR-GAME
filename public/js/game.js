@@ -1,5 +1,18 @@
 'use strict';
 
+// show runtime errors on screen instead of a silent black canvas
+window.addEventListener('error', (e) => {
+  let d = document.getElementById('boot-error');
+  if (!d) {
+    d = document.createElement('div');
+    d.id = 'boot-error';
+    d.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:999;max-width:90vw;white-space:pre-wrap;' +
+      'background:#200;color:#f88;font:12px monospace;padding:8px;border-radius:6px;';
+    document.body.appendChild(d);
+  }
+  d.textContent = '⚠ ' + (e.message || e.error) + '\n' + (e.filename || '') + ':' + (e.lineno || '');
+});
+
 /* ============================================================
    VELOCITY RUSH — online multiplayer screen client
    Renders the authoritative server simulation with smooth
@@ -36,6 +49,8 @@ renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+$('stage').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xd7e3ec);
