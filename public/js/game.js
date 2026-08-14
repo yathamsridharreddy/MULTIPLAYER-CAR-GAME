@@ -308,6 +308,35 @@ function asphaltTexture() {
   scene.add(line);
 }
 
+// ---- white START line at the grid (behind the finish line) ----
+{
+  const startLine = new THREE.Mesh(
+    new THREE.PlaneGeometry(RH * 2, 0.6),
+    new THREE.MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.6 })
+  );
+  startLine.rotation.x = -Math.PI / 2;
+  startLine.position.set(A, 0.055, -6);
+  scene.add(startLine);
+
+  // "START" road text just behind the start line
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(0,0,0,0)'; g.fillRect(0, 0, 256, 64);
+  g.fillStyle = '#f4f4f4'; g.font = '900 44px Arial Black, Arial'; g.textAlign = 'center';
+  g.fillText('START', 128, 48);
+  const tex = new THREE.CanvasTexture(c);
+  tex.encoding = THREE.sRGBEncoding;
+  const stGeo = new THREE.PlaneGeometry(6, 1.5);
+  stGeo.rotateX(-Math.PI / 2);   // lay flat (text top now points -Z)
+  stGeo.rotateY(Math.PI);        // spin 180 in-plane so it reads driving +Z
+  const startText = new THREE.Mesh(
+    stGeo,
+    new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.7 })
+  );
+  startText.position.set(A, 0.057, -9);
+  scene.add(startText);
+}
+
 {
   const poleMat = new THREE.MeshStandardMaterial({ color: 0xd8dbe2, metalness: 0.7, roughness: 0.35 });
   const poleGeo = new THREE.CylinderGeometry(0.28, 0.34, 8, 10);
@@ -326,9 +355,9 @@ function asphaltTexture() {
   g.fillStyle = 'rgba(10,12,20,0.88)';
   g.fillRect(0, 24, 512, 72);
   g.fillStyle = '#ffd479';
-  g.font = '900 54px Arial Black, Arial';
+  g.font = '900 44px Arial Black, Arial';
   g.textAlign = 'center';
-  g.fillText('FINISH', 256, 78);
+  g.fillText('START / FINISH', 256, 78);
   const tex = new THREE.CanvasTexture(c);
   tex.encoding = THREE.sRGBEncoding;
   const bannerMesh = new THREE.Mesh(
