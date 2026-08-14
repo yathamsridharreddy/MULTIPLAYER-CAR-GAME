@@ -34,7 +34,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.22;
 $('stage').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -48,14 +48,20 @@ function makeEnvTexture() {
   const c = document.createElement('canvas'); c.width = 256; c.height = 128;
   const g = c.getContext('2d');
   const grad = g.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0.0, '#2f66c4');
-  grad.addColorStop(0.45, '#bcd8f2');
-  grad.addColorStop(0.55, '#9fb4c4');
-  grad.addColorStop(1.0, '#43503f');
+  grad.addColorStop(0.0, '#2e7bff');
+  grad.addColorStop(0.42, '#bfe0ff');
+  grad.addColorStop(0.52, '#e8f1f7');
+  grad.addColorStop(0.62, '#9aa8a0');
+  grad.addColorStop(1.0, '#57654f');
   g.fillStyle = grad; g.fillRect(0, 0, 256, 128);
-  const sun = g.createRadialGradient(190, 42, 2, 190, 42, 34);
-  sun.addColorStop(0, 'rgba(255,250,225,0.95)');
-  sun.addColorStop(1, 'rgba(255,250,225,0)');
+  g.fillStyle = 'rgba(255,255,255,0.55)';
+  for (const pt of [[50, 26, 26, 7], [120, 18, 34, 8], [210, 30, 22, 6]]) {
+    g.beginPath(); g.ellipse(pt[0], pt[1], pt[2], pt[3], 0, 0, Math.PI * 2); g.fill();
+  }
+  const sun = g.createRadialGradient(196, 40, 2, 196, 40, 44);
+  sun.addColorStop(0, 'rgba(255,255,240,1)');
+  sun.addColorStop(0.3, 'rgba(255,246,210,0.9)');
+  sun.addColorStop(1, 'rgba(255,246,210,0)');
   g.fillStyle = sun; g.fillRect(0, 0, 256, 128);
   const tex = new THREE.CanvasTexture(c);
   tex.mapping = THREE.EquirectangularReflectionMapping;
@@ -346,14 +352,14 @@ function buildingTexture(seed) {
 // ---------------------------------------------------------------------------
 // Car visuals
 // ---------------------------------------------------------------------------
-function createCar(paintColor, num) {
+function createCar(paintColor, num, accent) {
   const g = new THREE.Group();
   const body = new THREE.Group();
   g.add(body);
 
   const paint = new THREE.MeshPhysicalMaterial({
-    color: paintColor, metalness: 0.9, roughness: 0.22,
-    clearcoat: 1.0, clearcoatRoughness: 0.08
+    color: paintColor, metalness: 0.4, roughness: 0.28,
+    clearcoat: 1.0, clearcoatRoughness: 0.06, envMapIntensity: 1.6
   });
   const glass = new THREE.MeshPhysicalMaterial({ color: 0x0c1118, metalness: 0.9, roughness: 0.08, clearcoat: 1 });
   const carbon = new THREE.MeshStandardMaterial({ color: 0x101216, metalness: 0.5, roughness: 0.6 });
@@ -390,7 +396,7 @@ function createCar(paintColor, num) {
   wing.position.set(0, 1.35, -2.25); wing.rotation.x = -0.12;
   body.add(wing);
   for (const sx of [-0.95, 0.95]) {
-    const end = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.34, 0.6), carbon);
+    const end = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.34, 0.6), paint);
     end.position.set(sx, 1.38, -2.25); body.add(end);
   }
   for (const sx of [-0.55, 0.55]) {
@@ -419,8 +425,8 @@ function createCar(paintColor, num) {
   diff.position.set(0, 0.18, -2.4); diff.rotation.x = 0.4; body.add(diff);
 
   // --- swept headlights + tail-light bar + exhausts ---
-  const headMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0xffeeb0, emissiveIntensity: 1.8 });
-  const tailMat = new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0xdd1111, emissiveIntensity: 1.4 });
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0xffeeb0, emissiveIntensity: 2.3 });
+  const tailMat = new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0xff1111, emissiveIntensity: 1.9 });
   for (const sx of [-1, 1]) {
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.09, 0.22), headMat);
     head.position.set(sx * 0.62, 0.6, 2.28);
@@ -476,13 +482,18 @@ function createCar(paintColor, num) {
   hubGeo.rotateZ(Math.PI / 2);
   const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.92 });
   const hubMat = new THREE.MeshStandardMaterial({ color: 0xb9bec7, metalness: 0.9, roughness: 0.3 });
+  const calMat = new THREE.MeshStandardMaterial({ color: accent, metalness: 0.3, roughness: 0.4 });
+  const capGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.32, 10);
+  capGeo.rotateZ(Math.PI / 2);
   const wheels = [];
   [[0.98, 1.45], [-0.98, 1.45], [0.98, -1.45], [-0.98, -1.45]].forEach(([x, z], i) => {
     const pivot = new THREE.Group();
     pivot.position.set(x, 0.35, z);
     const spin = new THREE.Group();
-    spin.add(new THREE.Mesh(wheelGeo, wheelMat), new THREE.Mesh(hubGeo, hubMat));
-    pivot.add(spin);
+    spin.add(new THREE.Mesh(wheelGeo, wheelMat), new THREE.Mesh(hubGeo, hubMat), new THREE.Mesh(capGeo, calMat));
+    const cal = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.26, 0.3), calMat);
+    cal.position.set(x > 0 ? -0.16 : 0.16, 0, 0.24);
+    pivot.add(spin, cal);
     g.add(pivot);
     wheels.push({ pivot, spin, front: i < 2 });
   });
@@ -492,8 +503,8 @@ function createCar(paintColor, num) {
 }
 
 const carVisuals = {
-  1: Object.assign(createCar(0xd7263d, 1), { spinAngle: 0 }),
-  2: Object.assign(createCar(0x1f7ae0, 2), { spinAngle: 0 })
+  1: Object.assign(createCar(0xff2038, 1, 0xffd400), { spinAngle: 0 }),
+  2: Object.assign(createCar(0x0a84ff, 2, 0xff2038), { spinAngle: 0 })
 };
 scene.add(carVisuals[1].group, carVisuals[2].group);
 
