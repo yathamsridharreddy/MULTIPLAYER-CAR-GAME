@@ -33,8 +33,8 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.22;
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.toneMappingExposure = 1.0;
 $('stage').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -45,24 +45,29 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 camera.position.set(A - 3, 3.4, -14);
 
 function makeEnvTexture() {
-  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const c = document.createElement('canvas'); c.width = 512; c.height = 256;
   const g = c.getContext('2d');
-  const grad = g.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0.0, '#2e7bff');
-  grad.addColorStop(0.42, '#bfe0ff');
-  grad.addColorStop(0.52, '#e8f1f7');
-  grad.addColorStop(0.62, '#9aa8a0');
-  grad.addColorStop(1.0, '#57654f');
-  g.fillStyle = grad; g.fillRect(0, 0, 256, 128);
-  g.fillStyle = 'rgba(255,255,255,0.55)';
-  for (const pt of [[50, 26, 26, 7], [120, 18, 34, 8], [210, 30, 22, 6]]) {
+  const grad = g.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0.0, '#1e6dff');
+  grad.addColorStop(0.40, '#8ec9ff');
+  grad.addColorStop(0.50, '#ffffff');
+  grad.addColorStop(0.58, '#7d8a80');
+  grad.addColorStop(1.0, '#39422f');
+  g.fillStyle = grad; g.fillRect(0, 0, 512, 256);
+  g.fillStyle = 'rgba(255,255,255,0.95)';
+  g.fillRect(0, 30, 512, 16);
+  g.fillRect(0, 74, 512, 8);
+  g.fillStyle = 'rgba(20,30,50,0.55)';
+  g.fillRect(0, 52, 512, 12);
+  g.fillStyle = 'rgba(255,255,255,0.7)';
+  for (const pt of [[90, 100, 60, 14], [300, 90, 80, 16], [430, 110, 50, 12]]) {
     g.beginPath(); g.ellipse(pt[0], pt[1], pt[2], pt[3], 0, 0, Math.PI * 2); g.fill();
   }
-  const sun = g.createRadialGradient(196, 40, 2, 196, 40, 44);
-  sun.addColorStop(0, 'rgba(255,255,240,1)');
-  sun.addColorStop(0.3, 'rgba(255,246,210,0.9)');
-  sun.addColorStop(1, 'rgba(255,246,210,0)');
-  g.fillStyle = sun; g.fillRect(0, 0, 256, 128);
+  const sun = g.createRadialGradient(400, 60, 4, 400, 60, 90);
+  sun.addColorStop(0, 'rgba(255,255,245,1)');
+  sun.addColorStop(0.25, 'rgba(255,246,205,0.95)');
+  sun.addColorStop(1, 'rgba(255,246,205,0)');
+  g.fillStyle = sun; g.fillRect(0, 0, 512, 256);
   const tex = new THREE.CanvasTexture(c);
   tex.mapping = THREE.EquirectangularReflectionMapping;
   return tex;
@@ -74,10 +79,10 @@ function makeEnvTexture() {
   pmrem.dispose();
 }
 
-const hemi = new THREE.HemisphereLight(0xcfe0ff, 0x3c5a34, 0.55);
+const hemi = new THREE.HemisphereLight(0xdfeeff, 0x46583c, 0.85);
 scene.add(hemi);
 
-const sunLight = new THREE.DirectionalLight(0xfff1d0, 1.35);
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
 sunLight.position.set(190, 280, 130);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(2048, 2048);
@@ -358,8 +363,8 @@ function createCar(paintColor, num, accent) {
   g.add(body);
 
   const paint = new THREE.MeshPhysicalMaterial({
-    color: paintColor, metalness: 0.4, roughness: 0.28,
-    clearcoat: 1.0, clearcoatRoughness: 0.06, envMapIntensity: 1.6
+    color: paintColor, metalness: 0.5, roughness: 0.16,
+    clearcoat: 1.0, clearcoatRoughness: 0.03, envMapIntensity: 2.2
   });
   const glass = new THREE.MeshPhysicalMaterial({ color: 0x0c1118, metalness: 0.9, roughness: 0.08, clearcoat: 1 });
   const carbon = new THREE.MeshStandardMaterial({ color: 0x101216, metalness: 0.5, roughness: 0.6 });
