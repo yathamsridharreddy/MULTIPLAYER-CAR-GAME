@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cp shared/game-core.js public/js/game-core.js && echo \"window.SERVER_URL = '${SERVER_URL:-local}';\" > public/js/config.js",
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/controller", "destination": "/controller.html" },
+    { "source": "/join", "destination": "/controller.html" },
+    { "source": "/phone", "destination": "/controller.html" }
+  ]
+}

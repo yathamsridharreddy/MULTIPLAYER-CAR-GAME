@@ -1,0 +1,15 @@
+# Render blueprint — deploy the Velocity Rush multiplayer server.
+# Usage: render.com -> New -> Blueprint -> pick this repo (folder: car-game)
+# NOTE: after deploying, copy the service URL (https://xxx.onrender.com)
+# and set it as SERVER_URL in your Vercel project settings.
+services:
+  - type: web
+    name: velocity-rush-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

@@ -1,0 +1,17 @@
+{
+  "name": "velocity-rush",
+  "version": "1.0.0",
+  "description": "3D car racing game in the browser — phones join as wireless joysticks by scanning a QR code.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.0"
+  },
+  "private": true
+}

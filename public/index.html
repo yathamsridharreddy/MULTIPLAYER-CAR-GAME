@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Velocity Rush — Online 3D Racing</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏎️</text></svg>"/>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <!-- cinematic overlays -->
+  <div id="vignette"></div>
+  <div id="speedlines"></div>
+  <div id="hitflash"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="pills">
+      <div class="pill" id="pill-p1"><i></i><span>PLAYER 1</span></div>
+      <div class="pill" id="pill-p2"><i></i><span>PLAYER 2</span></div>
+    </div>
+
+    <div id="raceinfo"></div>
+
+    <canvas id="minimap" width="150" height="150"></canvas>
+
+    <div id="speedo">
+      <div id="speed-val">0</div>
+      <div id="speed-sub"><span>km/h</span><span id="gear">N</span></div>
+      <div id="nitro-wrap"><div id="nitro-fill"></div><label>NITRO</label></div>
+    </div>
+
+    <div id="laps">
+      <div id="lap-p1"></div>
+      <div id="lap-p2"></div>
+    </div>
+
+    <div id="arrow" style="display:none">
+      <svg width="34" height="26" viewBox="0 0 34 26"><path d="M2 13 L22 13 M14 4 L24 13 L14 22" stroke="currentColor" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="dist"></span>
+    </div>
+
+    <div id="toast"></div>
+  </div>
+
+  <div id="slot-badge" class="slot-badge" style="display:none"></div>
+
+  <!-- countdown -->
+  <div id="countdown"><span id="count-num"></span></div>
+
+  <!-- winner / event banner -->
+  <div id="banner"><div id="banner-text"></div></div>
+
+  <div id="confetti"></div>
+
+  <div id="net-banner" class="hidden">⚠ Connection to server lost — retrying…</div>
+
+  <!-- race results -->
+  <div id="results" class="hidden">
+    <div id="results-card">
+      <h2 id="results-title">🏁 RACE RESULTS</h2>
+      <div id="results-rows"></div>
+      <div class="results-btns">
+        <button id="rematch-btn">🔁 REMATCH</button>
+        <button id="menu-btn" class="ghost">LOBBY</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lobby / start overlay -->
+  <div id="overlay">
+    <div id="overlay-card">
+      <h1>VELOCITY <span>RUSH</span></h1>
+      <p class="tagline">Online racing — your phones are the joysticks · race a friend across the internet 🌍</p>
+
+      <div class="lobby-top">
+        <div class="lobby-code">
+          ROOM <span id="room-code">·····</span>
+          <button id="copy-code" class="ghost sm">COPY</button>
+        </div>
+        <div id="lobby-conn">🟡 connecting…</div>
+      </div>
+      <p id="lobby-status">Waiting for joysticks…</p>
+      <p id="room-error" style="display:none"></p>
+
+      <div class="cols">
+        <div class="col">
+          <h2>🖥️ Friend on another laptop?</h2>
+          <p class="small">Send them this link — they open it, join this room, and their screen syncs with yours live:</p>
+          <p class="url" id="game-link"></p>
+          <button id="copy-game-link" class="ghost">COPY GAME LINK</button>
+          <ul class="keys">
+            <li><b>W A S D</b> — drive if your phone isn't connected</li>
+            <li><b>Shift</b> nitro 🔥 · <b>Space</b> drift · <b>C</b> camera</li>
+          </ul>
+        </div>
+        <div class="col">
+          <h2>📱 Joysticks (1–2 phones)</h2>
+          <div class="qr-wrap">
+            <canvas id="qr-canvas"></canvas>
+            <div class="qr-side">
+              <p>Scan with your phone (and your friend's) to join as joysticks.</p>
+              <p class="url" id="ctrl-url"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modes">
+        <button class="mode-btn active" data-mode="race">🏁 2 CARS — RACE<em>Each phone drives its own car · 3 laps</em></button>
+        <button class="mode-btn" data-mode="coop">🤝 1 CAR — CO-OP<em>Both phones drive one car together</em></button>
+      </div>
+
+      <button id="start-btn">START RACE</button>
+      <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to 3 laps wins · both laptops stay perfectly in sync</p>
+    </div>
+  </div>
+
+  <script src="js/vendor/three.min.js"></script>
+  <script src="js/vendor/qrcode.js"></script>
+  <script src="js/game-core.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
