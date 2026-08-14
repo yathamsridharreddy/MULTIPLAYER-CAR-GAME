@@ -79,10 +79,10 @@ function makeEnvTexture() {
   pmrem.dispose();
 }
 
-const hemi = new THREE.HemisphereLight(0xdfeeff, 0x46583c, 0.85);
+const hemi = new THREE.HemisphereLight(0xdfeeff, 0x46583c, 0.55);
 scene.add(hemi);
 
-const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.05);
 sunLight.position.set(190, 280, 130);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(2048, 2048);
@@ -364,7 +364,7 @@ function createCar(paintColor, num, accent) {
 
   const paint = new THREE.MeshPhysicalMaterial({
     color: paintColor, metalness: 0.5, roughness: 0.16,
-    clearcoat: 1.0, clearcoatRoughness: 0.03, envMapIntensity: 2.2
+    clearcoat: 1.0, clearcoatRoughness: 0.03, envMapIntensity: 1.2
   });
   const glass = new THREE.MeshPhysicalMaterial({ color: 0x0c1118, metalness: 0.9, roughness: 0.08, clearcoat: 1 });
   const carbon = new THREE.MeshStandardMaterial({ color: 0x101216, metalness: 0.5, roughness: 0.6 });
@@ -411,10 +411,10 @@ function createCar(paintColor, num, accent) {
 
   // --- front splitter + canards ---
   const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.05, 0.5), carbon);
-  splitter.position.set(0, 0.12, 2.45); body.add(splitter);
+  splitter.position.set(0, 0.10, 2.62); body.add(splitter);
   for (const sx of [-1, 1]) {
     const can = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.03, 0.4), carbon);
-    can.position.set(sx * 0.92, 0.42, 2.1);
+    can.position.set(sx * 1.0, 0.45, 2.2);
     can.rotation.z = sx * 0.5; can.rotation.y = -sx * 0.2;
     body.add(can);
   }
@@ -422,30 +422,30 @@ function createCar(paintColor, num, accent) {
   // --- skirts, side intakes, diffuser ---
   for (const sx of [-1, 1]) {
     const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 3.4), carbon);
-    skirt.position.set(sx * 0.86, 0.18, -0.1); body.add(skirt);
+    skirt.position.set(sx * 0.95, 0.2, -0.1); body.add(skirt);
     const intake = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.6), carbon);
-    intake.position.set(sx * 0.83, 0.5, -1.1); body.add(intake);
+    intake.position.set(sx * 0.95, 0.55, -1.1); body.add(intake);
   }
   const diff = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.06, 0.6), carbon);
-  diff.position.set(0, 0.18, -2.4); diff.rotation.x = 0.4; body.add(diff);
+  diff.position.set(0, 0.16, -2.55); diff.rotation.x = 0.4; body.add(diff);
 
   // --- swept headlights + tail-light bar + exhausts ---
   const headMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0xffeeb0, emissiveIntensity: 2.3 });
   const tailMat = new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0xff1111, emissiveIntensity: 1.9 });
   for (const sx of [-1, 1]) {
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.09, 0.22), headMat);
-    head.position.set(sx * 0.62, 0.6, 2.28);
+    head.position.set(sx * 0.62, 0.58, 2.42);
     head.rotation.y = -sx * 0.35; head.rotation.z = sx * 0.12;
     body.add(head);
   }
   const tailBar = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.05), tailMat);
-  tailBar.position.set(0, 0.78, -2.44); body.add(tailBar);
+  tailBar.position.set(0, 0.78, -2.62); body.add(tailBar);
   const exGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.3, 10);
   exGeo.rotateX(Math.PI / 2);
   const exMat = new THREE.MeshStandardMaterial({ color: 0x8a8f98, metalness: 0.95, roughness: 0.3 });
   for (const sx of [-0.35, 0.35]) {
     const ex = new THREE.Mesh(exGeo, exMat);
-    ex.position.set(sx, 0.35, -2.42); body.add(ex);
+    ex.position.set(sx, 0.35, -2.6); body.add(ex);
   }
 
   // --- mirrors + hood vents ---
@@ -476,7 +476,7 @@ function createCar(paintColor, num, accent) {
     body.add(r);
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.1, 3.6),
       new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.4 }));
-    stripe.position.set(sx * 0.95, 0.32, -0.1);
+    stripe.position.set(sx * 0.96, 0.32, -0.1);
     body.add(stripe);
   }
 
