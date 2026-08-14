@@ -247,6 +247,23 @@
         }
       }
 
+      // barrier walls keep the car on the circuit (props live outside them)
+      const rd = radialDistToTrack(this.x, this.z);
+      const lim = CFG.roadHalf + 2.4;
+      if (Math.abs(rd.d) > lim) {
+        const cur = Math.hypot(this.x, this.z) || 1;
+        const nx = this.x / cur, nz = this.z / cur;
+        const target = rd.re + (rd.d > 0 ? lim : -lim);
+        const sc = target / cur;
+        this.x *= sc; this.z *= sc;
+        const vr = this.vx * nx + this.vy * nz;
+        if ((rd.d > 0 && vr > 0) || (rd.d < 0 && vr < 0)) {
+          this.vx -= nx * vr * 1.6;
+          this.vy -= nz * vr * 1.6;
+          this.vx *= 0.9; this.vy *= 0.9;
+        }
+      }
+
       const dc = Math.hypot(this.x, this.z);
       if (dc > 900) {
         this.x *= 900 / dc;
