@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
   "buildCommand": "cp shared/game-core.js public/js/game-core.js && echo \"window.SERVER_URL = '${SERVER_URL:-local}';\" > public/js/config.js",
   "outputDirectory": "public",
   "rewrites": [
