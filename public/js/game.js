@@ -313,7 +313,7 @@ function asphaltTexture() {
   const poleGeo = new THREE.CylinderGeometry(0.28, 0.34, 8, 10);
   for (const side of [-1, 1]) {
     const pole = new THREE.Mesh(poleGeo, poleMat);
-    pole.position.set(A, 4, side * (RH + 1.4));
+    pole.position.set(A + side * (RH + 1.4), 4, 0);
     pole.castShadow = true;
     scene.add(pole);
   }
@@ -336,7 +336,7 @@ function asphaltTexture() {
     new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.7 })
   );
   bannerMesh.position.set(A, 7.1, 0);
-  bannerMesh.rotation.y = Math.PI / 2;
+  bannerMesh.rotation.y = 0;
   bannerMesh.castShadow = true;
   scene.add(bannerMesh);
 }
