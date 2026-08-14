@@ -316,3 +316,14 @@ button.ghost.sm { padding: 5px 12px; font-size: 11px; letter-spacing: 1px; font-
   #overlay-card { padding: 22px; }
   #overlay-card h1 { font-size: 36px; }
 }
+
+/* exit to lobby */
+#exit-btn {
+  position: absolute; top: 180px; right: 16px;
+  pointer-events: auto; cursor: pointer;
+  background: rgba(8, 12, 22, 0.62); border: 1px solid rgba(255,255,255,0.2);
+  color: #ff8a8a; font-size: 12px; font-weight: 800; letter-spacing: 1.4px;
+  padding: 8px 14px; border-radius: 10px; backdrop-filter: blur(6px);
+  transition: all .15s;
+}
+#exit-btn:hover { background: rgba(255, 82, 82, .25); border-color: #ff5252; }

@@ -808,6 +808,7 @@ function ingestSnapshot(snap) {
   processEvents(snap);
 
   // lobby <-> race transitions
+  $('exit-btn').style.display = snap.state === 'waiting' ? 'none' : '';
   const overlay = $('overlay');
   if (snap.state === 'waiting') {
     overlay.classList.remove('hidden');
@@ -1138,6 +1139,7 @@ document.querySelectorAll('.mode-btn').forEach((b) => {
 });
 $('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); });
 $('copy-game-link').addEventListener('click', () => { copyText($('game-link').textContent); toast('Game link copied — send it to your friend!'); });
+$('exit-btn').addEventListener('click', () => net.send({ type: 'reset' }));
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
