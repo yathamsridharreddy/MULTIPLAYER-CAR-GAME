@@ -1238,6 +1238,15 @@ function setConnected(slot, on) {
   const pill = $(`pill-p${slot}`);
   if (pill) pill.classList.toggle('on', on);
 }
+let lastModeLabels = '';
+function updateModeLabels(mode) {
+  if (!mode || mode === lastModeLabels) return;
+  lastModeLabels = mode;
+  const p1 = $('pill-p1').querySelector('span');
+  const p2 = $('pill-p2').querySelector('span');
+  if (mode === 'coop') { p1.textContent = 'CO-DRIVER 1'; p2.textContent = 'CO-DRIVER 2'; }
+  else { p1.textContent = 'PLAYER 1'; p2.textContent = 'PLAYER 2'; }
+}
 function setNetBanner(ok) { $('net-banner').classList.toggle('hidden', ok); }
 
 // ---------------------------------------------------------------------------
@@ -1508,6 +1517,7 @@ function drawMinimap(mine, rival) {
 
 function updateHUD(mine, rival) {
   if (!latest || !mine) return;
+  updateModeLabels(latest.mode);
   $('speed-val').textContent = Math.round(Math.abs(mine.v) * 3.6);
   $('gear').textContent = mine.v < -0.5 ? 'R' : (Math.abs(mine.v) < 0.4 ? 'N' : 'D');
   $('nitro-fill').style.width = (mine.m || 0) + '%';
