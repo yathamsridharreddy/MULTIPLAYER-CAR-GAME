@@ -1237,15 +1237,24 @@ function ingestSnapshot(snap) {
 function setConnected(slot, on) {
   const pill = $(`pill-p${slot}`);
   if (pill) pill.classList.toggle('on', on);
+  if (lastModeLabels === 'coop') {
+    $('pill-p1').classList.toggle('on',
+      $('pill-p1').classList.contains('on') || $('pill-p2').classList.contains('on'));
+  }
 }
 let lastModeLabels = '';
 function updateModeLabels(mode) {
   if (!mode || mode === lastModeLabels) return;
   lastModeLabels = mode;
-  const p1 = $('pill-p1').querySelector('span');
-  const p2 = $('pill-p2').querySelector('span');
-  if (mode === 'coop') { p1.textContent = 'CO-DRIVER 1'; p2.textContent = 'CO-DRIVER 2'; }
-  else { p1.textContent = 'PLAYER 1'; p2.textContent = 'PLAYER 2'; }
+  const pill1 = $('pill-p1'), pill2 = $('pill-p2');
+  if (mode === 'coop') {
+    pill1.querySelector('span').textContent = 'CO-OP · 1 CAR';
+    pill2.style.display = 'none';
+  } else {
+    pill1.querySelector('span').textContent = 'PLAYER 1';
+    pill2.querySelector('span').textContent = 'PLAYER 2';
+    pill2.style.display = '';
+  }
 }
 function setNetBanner(ok) { $('net-banner').classList.toggle('hidden', ok); }
 
