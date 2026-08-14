@@ -438,7 +438,7 @@ function buildingTexture(seed) {
     g.fillStyle = '#0c1020'; g.fillRect(0, 0, 512, 128);
     g.strokeStyle = '#2b355c'; g.lineWidth = 8; g.strokeRect(6, 6, 500, 116);
     g.fillStyle = '#ff5252'; g.font = '900 58px Arial Black, Arial'; g.textAlign = 'center';
-    g.fillText('VELOCITY RUSH', 256, 82);
+    g.fillText('SRIDHAR RUSH', 256, 82);
     const tex = new THREE.CanvasTexture(c);
     tex.encoding = THREE.sRGBEncoding;
     const board = new THREE.Mesh(
