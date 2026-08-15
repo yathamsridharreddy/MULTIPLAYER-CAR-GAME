@@ -1178,13 +1178,17 @@ function updateCamera(dt, mine, rival) {
     desired = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, 0.4).add(new THREE.Vector3(0, 1.18, 0));
     look = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, 40).add(new THREE.Vector3(0, 1.0, 0));
   } else if (dual) {
+    // broadcast cam: scale distance/height/FOV with the gap so BOTH cars stay in frame
     const mid = new THREE.Vector3((mine.x + rival.x) / 2, 0, (mine.z + rival.z) / 2);
     const sep = Math.hypot(mine.x - rival.x, mine.z - rival.z);
-    const dist = clamp(8.6 + sep * 0.78, 8.6, 32);
-    const height = clamp(3.2 + sep * 0.30, 3.2, 12);
+    const ax = Math.sin(mine.h) + Math.sin(rival.h), az = Math.cos(mine.h) + Math.cos(rival.h);
+    const dl = Math.hypot(ax, az) || 1;
+    const dir = new THREE.Vector3(ax / dl, 0, az / dl);
+    const dist = clamp(8 + sep * 0.55, 8, 55);
+    const height = clamp(3.5 + sep * 0.5, 3.5, 34);
     desired = mid.clone().addScaledVector(dir, -dist).add(new THREE.Vector3(0, height, 0));
-    look = mid.clone().addScaledVector(dir, 3).add(new THREE.Vector3(0, 1, 0));
-    sepFov = clamp(sep * 0.55, 0, 16);
+    look = mid.clone().add(new THREE.Vector3(0, 0.5, 0));
+    sepFov = clamp(sep * 0.6, 0, 26);
   } else if (camMode === 1) {
     desired = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, -14).add(new THREE.Vector3(0, 6.2, 0));
     look = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, 2).add(new THREE.Vector3(0, 1, 0));
