@@ -76,104 +76,123 @@
     </div>
   </div>
 
-  <!-- Lobby / start overlay -->
+  <!-- Lobby / start overlay : two pages -->
   <div id="overlay">
-    <div id="overlay-card">
-      <h1>SRIDHAR <span>RUSH</span></h1>
-      <p class="tagline">Online racing — your phones are the joysticks · race a friend across the internet 🌍</p>
+    <!-- ============ PAGE 1 : MAIN ============ -->
+    <div id="page1" class="page">
+      <div id="overlay-card">
+        <h1>SRIDHAR <span>RUSH</span></h1>
+        <p class="tagline">Online racing — your phones are the joysticks · race a friend across the internet 🌍</p>
 
-      <div class="lobby-top">
-        <div class="lobby-code">
-          ROOM <span id="room-code">·····</span>
-          <button id="copy-code" class="ghost sm">COPY</button>
+        <div class="lobby-top">
+          <div class="lobby-code">
+            ROOM <span id="room-code">·····</span>
+            <button id="copy-code" class="ghost sm">COPY</button>
+          </div>
+          <div id="lobby-conn">🟡 connecting…</div>
         </div>
-        <div id="lobby-conn">🟡 connecting…</div>
-      </div>
-      <p id="lobby-status">Waiting for joysticks…</p>
-      <p id="room-error" style="display:none"></p>
+        <p id="lobby-status">Waiting for joysticks…</p>
+        <p id="room-error" style="display:none"></p>
 
-      <div class="cols">
-        <div class="col">
-          <h2>🖥️ Friend on another laptop?</h2>
-          <p class="small">Send them this link — they open it, join this room, and their screen syncs with yours live:</p>
-          <p class="url" id="game-link"></p>
-          <button id="copy-game-link" class="ghost">COPY GAME LINK</button>
-          <ul class="keys">
-            <li><b>W A S D</b> — drive if your phone isn't connected</li>
-            <li><b>Shift</b> nitro 🔥 · <b>Space</b> drift · <b>C</b> camera</li>
-          </ul>
-        </div>
-        <div class="col">
-          <h2>📱 Joysticks (1–2 phones)</h2>
-          <div class="qr-wrap">
-            <canvas id="qr-canvas"></canvas>
-            <div class="qr-side">
-              <p>Scan with your phone (and your friend's) to join as joysticks.</p>
-              <p class="url" id="ctrl-url"></p>
+        <div class="cols">
+          <div class="col">
+            <h2>🖥️ Friend on another laptop?</h2>
+            <p class="small">Send them this link — they open it, join this room, and their screen syncs with yours live:</p>
+            <p class="url" id="game-link"></p>
+            <button id="copy-game-link" class="ghost">COPY GAME LINK</button>
+            <ul class="keys">
+              <li><b>W A S D</b> — drive if your phone isn't connected</li>
+              <li><b>Shift</b> nitro 🔥 · <b>Space</b> drift · <b>C</b> camera</li>
+            </ul>
+          </div>
+          <div class="col">
+            <h2>📱 Joysticks (1–2 phones)</h2>
+            <div class="qr-wrap">
+              <canvas id="qr-canvas"></canvas>
+              <div class="qr-side">
+                <p>Scan with your phone (and your friend's) to join as joysticks.</p>
+                <p class="url" id="ctrl-url"></p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="modes">
-        <button class="mode-btn active" data-mode="race">🏁 2 CARS — RACE<em>Each phone drives its own car · 3 laps</em></button>
-        <button class="mode-btn" data-mode="coop">🤝 1 CAR — CO-OP<em>Both phones drive one car together</em></button>
-      </div>
-
-      <div class="maps">
-        <div class="maps-label">CHOOSE YOUR CIRCUIT — <span id="map-name">HIGHLAND RUSH</span></div>
-        <div class="map-row">
-          <button class="map-btn active" data-map="0"><span class="map-ico">🏞️</span>HIGHLAND RUSH<em>Forza-style · day · forests &amp; mountains</em></button>
-          <button class="map-btn" data-map="1"><span class="map-ico">🌆</span>NEON CITY<em>CarX-style · night · neon downtown</em></button>
-          <button class="map-btn" data-map="2"><span class="map-ico">🏝️</span>ISLAND MOTORFEST<em>Crew-style · tropical · volcano &amp; ocean</em></button>
+        <div class="modes">
+          <button class="mode-btn active" data-mode="race">🏁 2 CARS — RACE<em>Each phone drives its own car</em></button>
+          <button class="mode-btn" data-mode="coop">🤝 1 CAR — CO-OP<em>Both phones drive one car together</em></button>
         </div>
-      </div>
 
-      <div class="lobby-grid">
-        <div class="lcol">
-          <div class="lsec">
-            <div class="lsec-title">DRIVER IDENTITY</div>
+        <div class="lobby-grid">
+          <div class="lcol">
+            <div class="lsec">
+              <div class="lsec-title">SETTINGS</div>
+              <div class="btn-row-sm">
+                <span class="opt-label">GFX</span>
+                <button class="q-btn" data-q="low">LOW</button>
+                <button class="q-btn" data-q="med">MED</button>
+                <button class="q-btn active" data-q="high">HIGH</button>
+              </div>
+              <label class="toggle-line"><input type="checkbox" id="set-mute"/> 🔇 Mute all audio</label>
+            </div>
+            <div class="lsec">
+              <div class="lsec-title">LEADERBOARD — TOP 5</div>
+              <div id="leaderboard" class="leaderboard"></div>
+            </div>
+          </div>
+        </div>
+
+        <button id="next-btn" class="big-cta">SET UP RACE →</button>
+        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync</p>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 2 : RACE SETUP WIZARD ============ -->
+    <div id="page2" class="page" style="display:none">
+      <div id="overlay-card">
+        <div class="wiz-head">
+          <button id="back-btn" class="ghost sm">← BACK</button>
+          <h2 class="wiz-title">RACE SETUP</h2>
+          <span class="wiz-step" id="wiz-step">1 · MAP</span>
+        </div>
+
+        <!-- step 1 : map cards -->
+        <div class="wiz-sec" id="wiz-map">
+          <div class="lsec-title">1 · CHOOSE YOUR CIRCUIT</div>
+          <div class="card-row" id="map-cards">
+            <button class="map-card active" data-map="0"><img src="img/map-highland.jpg" alt="Highland"/><div class="mc-name">HIGHLAND RUSH</div><div class="mc-sub">Day · forests &amp; mountains</div></button>
+            <button class="map-card" data-map="1"><img src="img/map-neon.jpg" alt="Neon"/><div class="mc-name">NEON CITY</div><div class="mc-sub">Night · neon downtown</div></button>
+            <button class="map-card" data-map="2"><img src="img/map-island.jpg" alt="Island"/><div class="mc-name">ISLAND MOTORFEST</div><div class="mc-sub">Sunset · volcano &amp; ocean</div></button>
+          </div>
+        </div>
+
+        <!-- step 2 : car cards -->
+        <div class="wiz-sec" id="wiz-car">
+          <div class="lsec-title">2 · CHOOSE YOUR CAR</div>
+          <div class="card-row" id="car-cards"></div>
+        </div>
+
+        <!-- step 3 : identity -->
+        <div class="wiz-sec" id="wiz-id">
+          <div class="lsec-title">3 · DRIVER IDENTITY</div>
+          <div class="id-grid">
             <input id="inp-name" class="name-input" maxlength="14" placeholder="Your racer name" autocomplete="off"/>
-            <div id="color-swatches" class="swatches"></div>
             <div class="btn-row-sm">
               <button class="cls-btn active" data-cls="velocity" title="High top speed">⚡ VELOCITY</button>
               <button class="cls-btn" data-cls="accelerator" title="Quick acceleration">🚀 ACCEL</button>
               <button class="cls-btn" data-cls="grip" title="Sharp handling">🎯 GRIP</button>
             </div>
-          </div>
-          <div class="lsec">
-            <div class="lsec-title">RACE SETUP</div>
             <div class="btn-row-sm">
               <span class="opt-label">LAPS</span>
               <button class="laps-btn" data-laps="1">1</button>
               <button class="laps-btn active" data-laps="3">3</button>
               <button class="laps-btn" data-laps="5">5</button>
+              <label class="toggle-line"><input type="checkbox" id="bot-toggle" checked/> 🤖 AI opponent</label>
             </div>
-            <label class="toggle-line"><input type="checkbox" id="bot-toggle" checked/> 🤖 Add an AI opponent when racing solo</label>
           </div>
         </div>
-        <div class="lcol">
-          <div class="lsec">
-            <div class="lsec-title">SETTINGS</div>
-            <div class="btn-row-sm">
-              <span class="opt-label">GFX</span>
-              <button class="q-btn" data-q="low">LOW</button>
-              <button class="q-btn" data-q="med">MED</button>
-              <button class="q-btn active" data-q="high">HIGH</button>
-            </div>
-            <label class="toggle-line"><input type="checkbox" id="set-mute"/> 🔇 Mute audio</label>
-            <label class="toggle-line"><input type="checkbox" id="set-music"/> 🎵 Music</label>
-            <label class="toggle-line"><input type="checkbox" id="set-fps"/> 📊 Show FPS meter</label>
-          </div>
-          <div class="lsec">
-            <div class="lsec-title">LEADERBOARD — <span id="map-name-lb">TOP 5</span></div>
-            <div id="leaderboard" class="leaderboard"></div>
-          </div>
-        </div>
-      </div>
 
-      <button id="start-btn">START RACE</button>
-      <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to 3 laps wins · both laptops stay perfectly in sync</p>
+        <button id="start-btn" class="big-cta">🏁 START RACE</button>
+      </div>
     </div>
   </div>
 

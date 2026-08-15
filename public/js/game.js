@@ -740,9 +740,9 @@ const CAR_COLORS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 
 function loadPrefs() {
   try { return Object.assign({
     name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: false, mute: false, fpsmeter: false
+    quality: 'high', music: true, mute: false, fpsmeter: false
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
-  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: false, mute: false, fpsmeter: false }; }
+  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false }; }
 }
 let prefs = loadPrefs();
 function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
@@ -767,7 +767,7 @@ function setAudio() {
 function startMusic() {
   if (!audio || musicNodes) return;
   const ctx = audio.ctx;
-  const mg = ctx.createGain(); mg.gain.value = 0.14; mg.connect(audio.master);
+  const mg = ctx.createGain(); mg.gain.value = 0.085; mg.connect(audio.master);   // low background music
   const BPM = 118, SPB = 60 / BPM, EIGHTH = SPB / 2;
   const chords = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]; // Am F C G
   const m2f = (m) => 440 * Math.pow(2, (m - 69) / 12);
@@ -821,22 +821,20 @@ function wireLobbyV2() {
     nameEl.placeholder = identityPayload().name;
     nameEl.addEventListener('input', () => { prefs.name = nameEl.value.trim(); savePrefs(); sendMeta(); });
   }
-  const sw = $('color-swatches');
-  if (sw) {
-    sw.innerHTML = '';
-    CAR_COLORS.forEach((cHex) => {
-      const b = document.createElement('button');
-      b.className = 'swatch' + (cHex === prefs.color ? ' active' : '');
-      b.style.background = '#' + cHex.toString(16).padStart(6, '0');
-      b.addEventListener('click', () => {
-        prefs.color = cHex; savePrefs();
-        sw.querySelectorAll('.swatch').forEach((x) => x.classList.remove('active'));
-        b.classList.add('active');
-        applyMyColor(); sendMeta();
-      });
-      sw.appendChild(b);
+  buildCarCards();
+  document.querySelectorAll('.map-card').forEach((b) => {
+    b.classList.toggle('active', parseInt(b.dataset.map, 10) === selectedMap);
+    b.addEventListener('click', () => {
+      selectedMap = parseInt(b.dataset.map, 10);
+      document.querySelectorAll('.map-card').forEach((x) => x.classList.toggle('active', x === b));
+      net.send({ type: 'map', map: selectedMap });
     });
-  }
+  });
+  // two-page lobby navigation
+  const p1 = $('page1'), p2 = $('page2');
+  const nb = $('next-btn'), bb = $('back-btn');
+  if (nb) nb.addEventListener('click', () => { p1.style.display = 'none'; p2.style.display = ''; buildCarCards(); });
+  if (bb) bb.addEventListener('click', () => { p2.style.display = 'none'; p1.style.display = ''; });
   document.querySelectorAll('.cls-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.cls === prefs.cls);
     b.addEventListener('click', () => {
@@ -880,6 +878,45 @@ function wireLobbyV2() {
 }
 function applyMyColor() {
   if (carVisuals[mySlot] && carVisuals[mySlot].paint) carVisuals[mySlot].paint.color.setHex(prefs.color);
+}
+
+// ---- live 3D car thumbnails for the car-select cards ----
+let _prev = null;
+function carPreviewRenderer() {
+  if (_prev) return _prev;
+  const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  r.setSize(180, 110);
+  const sc = new THREE.Scene();
+  sc.add(new THREE.HemisphereLight(0xffffff, 0x334, 1.1));
+  const dl = new THREE.DirectionalLight(0xffffff, 1.4); dl.position.set(3, 4, 5); sc.add(dl);
+  const cam = new THREE.PerspectiveCamera(38, 180 / 110, 0.1, 100);
+  cam.position.set(5.2, 2.4, 6.0); cam.lookAt(0, 0.5, 0);
+  const car = createCar(0xffffff, 1, 0xffd400);
+  sc.add(car.group);
+  _prev = { r, sc, cam, car };
+  return _prev;
+}
+function buildCarCards() {
+  const wrap = $('car-cards');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const P = carPreviewRenderer();
+  CAR_COLORS.forEach((hex) => {
+    P.car.paint.color.setHex(hex);
+    P.r.render(P.sc, P.cam);
+    const url = P.r.domElement.toDataURL();
+    const b = document.createElement('button');
+    b.className = 'car-card' + (hex === prefs.color ? ' active' : '');
+    b.dataset.color = hex;
+    b.innerHTML = `<img src="${url}" alt="car"/><div class="mc-name">${'#' + hex.toString(16).padStart(6, '0')}</div>`;
+    b.addEventListener('click', () => {
+      prefs.color = hex; savePrefs();
+      wrap.querySelectorAll('.car-card').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      applyMyColor(); sendMeta();
+    });
+    wrap.appendChild(b);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -985,10 +1022,8 @@ function updateLobby(snap) {
   $('ctrl-url').textContent = phoneLink;
   drawQR(phoneLink);
   document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === snap.mode));
-  document.querySelectorAll('.map-btn').forEach((b) => b.classList.toggle('active', parseInt(b.dataset.map, 10) === snap.map));
+  document.querySelectorAll('.map-card').forEach((b) => b.classList.toggle('active', parseInt(b.dataset.map, 10) === snap.map));
   if (snap.map != null) selectedMap = snap.map;
-  const m = CORE.MAPS[snap.map] || CORE.MAPS[0];
-  $('map-name').textContent = m.name;
   const parts = [];
   if (snap.controllers[1]) parts.push('📱 P1 joystick');
   if (snap.controllers[2]) parts.push('📱 P2 joystick');
@@ -1301,6 +1336,7 @@ function ensureAudio() {
   const nitroGain = ctx.createGain(); nitroGain.gain.value = 0;
   noise2.connect(hp); hp.connect(nitroGain); nitroGain.connect(master); noise2.start();
   audio = { ctx, master, engines, skidGain, nitroGain };
+  setAudio();   // apply mute + start low background music
 }
 function beep(freq, dur = 0.15, type = 'square', vol = 0.22) {
   ensureAudio(); if (!audio) return;
