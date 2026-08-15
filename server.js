@@ -59,12 +59,12 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 // ---------------------------------------------------------------------------
 const rooms = new Map();   // code -> { room, screens:Set<ws>, controllers:Map<ws,slot> }
 
-function newRoom(mode) {
+function newRoom(mode, mapId) {
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
-  const entry = { room: new core.RaceRoom(code, mode), screens: new Set(), controllers: new Map() };
+  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map() };
   rooms.set(code, entry);
-  console.log(`[room ${code}] created (${entry.room.mode})`);
+  console.log(`[room ${code}] created (${entry.room.mode}, map ${entry.room.mapId})`);
   return entry;
 }
 
@@ -158,11 +158,15 @@ function handleMessage(client, msg) {
         entry = rooms.get(String(msg.room).toUpperCase().trim());
         if (!entry) { sendJSON(client.ws, { type: 'error', code: 'no-room' }); return; }
       } else {
-        entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race');
+        entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race', msg.map);
       }
       joinRoom(client, entry, msg.role === 'controller' ? 'controller' : 'screen');
       break;
     }
+
+    case 'map':
+      if (client.entry && client.role === 'screen') client.entry.room.setMap(msg.map);
+      break;
 
     case 'input': {
       if (!client.entry) return;

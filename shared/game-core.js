@@ -1,8 +1,9 @@
 /* ============================================================
-   VELOCITY RUSH — shared game core (isomorphic)
+   SRIDHAR RUSH — shared game core (isomorphic)
    Deterministic world generation + pure car physics + race
    room state machine. Runs identically on the Node server
    (authoritative simulation) and is unit-testable in isolation.
+   Supports 3 selectable maps (track shape + themed world).
    ============================================================ */
 (function (global, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -11,8 +12,6 @@
   'use strict';
 
   const CFG = {
-    trackA: 130,
-    trackB: 85,
     roadHalf: 8,
     maxSpeed: 47,
     maxSpeedOffroad: 15,
@@ -33,7 +32,7 @@
     tickHz: 30
   };
 
-  const A = CFG.trackA, B = CFG.trackB, RH = CFG.roadHalf;
+  const RH = CFG.roadHalf;
   const PI2 = Math.PI * 2;
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -54,45 +53,58 @@
     };
   }
 
-  function radialDistToTrack(x, z) {
+  // ---- the three maps: track ellipse (a,b) + theme + tuning ----
+  const MAPS = [
+    { id: 0, name: 'HIGHLAND RUSH', theme: 'highland', a: 130, b: 85 },   // Forza-style day, forests+mountains
+    { id: 1, name: 'NEON CITY',     theme: 'neon',     a: 108, b: 100 },  // CarX-style night city
+    { id: 2, name: 'ISLAND MOTORFEST', theme: 'island', a: 152, b: 76 }   // Crew-style tropical island
+  ];
+
+  function radialDistToTrack(x, z, a, b) {
     const t = Math.atan2(z, x);
-    const re = (A * B) / Math.hypot(B * Math.cos(t), A * Math.sin(t));
+    const re = (a * b) / Math.hypot(b * Math.cos(t), a * Math.sin(t));
     return { re, d: Math.hypot(x, z) - re };
   }
 
   // ------------------------------------------------------------------
   // World generation (identical everywhere via fixed seed)
   // ------------------------------------------------------------------
-  function generateWorld(seed) {
+  function generateWorld(seed, a, b, theme) {
     const rnd = mulberry32(seed == null ? CFG.worldSeed : seed);
     const colliders = [];
     const buildings = [];
     const trees = [];
 
+    // city maps get denser/taller buildings; island gets huts; highland medium
+    const bCount = theme === 'neon' ? 44 : 32;
+    const bHMin = theme === 'neon' ? 18 : 10;
+    const bHVar = theme === 'neon' ? 30 : 22;
     let placed = 0, attempts = 0;
-    while (placed < 34 && attempts++ < 400) {
+    while (placed < bCount && attempts++ < 500) {
       const t = rnd() * PI2;
       const off = 22 + rnd() * 100;
-      const re = (A * B) / Math.hypot(B * Math.cos(t), A * Math.sin(t));
+      const re = (a * b) / Math.hypot(b * Math.cos(t), a * Math.sin(t));
       const r = re + off;
       const x = Math.cos(t) * r, z = Math.sin(t) * r;
-      const w = 8 + rnd() * 10, d = 8 + rnd() * 10, h = 10 + rnd() * 26;
+      const w = 8 + rnd() * 10, d = 8 + rnd() * 10, h = bHMin + rnd() * bHVar;
       if (colliders.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + Math.hypot(w, d) / 2 + 4)) continue;
       buildings.push({ x, z, w, d, h, rot: rnd() * Math.PI, tex: placed % 3 });
       colliders.push({ x, z, r: Math.hypot(w, d) / 2 * 0.92 });
       placed++;
     }
 
+    // island => mostly palms (trees), highland => pines, neon => few trees
+    const tCount = theme === 'island' ? 150 : (theme === 'neon' ? 40 : 120);
     placed = 0; attempts = 0;
-    while (placed < 130 && attempts++ < 900) {
+    while (placed < tCount && attempts++ < 1000) {
       const t = rnd() * PI2;
       const inside = rnd() < 0.42;
-      const re = (A * B) / Math.hypot(B * Math.cos(t), A * Math.sin(t));
+      const re = (a * b) / Math.hypot(b * Math.cos(t), a * Math.sin(t));
       const off = inside ? -(RH + 6 + rnd() * 48) : (RH + 6 + rnd() * 85);
       const r = re + off;
       if (r < 6) continue;
       const x = Math.cos(t) * r, z = Math.sin(t) * r;
-      if (Math.abs(x - A) < 24 && Math.abs(z) < 24) continue;
+      if (Math.abs(x - a) < 24 && Math.abs(z) < 24) continue;
       if (colliders.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 3.2)) continue;
       const s = 0.75 + rnd() * 0.9;
       trees.push({ x, z, s, rot: rnd() * Math.PI, variant: placed % 2 });
@@ -100,25 +112,28 @@
       placed++;
     }
 
-    // billboard near the start line
-    colliders.push({ x: A + 16, z: 14, r: 4 });
-    const billboard = { x: A + 16, z: 14, rot: -Math.PI / 2 + 0.25 };
+    colliders.push({ x: a + 16, z: 14, r: 4 });
+    const billboard = { x: a + 16, z: 14, rot: -Math.PI / 2 + 0.25 };
 
     const mountains = [];
-    for (let i = 0; i < 14; i++) {
+    const mCount = theme === 'island' ? 4 : 14;   // island = one volcano + few hills
+    for (let i = 0; i < mCount; i++) {
       mountains.push({
-        t: (i / 14) * PI2 + rnd() * 0.3,
+        t: (i / mCount) * PI2 + rnd() * 0.3,
         dist: 680 + rnd() * 280,
-        h: 120 + rnd() * 190,
+        h: (theme === 'island' && i === 0 ? 320 : 120 + rnd() * 190),
         r: 90 + rnd() * 110,
-        rot: rnd() * Math.PI
+        rot: rnd() * Math.PI,
+        volcano: theme === 'island' && i === 0
       });
     }
 
     return { buildings, trees, mountains, colliders, billboard };
   }
 
-  const WORLD = generateWorld(CFG.worldSeed);
+  // build a world for each map
+  MAPS.forEach((m, i) => { m.world = generateWorld(CFG.worldSeed + i * 777, m.a, m.b, m.theme); });
+  const WORLD = MAPS[0].world;
 
   // ------------------------------------------------------------------
   // Car physics (pure — no rendering)
@@ -126,12 +141,18 @@
   const ZERO_INPUT = () => ({ steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false });
 
   class Car {
-    constructor(slot, startX) {
+    constructor(slot, startX, track) {
       this.slot = slot;
       this.startX = startX;
+      this.track = track || MAPS[0];
       this.input = ZERO_INPUT();
       this.participating = slot === 1;
       this.resetState(0);
+    }
+
+    setTrack(track) {
+      this.track = track;
+      this.startX = track.a + (this.slot === 1 ? -2.8 : 2.8);
     }
 
     resetState(raceTime) {
@@ -146,7 +167,6 @@
       this.finished = false; this.finishTime = null;
     }
 
-    // arcade "back to grid" — keeps lap count & best times
     resetGrid(time) {
       this.x = this.startX; this.z = -5;
       this.heading = 0;
@@ -158,7 +178,7 @@
     }
 
     isOffroad() {
-      return Math.abs(radialDistToTrack(this.x, this.z).d) > RH + 0.7;
+      return Math.abs(radialDistToTrack(this.x, this.z, this.track.a, this.track.b).d) > RH + 0.7;
     }
 
     forwardSpeed() {
@@ -171,6 +191,7 @@
 
     update(dt, time, raceState, colliders) {
       const ev = { crash: null, lap: null, finish: null };
+      const A = this.track.a, B = this.track.b;
       const raw = this.input;
       const held = raceState === 'countdown';
       const inp = held
@@ -248,8 +269,8 @@
       }
 
       // barrier walls keep the car on the circuit (props live outside them)
-      const rd = radialDistToTrack(this.x, this.z);
-      const lim = CFG.roadHalf + 2.4;
+      const rd = radialDistToTrack(this.x, this.z, A, B);
+      const lim = RH + 2.4;
       if (Math.abs(rd.d) > lim) {
         const cur = Math.hypot(this.x, this.z) || 1;
         const nx = this.x / cur, nz = this.z / cur;
@@ -308,14 +329,16 @@
   const r3 = (v) => Math.round(v * 1000) / 1000;
 
   class RaceRoom {
-    constructor(code, mode) {
+    constructor(code, mode, mapId) {
       this.code = code;
       this.mode = mode === 'coop' ? 'coop' : 'race';
-      this.state = 'waiting';       // waiting | countdown | racing | finished
+      this.mapId = (mapId != null && MAPS[mapId]) ? mapId : 0;
+      this.track = MAPS[this.mapId];
+      this.state = 'waiting';
       this.raceTime = 0;
       this.countVal = 0;
       this.countTimer = 0;
-      this.cars = [new Car(1, A - 2.8), new Car(2, A + 2.8)];
+      this.cars = [new Car(1, this.track.a - 2.8, this.track), new Car(2, this.track.a + 2.8, this.track)];
       this.inputs = { 1: ZERO_INPUT(), 2: ZERO_INPUT() };
       this.controllers = { 1: false, 2: false };
       this.winner = null;
@@ -325,9 +348,7 @@
       this.lastActivity = Date.now();
     }
 
-    participants() {
-      return this.cars.filter((c) => c.participating);
-    }
+    participants() { return this.cars.filter((c) => c.participating); }
 
     setMode(mode) {
       if (this.state !== 'waiting') return false;
@@ -335,10 +356,16 @@
       return true;
     }
 
-    setController(slot, connected) {
-      this.controllers[slot] = connected;
-      this.lastActivity = Date.now();
+    setMap(mapId) {
+      if (this.state !== 'waiting') return false;
+      if (!MAPS[mapId]) return false;
+      this.mapId = mapId;
+      this.track = MAPS[mapId];
+      this.cars.forEach((c) => { c.setTrack(this.track); c.resetState(0); });
+      return true;
     }
+
+    setController(slot, connected) { this.controllers[slot] = connected; this.lastActivity = Date.now(); }
 
     setInput(slot, input) {
       this.inputs[slot] = {
@@ -367,10 +394,7 @@
       return true;
     }
 
-    resetCar(slot) {
-      const car = this.cars[slot - 1];
-      if (car) car.resetGrid(this.raceTime);
-    }
+    resetCar(slot) { const car = this.cars[slot - 1]; if (car) car.resetGrid(this.raceTime); }
 
     resetToWaiting() {
       this.state = 'waiting';
@@ -380,9 +404,7 @@
       this.banner = { text: '', seq: ++this.bannerSeq };
     }
 
-    setBanner(text) {
-      this.banner = { text, seq: ++this.bannerSeq };
-    }
+    setBanner(text) { this.banner = { text, seq: ++this.bannerSeq }; }
 
     applyInputs() {
       const i1 = this.inputs[1], i2 = this.inputs[2];
@@ -433,10 +455,11 @@
       }
 
       this.applyInputs();
+      const colliders = this.track.world.colliders;
 
       for (const car of this.cars) {
         if (this.mode === 'coop' && car.slot === 2) continue;
-        const ev = car.update(dt, this.raceTime, this.state, WORLD.colliders);
+        const ev = car.update(dt, this.raceTime, this.state, colliders);
         if (ev.crash) this.events.push({ type: 'crash', slot: car.slot, x: r3(ev.crash.x), z: r3(ev.crash.z), s: r3(ev.crash.s) });
         if (ev.lap) {
           if (ev.lap.isFinalNext) {
@@ -458,7 +481,6 @@
         }
       }
 
-      // everyone done (or 12s after first finish) -> results
       if (this.state === 'racing' && this.winner) {
         const ps = this.participants();
         const allDone = ps.every((c) => c.finished);
@@ -478,6 +500,7 @@
         type: 'state',
         state: this.state,
         mode: this.mode,
+        map: this.mapId,
         code: this.code,
         raceTime: r3(this.raceTime),
         count: this.state === 'countdown' ? r3(this.countVal + (1 - this.countTimer)) : null,
@@ -505,9 +528,6 @@
     }
   }
 
-  // ------------------------------------------------------------------
-  // Room codes
-  // ------------------------------------------------------------------
   const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   function makeRoomCode(rng) {
     const r = rng || Math.random;
@@ -516,5 +536,5 @@
     return s;
   }
 
-  return { CFG, clamp, fmtTime, mulberry32, radialDistToTrack, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode };
+  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode };
 });

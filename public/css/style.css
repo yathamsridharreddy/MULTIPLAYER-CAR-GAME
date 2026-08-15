@@ -327,3 +327,27 @@ button.ghost.sm { padding: 5px 12px; font-size: 11px; letter-spacing: 1px; font-
   transition: all .15s;
 }
 #exit-btn:hover { background: rgba(255, 82, 82, .25); border-color: #ff5252; }
+
+/* map selector */
+.maps { margin: 14px 0 4px; }
+.maps-label {
+  font-size: 12px; font-weight: 800; letter-spacing: 1.6px; color: #9fb0c4;
+  margin-bottom: 8px;
+}
+.maps-label #map-name { color: #ffd479; }
+.map-row { display: flex; gap: 10px; justify-content: center; }
+.map-btn {
+  flex: 1; max-width: 220px;
+  background: rgba(255,255,255,0.05); color: #dfe7f0;
+  border: 1px solid rgba(255,255,255,0.14); border-radius: 12px;
+  padding: 10px 10px; font-size: 12.5px; font-weight: 800; letter-spacing: .4px;
+  cursor: pointer; transition: all .18s; line-height: 1.3;
+}
+.map-btn .map-ico { display: block; font-size: 22px; margin-bottom: 3px; }
+.map-btn em { display: block; font-style: normal; font-weight: 500; font-size: 10px; color: #8fa2b8; margin-top: 3px; letter-spacing: 0; }
+.map-btn:hover { border-color: rgba(255,255,255,.35); transform: translateY(-1px); }
+.map-btn.active {
+  background: rgba(255, 212, 121, .14); border-color: #ffd479;
+  box-shadow: 0 0 18px rgba(255,212,121,.25);
+}
+@media (max-width: 760px) { .map-row { flex-direction: column; align-items: center; } .map-btn { max-width: 100%; } }
