@@ -736,6 +736,10 @@ let selectedMap = 0;
 let lastResults = null;
 
 const CAR_COLORS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
+const CAR_NAMES = [
+  { e: '🔴', n: 'FURY' }, { e: '🔵', n: 'STORM' }, { e: '🟡', n: 'VOLT' }, { e: '🟢', n: 'VIPER' },
+  { e: '🟠', n: 'BLAZE' }, { e: '🟣', n: 'PHANTOM' }, { e: '⚪', n: 'GHOST' }, { e: '⚫', n: 'REAPER' }
+];
 
 function loadPrefs() {
   try { return Object.assign({
@@ -901,14 +905,15 @@ function buildCarCards() {
   if (!wrap) return;
   wrap.innerHTML = '';
   const P = carPreviewRenderer();
-  CAR_COLORS.forEach((hex) => {
+  CAR_COLORS.forEach((hex, i) => {
     P.car.paint.color.setHex(hex);
     P.r.render(P.sc, P.cam);
     const url = P.r.domElement.toDataURL();
+    const nm = CAR_NAMES[i] || { e: '🏎️', n: 'RACER' };
     const b = document.createElement('button');
     b.className = 'car-card' + (hex === prefs.color ? ' active' : '');
     b.dataset.color = hex;
-    b.innerHTML = `<img src="${url}" alt="car"/><div class="mc-name">${'#' + hex.toString(16).padStart(6, '0')}</div>`;
+    b.innerHTML = `<img src="${url}" alt="car"/><div class="mc-name">${nm.e} ${nm.n}</div>`;
     b.addEventListener('click', () => {
       prefs.color = hex; savePrefs();
       wrap.querySelectorAll('.car-card').forEach((x) => x.classList.remove('active'));
