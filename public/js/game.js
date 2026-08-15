@@ -767,19 +767,48 @@ function setAudio() {
 function startMusic() {
   if (!audio || musicNodes) return;
   const ctx = audio.ctx;
-  const g = ctx.createGain(); g.gain.value = 0.05; g.connect(audio.master);
-  const seq = [110, 110, 146.8, 110, 164.8, 146.8, 110, 98];
-  let i = 0;
+  const mg = ctx.createGain(); mg.gain.value = 0.14; mg.connect(audio.master);
+  const BPM = 118, SPB = 60 / BPM, EIGHTH = SPB / 2;
+  const chords = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]; // Am F C G
+  const m2f = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  let step = 0, nextT = ctx.currentTime + 0.1;
+
+  function note(freq, t, dur, type, vol) {
+    const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(mg); o.start(t); o.stop(t + dur + 0.05);
+  }
+  function kick(t) {
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.9, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    o.connect(g); g.connect(mg); o.start(t); o.stop(t + 0.2);
+  }
+  function hat(t) {
+    const b = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.05), ctx.sampleRate);
+    const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const s = ctx.createBufferSource(); s.buffer = b;
+    const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 6000;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    s.connect(f); f.connect(g); g.connect(mg); s.start(t);
+  }
+  function scheduleStep(s, t) {
+    const bar = Math.floor(s / 8) % 4;
+    const e = s % 8;
+    const ch = chords[bar];
+    if (e % 2 === 0) kick(t);
+    if (e % 2 === 1) hat(t);
+    if (e % 2 === 0) note(m2f(ch[0] - 12), t, 0.22, 'sawtooth', 0.25);
+    note(m2f(ch[[0, 1, 2, 1, 0, 2, 1, 2][e]] + 12), t, 0.16, 'square', 0.08);
+    if (e === 0) ch.forEach((m) => note(m2f(m), t, SPB * 3.8, 'sawtooth', 0.05));
+  }
   const timer = setInterval(() => {
-    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = seq[i % seq.length];
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(0.0001, ctx.currentTime);
-    og.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.02);
-    og.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
-    o.connect(og); og.connect(g); o.start(); o.stop(ctx.currentTime + 0.3);
-    i++;
-  }, 300);
-  musicNodes = { g, timer };
+    while (nextT < ctx.currentTime + 0.2) { scheduleStep(step, nextT); nextT += EIGHTH; step++; }
+  }, 60);
+  musicNodes = { g: mg, timer };
 }
 function stopMusic() { if (musicNodes) { clearInterval(musicNodes.timer); try { musicNodes.g.disconnect(); } catch (e) {} musicNodes = null; } }
 
@@ -877,7 +906,7 @@ function interpState(slot) {
   const alpha = clamp((target - a.t) / Math.max(1, b.t - a.t), 0, 1);
   return {
     s: slot, x: lerp(ca.x, cb.x, alpha), z: lerp(ca.z, cb.z, alpha), h: lerpAngle(ca.h, cb.h, alpha),
-    v: lerp(ca.v, cb.v, alpha), sl: lerp(ca.sl, cb.sl, alpha), st: cb.st,
+    v: lerp(ca.v, cb.v, alpha), sl: lerp(ca.sl, cb.sl, alpha), st: cb.st, th: cb.th,
     n: cb.n, m: cb.m, lap: cb.lap, ll: ca.ll, best: cb.best, fin: cb.fin, ft: cb.ft, p: cb.p, pr: cb.pr
   };
 }
@@ -1211,21 +1240,51 @@ function updateArrow(rival) {
 // Audio (unchanged)
 // ---------------------------------------------------------------------------
 let audio = null;
+function distCurve(k) {
+  const n = 1024, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    c[i] = (1 + k) * x / (1 + k * Math.abs(x));
+  }
+  return c;
+}
 function ensureAudio() {
   if (audio) { if (audio.ctx.state === 'suspended') audio.ctx.resume(); return; }
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) return;
   const ctx = new Ctx();
   const master = ctx.createGain(); master.gain.value = 0.7; master.connect(ctx.destination);
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 6;
+  master.disconnect(); master.connect(comp); comp.connect(ctx.destination);
+
+  // Racing-engine synth: 3 harmonically-related oscs -> waveshaper grit -> resonant
+  // body -> throttle-opening lowpass, plus a bandpassed exhaust-noise layer.
   const engines = [0, 1].map(() => {
-    const o1 = ctx.createOscillator(); o1.type = 'sawtooth';
-    const o2 = ctx.createOscillator(); o2.type = 'square';
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
-    const g = ctx.createGain(); g.gain.value = 0;
-    o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master);
-    o1.start(); o2.start();
-    return { o1, o2, g, lp };
+    const o1 = ctx.createOscillator(); o1.type = 'sawtooth';              // fundamental
+    const o2 = ctx.createOscillator(); o2.type = 'sawtooth'; o2.detune.value = 9;  // thick octave
+    const o3 = ctx.createOscillator(); o3.type = 'square';                 // sub rumble
+    const g1 = ctx.createGain(); g1.gain.value = 0.5;
+    const g2 = ctx.createGain(); g2.gain.value = 0.28;
+    const g3 = ctx.createGain(); g3.gain.value = 0.34;
+    const shaper = ctx.createWaveShaper(); shaper.curve = distCurve(2.5); shaper.oversample = '4x';
+    const body = ctx.createBiquadFilter(); body.type = 'peaking'; body.frequency.value = 420; body.Q.value = 1.1; body.gain.value = 7;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600; lp.Q.value = 0.7;
+    const engGain = ctx.createGain(); engGain.gain.value = 0;
+    o1.connect(g1); o2.connect(g2); o3.connect(g3);
+    g1.connect(shaper); g2.connect(shaper); g3.connect(shaper);
+    shaper.connect(body); body.connect(lp); lp.connect(engGain); engGain.connect(master);
+    // exhaust turbulence
+    const nb = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const nd = nb.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    const ex = ctx.createBufferSource(); ex.buffer = nb; ex.loop = true;
+    const exBp = ctx.createBiquadFilter(); exBp.type = 'bandpass'; exBp.frequency.value = 900; exBp.Q.value = 0.8;
+    const exGain = ctx.createGain(); exGain.gain.value = 0;
+    ex.connect(exBp); exBp.connect(exGain); exGain.connect(engGain);
+    o1.start(); o2.start(); o3.start(); ex.start();
+    return { o1, o2, o3, lp, body, engGain, exBp, exGain };
   });
+
   const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -1258,21 +1317,27 @@ function updateAudio(mine, rival) {
   const t = audio.ctx.currentTime;
   [mine, rival].forEach((cs, i) => {
     const e = audio.engines[i];
-    if (!cs || cs.p !== 1) { e.g.gain.setTargetAtTime(0, t, 0.1); return; }
+    if (!cs || cs.p !== 1) { e.engGain.gain.setTargetAtTime(0, t, 0.1); return; }
     const sp = clamp(Math.abs(cs.v) / CFG.maxSpeed, 0, 1);
-    const gear = Math.min(4, Math.floor(sp * 5));
-    const frac = sp * 5 - gear;
-    const rpm = 0.22 + 0.78 * frac;
-    const freq = 52 + rpm * 165 + sp * 46;
-    e.o1.frequency.setTargetAtTime(freq, t, 0.05);
-    e.o2.frequency.setTargetAtTime(freq * 0.5 + 1, t, 0.05);
-    e.lp.frequency.setTargetAtTime(500 + sp * 2200, t, 0.1);
-    let vol = 0.03 + sp * 0.14 + (cs.n ? 0.05 : 0);
+    const thr = clamp((cs.th != null ? cs.th : sp) + (cs.n ? 0.4 : 0), 0, 1);
+    // gear-boxed RPM: revs climb within a gear, drop on shift
+    const gear = Math.min(5, Math.floor(sp * 6));
+    const frac = sp * 6 - gear;
+    const rpm = 0.18 + 0.82 * frac;
+    const f0 = 50 + rpm * 190 + thr * 22;          // fundamental ~50–260 Hz
+    e.o1.frequency.setTargetAtTime(f0, t, 0.04);
+    e.o2.frequency.setTargetAtTime(f0 * 2.01, t, 0.04);
+    e.o3.frequency.setTargetAtTime(f0 * 0.5, t, 0.05);
+    e.lp.frequency.setTargetAtTime(320 + rpm * 2600 + thr * 1400, t, 0.08);
+    e.body.frequency.setTargetAtTime(f0 * 2.2, t, 0.08);
+    e.exBp.frequency.setTargetAtTime(f0 * 4 + 400, t, 0.08);
+    e.exGain.gain.setTargetAtTime(0.05 + thr * 0.22 + rpm * 0.1, t, 0.08);
+    let vol = 0.05 + sp * 0.1 + thr * 0.12 + (cs.n ? 0.05 : 0);
     if (i === 1) {
       const dist = camera.position.distanceTo(new THREE.Vector3(cs.x, 0, cs.z));
       vol *= clamp(1 - dist / 160, 0, 1) * 0.8;
     }
-    e.g.gain.setTargetAtTime(vol, t, 0.08);
+    e.engGain.gain.setTargetAtTime(vol, t, 0.07);
   });
   const skidAmt = (mine && mine.sl > 4.5 && Math.abs(mine.v) > 6) ? clamp(mine.sl * 0.018, 0, 0.2) : 0;
   audio.skidGain.gain.setTargetAtTime(skidAmt, t, 0.06);

@@ -578,6 +578,7 @@
           sl: r3(c.slip),
           pr: r3(c.progress),
           st: r3(c.input.steer),
+          th: r3(c.input.throttle),
           n: c.nitroActive ? 1 : 0,
           m: Math.round(c.nitroMeter),
           lap: c.lap,
