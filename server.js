@@ -59,6 +59,23 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 // ---------------------------------------------------------------------------
 const rooms = new Map();   // code -> { room, screens:Set<ws>, controllers:Map<ws,slot> }
 
+// ---------------------------------------------------------------------------
+// Leaderboard (per-map, persisted to disk where available)
+// ---------------------------------------------------------------------------
+const fs = require('fs');
+const LB_FILE = path.join(__dirname, 'leaderboard.json');
+let leaderboard = {};
+try { leaderboard = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); } catch (e) { leaderboard = {}; }
+
+function lbAdd(mapId, entry) {
+  const list = leaderboard[mapId] || (leaderboard[mapId] = []);
+  list.push(entry);
+  list.sort((a, b) => a.t - b.t);
+  leaderboard[mapId] = list.slice(0, 20);
+  try { fs.writeFileSync(LB_FILE, JSON.stringify(leaderboard)); } catch (e) {}
+}
+function lbGet(mapId) { return (leaderboard[mapId] || []).slice(0, 5); }
+
 function newRoom(mode, mapId) {
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
@@ -161,11 +178,30 @@ function handleMessage(client, msg) {
         entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race', msg.map);
       }
       joinRoom(client, entry, msg.role === 'controller' ? 'controller' : 'screen');
+      if (client.role === 'screen' && client.slot) {
+        const room = entry.room;
+        if (msg.laps != null) room.setLaps(msg.laps);
+        if (msg.bot != null) room.setBot(msg.bot);
+        if (msg.name || msg.color || msg.cls) room.setPlayerMeta(client.slot, msg);
+      }
       break;
     }
 
     case 'map':
       if (client.entry && client.role === 'screen') client.entry.room.setMap(msg.map);
+      break;
+
+    case 'meta':
+      if (client.entry && client.role === 'screen' && client.slot)
+        client.entry.room.setPlayerMeta(client.slot, msg);
+      break;
+
+    case 'laps':
+      if (client.entry && client.role === 'screen') client.entry.room.setLaps(msg.laps);
+      break;
+
+    case 'bot':
+      if (client.entry && client.role === 'screen') client.entry.room.setBot(msg.bot);
       break;
 
     case 'input': {
@@ -207,7 +243,7 @@ function handleMessage(client, msg) {
     }
 
     case 'ping':
-      sendJSON(client.ws, { type: 'pong' });
+      sendJSON(client.ws, { type: 'pong', t: msg.t });
       break;
   }
 }
@@ -250,8 +286,18 @@ setInterval(() => {
     const room = entry.room;
     room.update(dt);
 
+    // record finishes to the per-map leaderboard (once per car per race)
+    for (const car of room.cars) {
+      if (car.finished && car.finishTime != null && !car._lb) {
+        car._lb = true;
+        lbAdd(room.mapId, { name: car.name, t: car.finishTime, best: car.best, ts: now });
+      }
+    }
+
     if (entry.screens.size > 0) {
-      const snap = JSON.stringify(room.snapshot());
+      const snapObj = room.snapshot();
+      snapObj.lb = lbGet(room.mapId);
+      const snap = JSON.stringify(snapObj);
       for (const s of entry.screens) {
         if (s.readyState === 1) { try { s.send(snap); } catch (e) {} }
       }

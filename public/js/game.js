@@ -623,7 +623,7 @@ function createCar(paintColor, num, accent) {
     wheels.push({ pivot, spin, front: i < 2 });
   });
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  return { group: g, body, wheels };
+  return { group: g, body, wheels, paint };
 }
 const carVisuals = {
   1: Object.assign(createCar(0xe10600, 1, 0xffd400), { spinAngle: 0 }),
@@ -728,6 +728,132 @@ function spawnSkid(x, z, heading) {
 }
 
 // ---------------------------------------------------------------------------
+// v2: identity, settings, ping, FPS, leaderboard
+// ---------------------------------------------------------------------------
+let pingMs = -1;
+let fps = 0, fpsFrames = 0, fpsTime = 0;
+let selectedMap = 0;
+let lastResults = null;
+
+const CAR_COLORS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
+
+function loadPrefs() {
+  try { return Object.assign({
+    name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
+    quality: 'high', music: false, mute: false, fpsmeter: false
+  }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
+  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: false, mute: false, fpsmeter: false }; }
+}
+let prefs = loadPrefs();
+function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
+function identityPayload() {
+  return { name: prefs.name || ('RACER-' + Math.floor(100 + Math.random() * 900)), color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, map: selectedMap };
+}
+
+function applyQuality(q) {
+  const dpr = window.devicePixelRatio || 1;
+  if (q === 'low') { renderer.setPixelRatio(1); sunLight.castShadow = false; }
+  else if (q === 'med') { renderer.setPixelRatio(Math.min(dpr, 1.5)); sunLight.castShadow = true; }
+  else { renderer.setPixelRatio(Math.min(dpr, 2)); sunLight.castShadow = true; }
+}
+
+// audio: master mute + simple synth music loop
+let musicNodes = null;
+function setAudio() {
+  if (audio && audio.master) audio.master.gain.value = prefs.mute ? 0 : 0.7;
+  if (prefs.music && audio && !musicNodes) startMusic();
+  if (!prefs.music && musicNodes) { stopMusic(); }
+}
+function startMusic() {
+  if (!audio || musicNodes) return;
+  const ctx = audio.ctx;
+  const g = ctx.createGain(); g.gain.value = 0.05; g.connect(audio.master);
+  const seq = [110, 110, 146.8, 110, 164.8, 146.8, 110, 98];
+  let i = 0;
+  const timer = setInterval(() => {
+    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = seq[i % seq.length];
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, ctx.currentTime);
+    og.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.02);
+    og.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+    o.connect(og); og.connect(g); o.start(); o.stop(ctx.currentTime + 0.3);
+    i++;
+  }, 300);
+  musicNodes = { g, timer };
+}
+function stopMusic() { if (musicNodes) { clearInterval(musicNodes.timer); try { musicNodes.g.disconnect(); } catch (e) {} musicNodes = null; } }
+
+setInterval(() => { if (net.isOpen()) net.send({ type: 'ping', t: performance.now() }); }, 2000);
+
+function wireLobbyV2() {
+  const nameEl = $('inp-name');
+  if (nameEl) {
+    nameEl.value = prefs.name;
+    nameEl.placeholder = identityPayload().name;
+    nameEl.addEventListener('input', () => { prefs.name = nameEl.value.trim(); savePrefs(); sendMeta(); });
+  }
+  const sw = $('color-swatches');
+  if (sw) {
+    sw.innerHTML = '';
+    CAR_COLORS.forEach((cHex) => {
+      const b = document.createElement('button');
+      b.className = 'swatch' + (cHex === prefs.color ? ' active' : '');
+      b.style.background = '#' + cHex.toString(16).padStart(6, '0');
+      b.addEventListener('click', () => {
+        prefs.color = cHex; savePrefs();
+        sw.querySelectorAll('.swatch').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        applyMyColor(); sendMeta();
+      });
+      sw.appendChild(b);
+    });
+  }
+  document.querySelectorAll('.cls-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.cls === prefs.cls);
+    b.addEventListener('click', () => {
+      prefs.cls = b.dataset.cls; savePrefs();
+      document.querySelectorAll('.cls-btn').forEach((x) => x.classList.toggle('active', x === b));
+      sendMeta();
+    });
+  });
+  document.querySelectorAll('.laps-btn').forEach((b) => {
+    b.classList.toggle('active', parseInt(b.dataset.laps, 10) === prefs.laps);
+    b.addEventListener('click', () => {
+      prefs.laps = parseInt(b.dataset.laps, 10); savePrefs();
+      document.querySelectorAll('.laps-btn').forEach((x) => x.classList.toggle('active', x === b));
+      net.send({ type: 'laps', laps: prefs.laps });
+    });
+  });
+  const botEl = $('bot-toggle');
+  if (botEl) {
+    botEl.checked = !!prefs.bot;
+    botEl.addEventListener('change', () => { prefs.bot = botEl.checked; savePrefs(); net.send({ type: 'bot', bot: prefs.bot }); });
+  }
+  document.querySelectorAll('.q-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.q === prefs.quality);
+    b.addEventListener('click', () => {
+      prefs.quality = b.dataset.q; savePrefs();
+      document.querySelectorAll('.q-btn').forEach((x) => x.classList.toggle('active', x === b));
+      applyQuality(prefs.quality);
+    });
+  });
+  const muteEl = $('set-mute'); if (muteEl) { muteEl.checked = !!prefs.mute; muteEl.addEventListener('change', () => { prefs.mute = muteEl.checked; savePrefs(); setAudio(); }); }
+  const musicEl = $('set-music'); if (musicEl) { musicEl.checked = !!prefs.music; musicEl.addEventListener('change', () => { prefs.music = musicEl.checked; savePrefs(); ensureAudio(); setAudio(); }); }
+  const fpsEl = $('set-fps'); if (fpsEl) { fpsEl.checked = !!prefs.fpsmeter; fpsEl.addEventListener('change', () => { prefs.fpsmeter = fpsEl.checked; savePrefs(); }); }
+  const shareEl = $('share-btn');
+  if (shareEl) shareEl.addEventListener('click', () => {
+    if (!lastResults) return;
+    const mapName = (CORE.MAPS[latest.map] || {}).name || '';
+    const lines = lastResults.map((r, i) => `${i + 1}. ${r.name || ('P' + r.slot)} — ${r.t != null ? fmtTime(r.t) : 'DNF'}`).join('\n');
+    copyText(`🏁 SRIDHAR RUSH — ${mapName}\n${lines}`);
+    toast('Result copied — share it!');
+  });
+}
+function applyMyColor() {
+  if (carVisuals[mySlot] && carVisuals[mySlot].paint) carVisuals[mySlot].paint.color.setHex(prefs.color);
+}
+
+// ---------------------------------------------------------------------------
 // Room connection + snapshot buffer (unchanged)
 // ---------------------------------------------------------------------------
 let mySlot = 1;
@@ -804,19 +930,21 @@ function showCount(txt) {
   el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
 }
 function showResults(order) {
+  lastResults = order;
   const rows = $('results-rows'); rows.innerHTML = '';
   const medals = ['🥇', '🥈', ''];
   const winner = order[0];
   order.forEach((c, i) => {
     const div = document.createElement('div');
     div.className = 'rrow' + (i === 0 ? ' win' : '');
+    const colHex = '#' + (c.color != null ? c.color : (c.slot === 1 ? 0xe10600 : 0x0a84ff)).toString(16).padStart(6, '0');
     div.innerHTML = `<span class="medal">${medals[i] || ''}</span>` +
-      `<span class="rname" style="color:${c.slot === 1 ? '#ff6b6b' : '#64b5f6'}">PLAYER ${c.slot}</span>` +
+      `<span class="rname" style="color:${colHex}">${escapeHtml(c.name || ('PLAYER ' + c.slot))}</span>` +
       `<span class="rtime">${c.finished ? fmtTime(c.t) : 'DNF'}</span>` +
       `<span class="rbest">best lap ${c.best != null ? fmtTime(c.best) : '--:--.--'}</span>`;
     rows.appendChild(div);
   });
-  $('results-title').textContent = winner ? `🏁 PLAYER ${winner.slot} WINS!` : '🏁 RACE RESULTS';
+  $('results-title').textContent = winner ? `🏁 ${escapeHtml(winner.name || ('PLAYER ' + winner.slot))} WINS!` : '🏁 RACE RESULTS';
   $('results').classList.remove('hidden');
 }
 
@@ -829,12 +957,29 @@ function updateLobby(snap) {
   drawQR(phoneLink);
   document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === snap.mode));
   document.querySelectorAll('.map-btn').forEach((b) => b.classList.toggle('active', parseInt(b.dataset.map, 10) === snap.map));
+  if (snap.map != null) selectedMap = snap.map;
   const m = CORE.MAPS[snap.map] || CORE.MAPS[0];
   $('map-name').textContent = m.name;
   const parts = [];
   if (snap.controllers[1]) parts.push('📱 P1 joystick');
   if (snap.controllers[2]) parts.push('📱 P2 joystick');
+  if (snap.bot) parts.push('🤖 AI driver');
   $('lobby-status').textContent = parts.length ? 'Connected: ' + parts.join(' · ') : 'Waiting for joysticks (or drive with keyboard)…';
+  renderLeaderboard(snap);
+  if (!lobbyWired) { lobbyWired = true; wireLobbyV2(); }
+}
+let lobbyWired = false;
+function renderLeaderboard(snap) {
+  const el = $('leaderboard');
+  if (!el) return;
+  const rows = snap.lb || [];
+  if (!rows.length) { el.innerHTML = '<div class="lb-empty">No times yet on this circuit — set the first!</div>'; return; }
+  el.innerHTML = rows.map((r, i) =>
+    `<div class="lb-row"><span class="lb-pos">${i + 1}</span><span class="lb-name">${escapeHtml(r.name)}</span><span class="lb-time">${fmtTime(r.t)}</span></div>`
+  ).join('');
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 let qrDrawnFor = '';
@@ -879,6 +1024,7 @@ const net = new RoomLink({
     $('slot-badge').className = mySlot === 1 ? 'slot-badge c1' : 'slot-badge c2';
     $('slot-badge').style.display = '';
     setNetBanner(true);
+    applyMyColor();
     if (msg.snapshot) ingestSnapshot(msg.snapshot);
   },
   onMessage(msg) {
@@ -888,6 +1034,11 @@ const net = new RoomLink({
       case 'controller-left': setConnected(msg.slot, false); toast(`Player ${msg.slot} joystick disconnected`); break;
       case 'horn': playHorn(); break;
       case 'cam': if (msg.slot === mySlot) cycleCamera(); break;
+      case 'pong': {
+        const rtt = performance.now() - (msg.t || performance.now());
+        pingMs = pingMs < 0 ? rtt : pingMs * 0.7 + rtt * 0.3;
+        break;
+      }
       case 'error': if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!'); break;
       case 'disconnected': setNetBanner(false); break;
     }
@@ -897,7 +1048,11 @@ const net = new RoomLink({
     $('lobby-conn').textContent = s === 'connected' ? '🟢 connected' : (s === 'connecting' ? '🟡 connecting…' : '🔴 reconnecting…');
   }
 });
-net.connect({ type: 'hello', role: 'screen', room: wantedRoom || null });
+function sendHello() {
+  net.connect(Object.assign({ type: 'hello', role: 'screen', room: wantedRoom || null }, identityPayload()));
+}
+function sendMeta() { if (net.isOpen()) net.send(Object.assign({ type: 'meta' }, identityPayload())); }
+sendHello();
 
 function showRoomError(text) {
   $('room-error').textContent = text;
@@ -1130,6 +1285,7 @@ function updateAudio(mine, rival) {
 function placeCar(slot, cs, dt) {
   const v = carVisuals[slot];
   if (!cs) return;
+  if (cs.col != null && v.paint && v.paint.color.getHex() !== cs.col) v.paint.color.setHex(cs.col);
   v.group.visible = cs.p === 1;
   if (!v.group.visible) return;
   v.group.position.set(cs.x, 0, cs.z);
@@ -1188,6 +1344,30 @@ function drawMinimap(mine, rival) {
 function updateHUD(mine, rival) {
   if (!latest || !mine) return;
   updateModeLabels(latest.mode);
+  // player names on pills
+  const c1 = latest.cars[0], c2 = latest.cars[1];
+  if (latest.mode === 'race') {
+    $('pill-p1').querySelector('span').textContent = c1.nm || 'PLAYER 1';
+    $('pill-p2').querySelector('span').textContent = c2.nm || 'PLAYER 2';
+  } else {
+    $('pill-p1').querySelector('span').textContent = 'CO-OP · ' + (c1.nm || 'YOU');
+  }
+  // ping badge
+  const pingEl = $('ping-badge');
+  if (pingEl) {
+    if (pingMs < 0) { pingEl.textContent = '… ms'; pingEl.className = 'ping'; }
+    else {
+      const p = Math.round(pingMs);
+      pingEl.textContent = p + ' ms';
+      pingEl.className = 'ping ' + (p < 90 ? 'good' : p < 180 ? 'ok' : 'bad');
+    }
+  }
+  // fps meter
+  const fpsEl = $('fps-meter');
+  if (fpsEl) {
+    if (prefs.fpsmeter) { fpsEl.style.display = ''; fpsEl.textContent = fps + ' FPS'; }
+    else fpsEl.style.display = 'none';
+  }
   $('speed-val').textContent = Math.round(Math.abs(mine.v) * 3.6);
   $('gear').textContent = mine.v < -0.5 ? 'R' : (Math.abs(mine.v) < 0.4 ? 'N' : 'D');
   $('nitro-fill').style.width = (mine.m || 0) + '%';
@@ -1237,9 +1417,12 @@ window.addEventListener('pointerdown', ensureAudio, { passive: true });
 // Main loop
 // ---------------------------------------------------------------------------
 const clock = new THREE.Clock();
+applyQuality(prefs.quality);
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05);
+  fpsFrames++; fpsTime += dt;
+  if (fpsTime >= 1) { fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; }
   const mine = interpState(mySlot);
   const rival = interpState(mySlot === 1 ? 2 : 1);
   if (latest && latest.state === 'countdown') updateCountdownVisual();

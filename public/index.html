@@ -24,6 +24,11 @@
 
     <div id="raceinfo"></div>
 
+    <div id="hud-badges">
+      <span id="ping-badge" class="ping">… ms</span>
+      <span id="fps-meter" style="display:none">60 FPS</span>
+    </div>
+
     <canvas id="minimap" width="150" height="150"></canvas>
 
     <div id="speedo">
@@ -65,6 +70,7 @@
       <div id="results-rows"></div>
       <div class="results-btns">
         <button id="rematch-btn">🔁 REMATCH</button>
+        <button id="share-btn" class="ghost">📤 SHARE</button>
         <button id="menu-btn" class="ghost">LOBBY</button>
       </div>
     </div>
@@ -120,6 +126,49 @@
           <button class="map-btn active" data-map="0"><span class="map-ico">🏞️</span>HIGHLAND RUSH<em>Forza-style · day · forests &amp; mountains</em></button>
           <button class="map-btn" data-map="1"><span class="map-ico">🌆</span>NEON CITY<em>CarX-style · night · neon downtown</em></button>
           <button class="map-btn" data-map="2"><span class="map-ico">🏝️</span>ISLAND MOTORFEST<em>Crew-style · tropical · volcano &amp; ocean</em></button>
+        </div>
+      </div>
+
+      <div class="lobby-grid">
+        <div class="lcol">
+          <div class="lsec">
+            <div class="lsec-title">DRIVER IDENTITY</div>
+            <input id="inp-name" class="name-input" maxlength="14" placeholder="Your racer name" autocomplete="off"/>
+            <div id="color-swatches" class="swatches"></div>
+            <div class="btn-row-sm">
+              <button class="cls-btn active" data-cls="velocity" title="High top speed">⚡ VELOCITY</button>
+              <button class="cls-btn" data-cls="accelerator" title="Quick acceleration">🚀 ACCEL</button>
+              <button class="cls-btn" data-cls="grip" title="Sharp handling">🎯 GRIP</button>
+            </div>
+          </div>
+          <div class="lsec">
+            <div class="lsec-title">RACE SETUP</div>
+            <div class="btn-row-sm">
+              <span class="opt-label">LAPS</span>
+              <button class="laps-btn" data-laps="1">1</button>
+              <button class="laps-btn active" data-laps="3">3</button>
+              <button class="laps-btn" data-laps="5">5</button>
+            </div>
+            <label class="toggle-line"><input type="checkbox" id="bot-toggle" checked/> 🤖 Add an AI opponent when racing solo</label>
+          </div>
+        </div>
+        <div class="lcol">
+          <div class="lsec">
+            <div class="lsec-title">SETTINGS</div>
+            <div class="btn-row-sm">
+              <span class="opt-label">GFX</span>
+              <button class="q-btn" data-q="low">LOW</button>
+              <button class="q-btn" data-q="med">MED</button>
+              <button class="q-btn active" data-q="high">HIGH</button>
+            </div>
+            <label class="toggle-line"><input type="checkbox" id="set-mute"/> 🔇 Mute audio</label>
+            <label class="toggle-line"><input type="checkbox" id="set-music"/> 🎵 Music</label>
+            <label class="toggle-line"><input type="checkbox" id="set-fps"/> 📊 Show FPS meter</label>
+          </div>
+          <div class="lsec">
+            <div class="lsec-title">LEADERBOARD — <span id="map-name-lb">TOP 5</span></div>
+            <div id="leaderboard" class="leaderboard"></div>
+          </div>
         </div>
       </div>
 

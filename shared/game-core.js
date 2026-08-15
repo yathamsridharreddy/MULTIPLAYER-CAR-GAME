@@ -60,6 +60,13 @@
     { id: 2, name: 'ISLAND MOTORFEST', theme: 'island', a: 152, b: 76 }   // Crew-style tropical island
   ];
 
+  // car classes: stat trade-offs (top speed / acceleration / grip+steer)
+  const CAR_CLASSES = {
+    velocity:    { name: 'VELOCITY',    top: 1.12, acc: 0.95, grip: 0.95, steer: 0.95 },
+    accelerator: { name: 'ACCELERATOR', top: 0.97, acc: 1.22, grip: 1.0,  steer: 1.0 },
+    grip:        { name: 'GRIP',        top: 0.98, acc: 1.0,  grip: 1.3,  steer: 1.18 }
+  };
+
   function radialDistToTrack(x, z, a, b) {
     const t = Math.atan2(z, x);
     const re = (a * b) / Math.hypot(b * Math.cos(t), a * Math.sin(t));
@@ -145,14 +152,24 @@
       this.slot = slot;
       this.startX = startX;
       this.track = track || MAPS[0];
+      this.cls = CAR_CLASSES.velocity;
+      this.maxLaps = CFG.totalLaps;
       this.input = ZERO_INPUT();
       this.participating = slot === 1;
+      this.name = 'PLAYER ' + slot;
+      this.color = slot === 1 ? 0xe10600 : 0x0a84ff;
       this.resetState(0);
     }
 
     setTrack(track) {
       this.track = track;
       this.startX = track.a + (this.slot === 1 ? -2.8 : 2.8);
+    }
+
+    setClass(key) { if (CAR_CLASSES[key]) this.cls = CAR_CLASSES[key]; }
+    setMeta(name, color) {
+      if (name) this.name = String(name).slice(0, 14);
+      if (color != null) this.color = color;
     }
 
     resetState(raceTime) {
@@ -165,6 +182,7 @@
       this.lastLap = null; this.best = null;
       this.nitroMeter = 100; this.nitroActive = false;
       this.finished = false; this.finishTime = null;
+      this._lb = false;
     }
 
     resetGrid(time) {
@@ -211,7 +229,7 @@
       else this.nitroMeter = Math.min(100, this.nitroMeter + CFG.nitroRegen * dt);
 
       let acc = 0;
-      if (inp.throttle > 0.02) acc += inp.throttle * CFG.engineAccel;
+      if (inp.throttle > 0.02) acc += inp.throttle * CFG.engineAccel * this.cls.acc;
       if (this.nitroActive) acc += CFG.nitroAccel;
       if (inp.brake > 0.02) acc += speed > 0.6 ? -inp.brake * CFG.brakeDecel : -inp.brake * CFG.reverseAccel;
       acc -= speed * 0.36;
@@ -223,7 +241,7 @@
       this.vy += dirY * acc * dt;
 
       speed = this.vx * dirX + this.vy * dirY;
-      let cap = speed >= 0 ? (offroad ? CFG.maxSpeedOffroad : CFG.maxSpeed) : -CFG.reverseMax;
+      let cap = speed >= 0 ? (offroad ? CFG.maxSpeedOffroad : CFG.maxSpeed * this.cls.top) : -CFG.reverseMax;
       if (speed >= 0 && this.nitroActive) cap += CFG.nitroCapBonus;
       if ((speed > 0 && speed > cap) || (speed < 0 && speed < cap)) {
         this.vx -= dirX * (speed - cap);
@@ -232,7 +250,7 @@
       }
 
       const lat = this.vx * rightX + this.vy * rightY;
-      const grip = inp.handbrake ? CFG.gripHandbrake : CFG.grip;
+      const grip = inp.handbrake ? CFG.gripHandbrake : CFG.grip * this.cls.grip;
       const latAfter = lat * Math.max(0, 1 - grip * dt);
       const fwd = this.vx * dirX + this.vy * dirY;
       this.vx = dirX * fwd + rightX * latAfter;
@@ -240,7 +258,7 @@
       this.slip = Math.abs(lat);
 
       const speedFactor = clamp(Math.abs(fwd) / 7, 0, 1);
-      const agility = CFG.steerRate * speedFactor / (1 + Math.abs(fwd) * 0.022);
+      const agility = CFG.steerRate * this.cls.steer * speedFactor / (1 + Math.abs(fwd) * 0.022);
       let yaw = inp.steer * agility * (fwd >= 0 ? 1 : -1);
       if (inp.handbrake) yaw *= 1.5;
       this.heading -= yaw * dt;
@@ -308,12 +326,12 @@
         this.lap++;
         this.lapStart = time;
         this.progress -= PI2;
-        if (this.lap >= CFG.totalLaps) {
+        if (this.lap >= this.maxLaps) {
           this.finished = true;
           this.finishTime = time - this.goTime;
           ev.finish = { t: this.finishTime };
         } else {
-          ev.lap = { n: this.lap, t, isFinalNext: this.lap === CFG.totalLaps - 1 };
+          ev.lap = { n: this.lap, t, isFinalNext: this.lap === this.maxLaps - 1 };
         }
       } else if (this.progress <= -PI2) {
         this.progress += PI2;
@@ -341,11 +359,33 @@
       this.cars = [new Car(1, this.track.a - 2.8, this.track), new Car(2, this.track.a + 2.8, this.track)];
       this.inputs = { 1: ZERO_INPUT(), 2: ZERO_INPUT() };
       this.controllers = { 1: false, 2: false };
+      this.laps = CFG.totalLaps;
+      this.bot = false;
       this.winner = null;
       this.events = [];
       this.banner = { text: '', seq: 0 };
       this.bannerSeq = 0;
       this.lastActivity = Date.now();
+    }
+
+    setLaps(n) {
+      if (this.state !== 'waiting') return false;
+      n = parseInt(n, 10);
+      if (![1, 3, 5].includes(n)) return false;
+      this.laps = n;
+      return true;
+    }
+
+    setBot(on) {
+      if (this.state !== 'waiting') return false;
+      this.bot = !!on;
+      return true;
+    }
+
+    setPlayerMeta(slot, meta) {
+      const car = this.cars[slot - 1];
+      if (car && meta) car.setMeta(meta.name, meta.color);
+      if (car && meta && meta.cls) car.setClass(meta.cls);
     }
 
     participants() { return this.cars.filter((c) => c.participating); }
@@ -383,9 +423,12 @@
       this.raceTime = 0;
       this.winner = null;
       this.banner = { text: '', seq: ++this.bannerSeq };
-      this.cars.forEach((c) => c.resetState(0));
+      this.cars.forEach((c) => { c.maxLaps = this.laps; c.resetState(0); });
       this.cars[0].participating = true;
-      this.cars[1].participating = this.mode === 'race' && this.controllers[2];
+      const botActive = this.mode === 'race' && this.bot && !this.controllers[2];
+      if (botActive) this.cars[1].setMeta('AI DRIVER', 0x0a84ff);
+      this.cars[1].participating = this.mode === 'race' && (this.controllers[2] || botActive);
+      this._botActive = botActive;
       this.state = 'countdown';
       this.countVal = 3;
       this.countTimer = 0;
@@ -434,6 +477,21 @@
       });
     }
 
+    botInput() {
+      const car = this.cars[1];
+      const a = this.track.a, b = this.track.b;
+      const phi = Math.atan2(car.z / b, car.x / a);
+      const la = phi + 0.10;
+      const tx = a * Math.cos(la), tz = b * Math.sin(la);
+      const desired = Math.atan2(tx - car.x, tz - car.z);
+      let diff = desired - car.heading;
+      while (diff > Math.PI) diff -= PI2;
+      while (diff < -Math.PI) diff += PI2;
+      const steer = clamp(-diff * 2.2, -1, 1);
+      const throttle = clamp(0.94 - Math.abs(steer) * 0.45, 0.4, 0.94);
+      return { steer, throttle, brake: 0, handbrake: false, nitro: Math.abs(steer) < 0.15 && Math.random() < 0.015 };
+    }
+
     update(dt) {
       if (this.state === 'waiting' || this.state === 'finished') return;
       this.raceTime += dt;
@@ -454,6 +512,7 @@
         }
       }
 
+      if (this._botActive && this.state === 'racing') this.inputs[2] = this.botInput();
       this.applyInputs();
       const colliders = this.track.world.colliders;
 
@@ -488,7 +547,8 @@
         if (allDone || this.raceTime - firstFinishedAt > 12) {
           this.state = 'finished';
           const order = this.standings().map((c) => ({
-            slot: c.slot, finished: c.finished, t: c.finishTime != null ? r3(c.finishTime) : null, best: c.best != null ? r3(c.best) : null
+            slot: c.slot, name: c.name, color: c.color, finished: c.finished,
+            t: c.finishTime != null ? r3(c.finishTime) : null, best: c.best != null ? r3(c.best) : null
           }));
           this.events.push({ type: 'results', order });
         }
@@ -505,10 +565,14 @@
         raceTime: r3(this.raceTime),
         count: this.state === 'countdown' ? r3(this.countVal + (1 - this.countTimer)) : null,
         winner: this.winner,
+        laps: this.laps,
+        bot: !!this._botActive,
         controllers: { 1: this.controllers[1], 2: this.controllers[2] },
         banner: this.banner,
         cars: this.cars.map((c) => ({
           s: c.slot,
+          nm: c.name,
+          col: c.color,
           x: r3(c.x), z: r3(c.z), h: r3(c.heading),
           v: r3(c.forwardSpeed()),
           sl: r3(c.slip),
