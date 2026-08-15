@@ -64,11 +64,11 @@ function themeSettings(theme) {
     exposure: 1.1, night: true, ocean: false, palms: false, pines: false
   };
   if (theme === 'island') return {
-    bg: 0xcfe8f2, fogNear: 340, fogFar: 1000,
-    skyTop: 0x1e9ae0, skyHorizon: 0xe2f4f7, skyBottom: 0x9cc8ae,
-    hemiSky: 0xcfeeff, hemiGround: 0x6a8a5a, hemiInt: 0.62,
-    sunColor: 0xfff0c8, sunInt: 1.65, sunPos: [230, 260, 120],
-    exposure: 1.05, night: false, ocean: true, palms: true, pines: false
+    bg: 0xffcf9a, fogNear: 300, fogFar: 900,
+    skyTop: 0x27406f, skyHorizon: 0xff9a4d, skyBottom: 0xd8865a,
+    hemiSky: 0xffc08a, hemiGround: 0x8a5a3a, hemiInt: 0.6,
+    sunColor: 0xffa040, sunInt: 1.8, sunPos: [260, 90, 150],
+    exposure: 1.12, night: false, ocean: true, palms: true, pines: false
   };
   return { // highland (default)
     bg: 0xd7e3ec, fogNear: 320, fogFar: 980,
@@ -296,11 +296,11 @@ function buildWorld(map) {
   // ground (+ ocean for island)
   if (T.ocean) {
     const water = new THREE.Mesh(new THREE.CircleGeometry(1500, 64),
-      new THREE.MeshStandardMaterial({ color: 0x1273b8, roughness: 0.35, metalness: 0.1 }));
+      new THREE.MeshStandardMaterial({ color: 0x18a0b8, roughness: 0.3, metalness: 0.15 }));
     water.rotation.x = -Math.PI / 2; water.position.y = -0.4;
     worldGroup.add(water);
     const island = new THREE.Mesh(new THREE.CircleGeometry(Math.max(A, B) + RH + 70, 64),
-      new THREE.MeshStandardMaterial({ map: grassTexture('#3f9a4f'), roughness: 1 }));
+      new THREE.MeshStandardMaterial({ map: grassTexture('#b8a058'), roughness: 1 }));
     island.rotation.x = -Math.PI / 2; island.receiveShadow = true;
     worldGroup.add(island);
   } else {
