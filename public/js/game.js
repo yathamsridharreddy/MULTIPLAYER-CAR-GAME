@@ -270,6 +270,61 @@ function updateClouds(dt) {
 // ---------------------------------------------------------------------------
 // buildWorld — rebuilds all themed geometry for a map
 // ---------------------------------------------------------------------------
+
+function centerline(map) {
+  if (map.type === 'spline') return map.points;
+  const out = [];
+  for (let i = 0; i < 256; i++) { const t = i / 256 * PI2; out.push({ x: A * Math.cos(t), z: B * Math.sin(t) }); }
+  return out;
+}
+function ribbon(pts, offset, halfW, y, mat) {
+  const n = pts.length; const pos = []; const idx = [];
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], q = pts[(i + 1) % n];
+    let tx = q.x - p.x, tz = q.z - p.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+    const nx = -tz, nz = tx;
+    pos.push(p.x + nx * (offset + halfW), y, p.z + nz * (offset + halfW), p.x + nx * (offset - halfW), y, p.z + nz * (offset - halfW));
+  }
+  for (let i = 0; i < n; i++) { const a = 2 * i, b = 2 * i + 1, c = 2 * ((i + 1) % n), d = 2 * ((i + 1) % n) + 1; idx.push(a, b, c, b, d, c); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true;
+  worldGroup.add(m); return m;
+}
+function buildSplineVisuals(map, T) {
+  const cl = map.points;
+  ribbon(cl, 0, RH, 0.02, new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
+  const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8 });
+  ribbon(cl, RH - 0.7, 0.18, 0.045, lineMat);
+  ribbon(cl, -(RH - 0.7), 0.18, 0.045, lineMat);
+  const p0 = cl[0], p1 = cl[1];
+  const yaw = Math.atan2(p1.x - p0.x, p1.z - p0.z);
+  const c = document.createElement('canvas'); c.width = 160; c.height = 32;
+  const g = c.getContext('2d');
+  for (let i = 0; i < 10; i++) for (let j = 0; j < 2; j++) { g.fillStyle = (i + j) % 2 ? '#101010' : '#f4f4f4'; g.fillRect(i * 16, j * 16, 16, 16); }
+  const tex = new THREE.CanvasTexture(c); tex.magFilter = THREE.NearestFilter; tex.encoding = THREE.sRGBEncoding;
+  const line = new THREE.Mesh(new THREE.PlaneGeometry(RH * 2, 2.6), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.75 }));
+  line.rotation.x = -Math.PI / 2; line.rotation.z = -yaw; line.position.set(p0.x, 0.06, p0.z);
+  worldGroup.add(line);
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0xd8dbe2, metalness: 0.7, roughness: 0.35 });
+  const poleGeo = new THREE.CylinderGeometry(0.28, 0.34, 8, 10);
+  const nx = Math.cos(yaw), nz = -Math.sin(yaw);
+  for (const side of [-1, 1]) {
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.set(p0.x + (-nz) * side * (RH + 1.4), 4, p0.z + (nx) * side * (RH + 1.4));
+    pole.castShadow = true; worldGroup.add(pole);
+  }
+  const bc = document.createElement('canvas'); bc.width = 512; bc.height = 96;
+  const bg = bc.getContext('2d');
+  for (let i = 0; i < 32; i++) for (let j = 0; j < 2; j++) { bg.fillStyle = (i + j) % 2 ? '#111' : '#f2f2f2'; bg.fillRect(i * 16, j * 12, 16, 12); }
+  bg.fillStyle = 'rgba(10,12,20,0.88)'; bg.fillRect(0, 24, 512, 72);
+  bg.fillStyle = '#ffd479'; bg.font = '900 44px Arial Black, Arial'; bg.textAlign = 'center'; bg.fillText('START / FINISH', 256, 78);
+  const btex = new THREE.CanvasTexture(bc); btex.encoding = THREE.sRGBEncoding;
+  const bannerMesh = new THREE.Mesh(new THREE.PlaneGeometry(RH * 2 + 2.8, 2.2), new THREE.MeshStandardMaterial({ map: btex, side: THREE.DoubleSide, roughness: 0.7 }));
+  bannerMesh.position.set(p0.x, 7.1, p0.z); bannerMesh.rotation.y = yaw;
+  bannerMesh.castShadow = true; worldGroup.add(bannerMesh);
+}
 function buildWorld(map) {
   curMap = map;
   A = map.a; B = map.b;
@@ -311,6 +366,7 @@ function buildWorld(map) {
   }
 
   // road
+  if (map.type !== 'spline') {
   const road = new THREE.Mesh(ellipseRing(-RH, RH, 128),
     new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
   road.position.y = 0.02; road.receiveShadow = true;
@@ -383,6 +439,9 @@ function buildWorld(map) {
     bannerMesh.position.set(A, 7.1, 0);
     bannerMesh.castShadow = true;
     worldGroup.add(bannerMesh);
+  }
+  } else {
+    buildSplineVisuals(map, T);
   }
 
   // buildings
@@ -1448,11 +1507,15 @@ function drawMinimap(mine, rival) {
   mctx.strokeStyle = 'rgba(255,255,255,0.16)';
   mctx.lineWidth = (RH * 2) * MSCALE;
   mctx.beginPath();
-  mctx.ellipse(0, 0, A * MSCALE, B * MSCALE, 0, 0, Math.PI * 2);
+  if (curMap && curMap.type === 'spline') { curMap.points.forEach((p, i) => { const X = p.x * MSCALE, Z = p.z * MSCALE; if (i === 0) mctx.moveTo(X, Z); else mctx.lineTo(X, Z); }); mctx.closePath(); }
+  else mctx.ellipse(0, 0, A * MSCALE, B * MSCALE, 0, 0, Math.PI * 2);
   mctx.stroke();
   mctx.strokeStyle = 'rgba(255,255,255,0.5)'; mctx.lineWidth = 1; mctx.stroke();
   mctx.strokeStyle = '#fff'; mctx.lineWidth = 2;
-  mctx.beginPath(); mctx.moveTo((A - RH) * MSCALE, 0); mctx.lineTo((A + RH) * MSCALE, 0); mctx.stroke();
+  mctx.beginPath();
+  if (curMap && curMap.type === 'spline') { const p0 = curMap.points[0]; mctx.moveTo(p0.x * MSCALE - 4, p0.z * MSCALE); mctx.lineTo(p0.x * MSCALE + 4, p0.z * MSCALE); }
+  else { mctx.moveTo((A - RH) * MSCALE, 0); mctx.lineTo((A + RH) * MSCALE, 0); }
+  mctx.stroke();
   for (const cs of [mine, rival]) {
     if (!cs || cs.p !== 1) continue;
     mctx.fillStyle = '#' + cbCol(cs.s).toString(16).padStart(6, '0');
