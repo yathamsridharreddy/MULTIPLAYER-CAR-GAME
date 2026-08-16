@@ -90,6 +90,7 @@ function showBanner(t) {
 const net = new RoomLink({
   onWelcome(msg) {
     state.slot = msg.slot;
+    $('pads').classList.remove('locked');
     document.body.dataset.player = msg.slot === 2 ? 'p2' : 'p1';
     $('player-label').textContent = msg.slot === 1 ? 'PLAYER 1' : 'PLAYER 2';
     $('player-label').style.display = '';
@@ -125,7 +126,7 @@ const net = new RoomLink({
 });
 
 function showJoinScreen(err) { $('join-screen').style.display = 'flex'; $('pads').classList.add('locked'); if (err) $('join-error').textContent = err; }
-function joinRoom(code) { $('join-screen').style.display = 'none'; setStatus('Connecting…', 'wait'); net.connect({ type: 'hello', role: 'controller', room: code.toUpperCase().trim() }); }
+function joinRoom(code) { $('join-screen').style.display = 'none'; $('pads').classList.remove('locked'); setStatus('Connecting…', 'wait'); net.connect({ type: 'hello', role: 'controller', room: code.toUpperCase().trim() }); }
 
 const wantedRoom = urlParam('room');
 if (wantedRoom) joinRoom(wantedRoom); else showJoinScreen('');
