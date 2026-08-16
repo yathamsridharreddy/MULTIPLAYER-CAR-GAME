@@ -1275,8 +1275,29 @@ function maybeSendKeyboard(dt) {
 // Camera (unchanged)
 // ---------------------------------------------------------------------------
 let camMode = 0;
+let splitScreen = false;
 const lookTarget = new THREE.Vector3(A - 2.8, 1, 0);
 function cycleCamera() { camMode = (camMode + 1) % 3; }
+function aimChaseInstant(cs) {
+  const dir = new THREE.Vector3(Math.sin(cs.h), 0, Math.cos(cs.h));
+  const pos = new THREE.Vector3(cs.x, 0, cs.z);
+  camera.position.copy(pos).addScaledVector(dir, -8.2);
+  camera.position.y = 3.2;
+  camera.lookAt(pos.clone().addScaledVector(dir, 5).add(new THREE.Vector3(0, 1.1, 0)));
+}
+function renderSplit(dt) {
+  const w = window.innerWidth, h = window.innerHeight, hh = Math.floor(h / 2);
+  camera.aspect = w / hh; camera.updateProjectionMatrix();
+  const c1 = interpState(1), c2 = interpState(2);
+  renderer.setScissorTest(true);
+  renderer.setViewport(0, h - hh, w, hh); renderer.setScissor(0, h - hh, w, hh);
+  if (c1) aimChaseInstant(c1);
+  renderer.render(scene, camera);
+  renderer.setViewport(0, 0, w, hh); renderer.setScissor(0, 0, w, hh);
+  if (c2) aimChaseInstant(c2);
+  renderer.render(scene, camera);
+  renderer.setScissorTest(false);
+}
 function updateCamera(dt, mine, rival) {
   if (!mine) return;
   const dir = new THREE.Vector3(Math.sin(mine.h), 0, Math.cos(mine.h));
@@ -1585,7 +1606,13 @@ function updateCountdownVisual() {
 $('start-btn').addEventListener('click', () => { ensureAudio(); net.send({ type: 'start' }); });
 $('rematch-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'start' }); });
 $('menu-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'reset' }); });
-document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click', () => net.send({ type: 'mode', mode: b.dataset.mode })));
+document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click', () => {
+  const m = b.dataset.mode;
+  document.querySelectorAll('.mode-btn').forEach((x) => x.classList.toggle('active', x === b));
+  if (m === 'split') { splitScreen = true; net.send({ type: 'mode', mode: 'race' }); }
+  else { splitScreen = false; net.send({ type: 'mode', mode: m }); }
+  const div = $('split-divider'); if (div) div.style.display = splitScreen ? '' : 'none';
+}));
 document.querySelectorAll('.map-btn').forEach((b) => b.addEventListener('click', () => net.send({ type: 'map', map: parseInt(b.dataset.map, 10) })));
 $('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); });
 const exitBtn = $('exit-btn');
@@ -1625,11 +1652,10 @@ function frame() {
   placeCar(2, interpState(2), dt);
   updateParticles(dt);
   updateClouds(dt);
-  updateCamera(dt, mine, rival);
   updateArrow(rival);
   updateAudio(mine, rival);
   updateHUD(mine, rival);
   maybeSendKeyboard(dt);
-  renderer.render(scene, camera);
+  if (splitScreen) { renderSplit(dt); } else { updateCamera(dt, mine, rival); renderer.render(scene, camera); }
 }
 frame();
