@@ -155,6 +155,7 @@
       this.cls = CAR_CLASSES.velocity;
       this.maxLaps = CFG.totalLaps;
       this.input = ZERO_INPUT();
+      this.driftScore = 0; this.eliminated = false;
       this.participating = slot === 1;
       this.name = 'PLAYER ' + slot;
       this.color = slot === 1 ? 0xe10600 : 0x0a84ff;
@@ -183,6 +184,7 @@
       this.nitroMeter = 100; this.nitroActive = false;
       this.finished = false; this.finishTime = null;
       this._lb = false;
+      this.driftScore = 0; this.eliminated = false;
     }
 
     resetGrid(time) {
@@ -256,6 +258,7 @@
       this.vx = dirX * fwd + rightX * latAfter;
       this.vy = dirY * fwd + rightY * latAfter;
       this.slip = Math.abs(lat);
+      if (this.slip > 3.5 && Math.abs(fwd) > 6 && !this.finished) this.driftScore += this.slip * dt * 2;
 
       const speedFactor = clamp(Math.abs(fwd) / 7, 0, 1);
       const agility = CFG.steerRate * this.cls.steer * speedFactor / (1 + Math.abs(fwd) * 0.022);
@@ -349,7 +352,7 @@
   class RaceRoom {
     constructor(code, mode, mapId) {
       this.code = code;
-      this.mode = mode === 'coop' ? 'coop' : 'race';
+      this.mode = ['coop','elim','drift'].includes(mode) ? mode : 'race';
       this.mapId = (mapId != null && MAPS[mapId]) ? mapId : 0;
       this.track = MAPS[this.mapId];
       this.state = 'waiting';
@@ -392,7 +395,7 @@
 
     setMode(mode) {
       if (this.state !== 'waiting') return false;
-      this.mode = mode === 'coop' ? 'coop' : 'race';
+      this.mode = ['coop','elim','drift'].includes(mode) ? mode : 'race';
       return true;
     }
 
@@ -425,9 +428,9 @@
       this.banner = { text: '', seq: ++this.bannerSeq };
       this.cars.forEach((c) => { c.maxLaps = this.laps; c.resetState(0); });
       this.cars[0].participating = true;
-      const botActive = this.mode === 'race' && this.bot && !this.controllers[2];
+      const botActive = this.mode !== 'coop' && this.bot && !this.controllers[2];
       if (botActive) this.cars[1].setMeta('AI DRIVER', 0x0a84ff);
-      this.cars[1].participating = this.mode === 'race' && (this.controllers[2] || botActive);
+      this.cars[1].participating = this.mode !== 'coop' && (this.controllers[2] || botActive);
       this._botActive = botActive;
       this.state = 'countdown';
       this.countVal = 3;
@@ -470,6 +473,8 @@
     standings() {
       const cars = this.participants();
       return cars.slice().sort((a, b) => {
+        if (this.mode === 'drift') return b.driftScore - a.driftScore;
+        if (this.mode === 'elim') return (b.eliminated ? 0 : 1) - (a.eliminated ? 0 : 1) || b.totalProgress() - a.totalProgress();
         if (a.finished && b.finished) return a.finishTime - b.finishTime;
         if (a.finished) return -1;
         if (b.finished) return 1;
@@ -520,6 +525,15 @@
         if (this.mode === 'coop' && car.slot === 2) continue;
         const ev = car.update(dt, this.raceTime, this.state, colliders);
         if (ev.crash) this.events.push({ type: 'crash', slot: car.slot, x: r3(ev.crash.x), z: r3(ev.crash.z), s: r3(ev.crash.s) });
+        if (ev.lap && this.mode === 'elim') {
+          const alive = this.cars.filter((c) => c.participating && !c.eliminated && c.slot !== car.slot);
+          if (alive.length) {
+            const last = alive.reduce((a, b) => (a.totalProgress() < b.totalProgress() ? a : b));
+            last.eliminated = true; last.participating = false;
+            this.events.push({ type: 'elim', slot: last.slot });
+            this.setBanner(`❌ P${last.slot} ELIMINATED`);
+          }
+        }
         if (ev.lap) {
           if (ev.lap.isFinalNext) {
             this.events.push({ type: 'finallap', slot: car.slot });
@@ -530,13 +544,25 @@
         }
         if (ev.finish) {
           if (!this.winner) {
-            this.winner = car.slot;
+            this.winner = this.mode === 'drift'
+              ? (this.cars[0].driftScore >= this.cars[1].driftScore ? 1 : 2)
+              : car.slot;
             const multi = this.participants().length > 1;
             this.setBanner(multi ? `PLAYER ${car.slot} WINS!` : `FINISH — ${fmtTime(car.finishTime)}`);
             this.events.push({ type: 'win', slot: car.slot, multi, t: r3(car.finishTime) });
           } else {
             this.events.push({ type: 'finished', slot: car.slot, t: r3(car.finishTime) });
           }
+        }
+      }
+
+      if (this.state === 'racing' && this.mode === 'elim') {
+        const alive = this.cars.filter((c) => c.participating);
+        if (alive.length <= 1) {
+          this.winner = alive[0] ? alive[0].slot : null;
+          this.state = 'finished';
+          this.setBanner(`🏆 P${this.winner} WINS THE DUEL!`);
+          this.events.push({ type: 'results', order: this.standings().map((c) => ({ slot: c.slot, name: c.name, color: c.color, finished: c.finished, t: c.finishTime != null ? r3(c.finishTime) : null, best: c.best != null ? r3(c.best) : null, drift: Math.round(c.driftScore), elim: c.eliminated })) });
         }
       }
 
@@ -586,6 +612,8 @@
           best: c.best != null ? r3(c.best) : null,
           fin: c.finished ? 1 : 0,
           ft: c.finishTime != null ? r3(c.finishTime) : null,
+          drift: Math.round(c.driftScore),
+          elim: c.eliminated ? 1 : 0,
           p: c.participating ? 1 : 0
         })),
         events: this.events.splice(0, this.events.length)

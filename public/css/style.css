@@ -429,5 +429,3 @@ button.ghost.sm { padding: 5px 12px; font-size: 11px; letter-spacing: 1px; font-
   display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 12px;
 }
 .id-grid { display: flex; flex-direction: column; gap: 10px; }
-
-#split-divider{position:fixed;left:0;right:0;top:50%;height:3px;background:linear-gradient(90deg,#ffd479,#ff5252);z-index:8;box-shadow:0 0 12px rgba(255,120,60,.6);}

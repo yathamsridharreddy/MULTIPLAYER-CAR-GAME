@@ -80,7 +80,19 @@
   </div>
 
   <!-- Lobby / start overlay : two pages -->
-  <div id="overlay">
+  <div id="tutorial" style="display:none">
+      <div class="tut-card">
+        <h2>🎓 HOW TO PLAY</h2>
+        <ul>
+          <li>📱 Scan the QR with your phone — it becomes your joystick.</li>
+          <li>🕹️ Left stick steers · Right stick = gas/brake · NITRO boosts.</li>
+          <li>⌨️ No phone? Use <b>WASD</b>, <b>Shift</b> nitro, <b>Space</b> drift.</li>
+          <li>🏁 Pick a map & car, then START. First to the line wins.</li>
+        </ul>
+        <button id="tut-close" class="big-cta">GOT IT — LET'S RACE</button>
+      </div>
+    </div>
+    <div id="overlay">
     <!-- ============ PAGE 1 : MAIN ============ -->
     <div id="page1" class="page">
       <div id="overlay-card">
@@ -124,6 +136,8 @@
           <button class="mode-btn active" data-mode="race">⚔️ RIVAL RUSH<em>2 cars online — each laptop follows its own car</em></button>
           <button class="mode-btn" data-mode="coop">🏎️ SOLO RUSH<em>1 car co-op — both phones drive together</em></button>
           <button class="mode-btn" data-mode="split">🏁 LOCAL DUEL<em>2 cars split-screen — one laptop</em></button>
+          <button class="mode-btn" data-mode="elim">❌ ELIMINATION<em>last place drops every lap</em></button>
+          <button class="mode-btn" data-mode="drift">🌀 DRIFT SCORE<em>highest drift points wins</em></button>
         </div>
         <div id="split-divider" style="display:none"></div>
 
@@ -138,6 +152,9 @@
                 <button class="q-btn active" data-q="high">HIGH</button>
               </div>
               <label class="toggle-line"><input type="checkbox" id="set-mute"/> 🔇 Mute all audio</label>
+              <label class="toggle-line"><input type="checkbox" id="set-rm"/> ✨ Reduced motion</label>
+              <label class="toggle-line"><input type="checkbox" id="set-cb"/> 🎨 Colorblind-friendly UI</label>
+              <label class="toggle-line"><input type="checkbox" id="set-ar" checked/> ⚙️ Adaptive resolution</label>
             </div>
             <div class="lsec">
               <div class="lsec-title">LEADERBOARD — TOP 5</div>

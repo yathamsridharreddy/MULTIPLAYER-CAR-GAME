@@ -744,7 +744,7 @@ const CAR_NAMES = [
 function loadPrefs() {
   try { return Object.assign({
     name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: true, mute: false, fpsmeter: false
+    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
   catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false }; }
 }
@@ -871,6 +871,10 @@ function wireLobbyV2() {
   const muteEl = $('set-mute'); if (muteEl) { muteEl.checked = !!prefs.mute; muteEl.addEventListener('change', () => { prefs.mute = muteEl.checked; savePrefs(); setAudio(); }); }
   const musicEl = $('set-music'); if (musicEl) { musicEl.checked = !!prefs.music; musicEl.addEventListener('change', () => { prefs.music = musicEl.checked; savePrefs(); ensureAudio(); setAudio(); }); }
   const fpsEl = $('set-fps'); if (fpsEl) { fpsEl.checked = !!prefs.fpsmeter; fpsEl.addEventListener('change', () => { prefs.fpsmeter = fpsEl.checked; savePrefs(); }); }
+  const rmEl = $('set-rm'); if (rmEl) { rmEl.checked = !!prefs.rm; rmEl.addEventListener('change', () => { prefs.rm = rmEl.checked; savePrefs(); }); }
+  const cbEl = $('set-cb'); if (cbEl) { cbEl.checked = !!prefs.cb; cbEl.addEventListener('change', () => { prefs.cb = cbEl.checked; savePrefs(); }); }
+  const arEl = $('set-ar'); if (arEl) { arEl.checked = !!prefs.ar; arEl.addEventListener('change', () => { prefs.ar = arEl.checked; savePrefs(); }); }
+  const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutorial').style.display = 'none'; try { localStorage.setItem('sr_tut', '1'); } catch (e) {} });
   const shareEl = $('share-btn');
   if (shareEl) shareEl.addEventListener('click', () => {
     if (!lastResults) return;
@@ -879,6 +883,9 @@ function wireLobbyV2() {
     copyText(`🏁 SRIDHAR RUSH — ${mapName}\n${lines}`);
     toast('Result copied — share it!');
   });
+}
+function cbCol(slot) {
+  return prefs.cb ? (slot === 1 ? 0xff9500 : 0x0072e6) : (slot === 1 ? 0xff5252 : 0x42a5f5);
 }
 function applyMyColor() {
   if (carVisuals[mySlot] && carVisuals[mySlot].paint) carVisuals[mySlot].paint.color.setHex(prefs.color);
@@ -949,7 +956,7 @@ function interpState(slot) {
   return {
     s: slot, x: lerp(ca.x, cb.x, alpha), z: lerp(ca.z, cb.z, alpha), h: lerpAngle(ca.h, cb.h, alpha),
     v: lerp(ca.v, cb.v, alpha), sl: lerp(ca.sl, cb.sl, alpha), st: cb.st, th: cb.th,
-    n: cb.n, m: cb.m, lap: cb.lap, ll: ca.ll, best: cb.best, fin: cb.fin, ft: cb.ft, p: cb.p, pr: cb.pr
+    n: cb.n, m: cb.m, lap: cb.lap, ll: ca.ll, best: cb.best, fin: cb.fin, ft: cb.ft, p: cb.p, pr: cb.pr, drift: cb.drift || 0, elim: cb.elim || 0
   };
 }
 function standingsFrom(snap) {
@@ -983,6 +990,7 @@ function setBanner(text) {
   clearTimeout(setBanner._t); setBanner._t = setTimeout(() => b.classList.remove('show'), 4200);
 }
 function confetti() {
+  if (prefs.rm) return;
   const c = $('confetti'); c.innerHTML = '';
   const colors = ['#ff5252', '#ffd479', '#42a5f5', '#3ddc84', '#ffffff'];
   for (let i = 0; i < 90; i++) {
@@ -1077,6 +1085,7 @@ function processEvents(snap) {
       case 'crash': onCrashFX(e.x, e.z, e.s); break;
       case 'lap': toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
       case 'finallap': toast(`🔥 P${e.slot}: FINAL LAP!`); beep(660, 0.14, 'square', 0.2); break;
+      case 'elim': setBanner(`❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
       case 'win': setBanner(e.multi ? `🏁 PLAYER ${e.slot} WINS!` : `🏁 FINISH — ${fmtTime(e.t)}`); confetti(); winJingle(); break;
       case 'finished': toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
       case 'results': showResults(e.order); break;
@@ -1207,34 +1216,13 @@ function maybeSendKeyboard(dt) {
 // Camera (unchanged)
 // ---------------------------------------------------------------------------
 let camMode = 0;
-let splitScreen = false;
 const lookTarget = new THREE.Vector3(A - 2.8, 1, 0);
 function cycleCamera() { camMode = (camMode + 1) % 3; }
-function aimChaseInstant(cs) {
-  const dir = new THREE.Vector3(Math.sin(cs.h), 0, Math.cos(cs.h));
-  const pos = new THREE.Vector3(cs.x, 0, cs.z);
-  camera.position.copy(pos).addScaledVector(dir, -8.2);
-  camera.position.y = 3.2;
-  camera.lookAt(pos.clone().addScaledVector(dir, 5).add(new THREE.Vector3(0, 1.1, 0)));
-}
-function renderSplit(dt) {
-  const w = window.innerWidth, h = window.innerHeight, hh = Math.floor(h / 2);
-  camera.aspect = w / hh; camera.updateProjectionMatrix();
-  const c1 = interpState(1), c2 = interpState(2);
-  renderer.setScissorTest(true);
-  renderer.setViewport(0, h - hh, w, hh); renderer.setScissor(0, h - hh, w, hh);
-  if (c1) aimChaseInstant(c1);
-  renderer.render(scene, camera);
-  renderer.setViewport(0, 0, w, hh); renderer.setScissor(0, 0, w, hh);
-  if (c2) aimChaseInstant(c2);
-  renderer.render(scene, camera);
-  renderer.setScissorTest(false);
-}
 function updateCamera(dt, mine, rival) {
   if (!mine) return;
   const dir = new THREE.Vector3(Math.sin(mine.h), 0, Math.cos(mine.h));
   let desired, look, sepFov = 0;
-  const dual = false; // online: each laptop chases its own car
+  const dual = rival && rival.p === 1 && camMode !== 2 && latest && latest.state !== 'waiting';
   if (camMode === 2) {
     desired = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, 0.4).add(new THREE.Vector3(0, 1.18, 0));
     look = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, 40).add(new THREE.Vector3(0, 1.0, 0));
@@ -1264,7 +1252,7 @@ function updateCamera(dt, mine, rival) {
   const sp = clamp(Math.abs(mine.v) / CFG.maxSpeed, 0, 1.3);
   const baseShake = sp > 0.72 ? (sp - 0.72) * 0.05 : 0;
   shakeAmp = Math.max(0, shakeAmp - shakeAmp * 4.2 * dt);
-  const amp = shakeAmp + baseShake;
+  const amp = prefs.rm ? 0 : (shakeAmp + baseShake);
   if (amp > 0.001) {
     camera.position.x += (Math.random() - 0.5) * amp;
     camera.position.y += (Math.random() - 0.5) * amp * 0.6;
@@ -1467,7 +1455,7 @@ function drawMinimap(mine, rival) {
   mctx.beginPath(); mctx.moveTo((A - RH) * MSCALE, 0); mctx.lineTo((A + RH) * MSCALE, 0); mctx.stroke();
   for (const cs of [mine, rival]) {
     if (!cs || cs.p !== 1) continue;
-    mctx.fillStyle = cs.s === 1 ? '#ff5252' : '#42a5f5';
+    mctx.fillStyle = '#' + cbCol(cs.s).toString(16).padStart(6, '0');
     mctx.beginPath(); mctx.arc(cs.x * MSCALE, cs.z * MSCALE, 3.4, 0, Math.PI * 2); mctx.fill();
   }
   mctx.restore();
@@ -1477,7 +1465,7 @@ function updateHUD(mine, rival) {
   updateModeLabels(latest.mode);
   // player names on pills
   const c1 = latest.cars[0], c2 = latest.cars[1];
-  if (latest.mode === 'race') {
+  if (latest.mode !== 'coop') {
     $('pill-p1').querySelector('span').textContent = c1.nm || 'PLAYER 1';
     $('pill-p2').querySelector('span').textContent = c2.nm || 'PLAYER 2';
   } else {
@@ -1516,7 +1504,10 @@ function updateHUD(mine, rival) {
   } else {
     $('lap-p2').style.display = 'none';
   }
-  $('speedlines').style.opacity = clamp((Math.abs(mine.v) - 26) / 34, 0, 0.6);
+  if (latest.mode === 'drift') {
+    $('raceinfo').innerHTML += `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">DRIFT ${mine.drift || 0}</span>`;
+  }
+  $('speedlines').style.opacity = prefs.rm ? 0 : clamp((Math.abs(mine.v) - 26) / 34, 0, 0.6);
   drawMinimap(mine, rival);
 }
 function updateCountdownVisual() {
@@ -1531,12 +1522,7 @@ function updateCountdownVisual() {
 $('start-btn').addEventListener('click', () => { ensureAudio(); net.send({ type: 'start' }); });
 $('rematch-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'start' }); });
 $('menu-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'reset' }); });
-document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click', () => {
-  const m = b.dataset.mode;
-  if (m === 'split') { splitScreen = true; net.send({ type: 'mode', mode: 'race' }); }
-  else { splitScreen = false; net.send({ type: 'mode', mode: m }); }
-  const div = $('split-divider'); if (div) div.style.display = splitScreen ? '' : 'none';
-}));
+document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click', () => net.send({ type: 'mode', mode: b.dataset.mode })));
 document.querySelectorAll('.map-btn').forEach((b) => b.addEventListener('click', () => net.send({ type: 'map', map: parseInt(b.dataset.map, 10) })));
 $('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); });
 const exitBtn = $('exit-btn');
@@ -1552,13 +1538,23 @@ window.addEventListener('pointerdown', ensureAudio, { passive: true });
 // ---------------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------------
+let arCooldown = 0;
+function adaptRes() {
+  if (!prefs.ar) return;
+  arCooldown--;
+  if (arCooldown > 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const cur = renderer.getPixelRatio();
+  if (fps < 45 && cur > 1) { renderer.setPixelRatio(Math.max(1, cur - 0.5)); arCooldown = 3; }
+  else if (fps > 57 && cur < Math.min(dpr, 2)) { renderer.setPixelRatio(Math.min(Math.min(dpr, 2), cur + 0.5)); arCooldown = 3; }
+}
 const clock = new THREE.Clock();
 applyQuality(prefs.quality);
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05);
   fpsFrames++; fpsTime += dt;
-  if (fpsTime >= 1) { fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; }
+  if (fpsTime >= 1) { fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; adaptRes(); }
   const mine = interpState(mySlot);
   const rival = interpState(mySlot === 1 ? 2 : 1);
   if (latest && latest.state === 'countdown') updateCountdownVisual();
@@ -1566,11 +1562,11 @@ function frame() {
   placeCar(2, interpState(2), dt);
   updateParticles(dt);
   updateClouds(dt);
+  updateCamera(dt, mine, rival);
   updateArrow(rival);
   updateAudio(mine, rival);
   updateHUD(mine, rival);
   maybeSendKeyboard(dt);
-  if (splitScreen) { renderSplit(dt); }
-  else { updateCamera(dt, mine, rival); renderer.render(scene, camera); }
+  renderer.render(scene, camera);
 }
 frame();
