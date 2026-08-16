@@ -19,7 +19,7 @@
     brakeDecel: 34,
     reverseAccel: 11,
     reverseMax: 9,
-    steerRate: 2.35,
+    steerRate: 2.1,
     grip: 7.0,
     gripHandbrake: 1.6,
     carRadius: 1.25,
@@ -184,7 +184,7 @@
       this.nitroMeter = 100; this.nitroActive = false;
       this.finished = false; this.finishTime = null;
       this._lb = false;
-      this.driftScore = 0; this.eliminated = false;
+      this.driftScore = 0; this.eliminated = false; this.steerS = 0;
     }
 
     resetGrid(time) {
@@ -260,9 +260,10 @@
       this.slip = Math.abs(lat);
       if (this.slip > 3.5 && Math.abs(fwd) > 6 && !this.finished) this.driftScore += this.slip * dt * 2;
 
+      this.steerS += (inp.steer - this.steerS) * Math.min(1, dt * 9);
       const speedFactor = clamp(Math.abs(fwd) / 7, 0, 1);
       const agility = CFG.steerRate * this.cls.steer * speedFactor / (1 + Math.abs(fwd) * 0.022);
-      let yaw = inp.steer * agility * (fwd >= 0 ? 1 : -1);
+      let yaw = this.steerS * agility * (fwd >= 0 ? 1 : -1);
       if (inp.handbrake) yaw *= 1.5;
       this.heading -= yaw * dt;
 
