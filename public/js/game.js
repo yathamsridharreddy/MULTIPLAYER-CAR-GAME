@@ -792,6 +792,7 @@ function spawnSkid(x, z, heading) {
 let pingMs = -1;
 let fps = 0, fpsFrames = 0, fpsTime = 0;
 let selectedMap = 0;
+let viewMode = 'race';
 let lastResults = null;
 
 const CAR_COLORS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
@@ -1608,8 +1609,9 @@ $('rematch-btn').addEventListener('click', () => { $('results').classList.add('h
 $('menu-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'reset' }); });
 document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click', () => {
   const m = b.dataset.mode;
+  viewMode = m;
   document.querySelectorAll('.mode-btn').forEach((x) => x.classList.toggle('active', x === b));
-  if (m === 'split') { splitScreen = true; net.send({ type: 'mode', mode: 'race' }); }
+  if (m === 'split') { splitScreen = true; net.send({ type: 'mode', mode: 'race' }); toast('🏁 LOCAL DUEL — connect 2 phones, press START'); }
   else { splitScreen = false; net.send({ type: 'mode', mode: m }); }
   const div = $('split-divider'); if (div) div.style.display = splitScreen ? '' : 'none';
 }));
