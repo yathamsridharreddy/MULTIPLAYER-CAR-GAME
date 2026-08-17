@@ -298,6 +298,10 @@ function buildSplineVisuals(map, T) {
   const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8 });
   ribbon(cl, RH - 0.7, 0.18, 0.045, lineMat);
   ribbon(cl, -(RH - 0.7), 0.18, 0.045, lineMat);
+  // visible guard-rail fence at the barrier limit (car stops AT it)
+  const fenceMat = new THREE.MeshStandardMaterial({ color: 0xcfd6dd, metalness: 0.6, roughness: 0.4 });
+  ribbon(cl, RH + 1.6, 0.15, 0.5, fenceMat);
+  ribbon(cl, -(RH + 1.6), 0.15, 0.5, fenceMat);
   const p0 = cl[0], p1 = cl[1];
   const yaw = Math.atan2(p1.x - p0.x, p1.z - p0.z);
   const c = document.createElement('canvas'); c.width = 160; c.height = 32;

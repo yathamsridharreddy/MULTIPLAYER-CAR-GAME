@@ -640,11 +640,15 @@
     }
     return out;
   }
-  function splineNearest(track, x, z) {
-    const P = track.points; let best = 1e18, bi = 0;
-    for (let i = 0; i < P.length; i += 2) { const dx = x - P[i].x, dz = z - P[i].z, d = dx * dx + dz * dz; if (d < best) { best = d; bi = i; } }
-    for (let i = bi - 2; i <= bi + 2; i++) { const j = (i + P.length) % P.length; const dx = x - P[j].x, dz = z - P[j].z, d = dx * dx + dz * dz; if (d < best) { best = d; bi = j; } }
-    const c = P[bi], t2 = P[(bi + 1) % P.length];
+  function splineNearest(track, x, z, hint) {
+    const P = track.points, N = P.length; let best = 1e18, bi = 0;
+    if (hint != null) {
+      for (let k = -30; k <= 30; k++) { const j = (hint + k + N * 4) % N; const dx = x - P[j].x, dz = z - P[j].z, d = dx * dx + dz * dz; if (d < best) { best = d; bi = j; } }
+    } else {
+      for (let i = 0; i < N; i += 2) { const dx = x - P[i].x, dz = z - P[i].z, d = dx * dx + dz * dz; if (d < best) { best = d; bi = i; } }
+      for (let k = -2; k <= 2; k++) { const j = (bi + k + N) % N; const dx = x - P[j].x, dz = z - P[j].z, d = dx * dx + dz * dz; if (d < best) { best = d; bi = j; } }
+    }
+    const c = P[bi], t2 = P[(bi + 1) % N];
     let tx = t2.x - c.x, tz = t2.z - c.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
     const lat = tx * (z - c.z) - tz * (x - c.x);
     return { lat, cx: c.x, cz: c.z, tx, tz, idx: bi, along: bi / P.length };
@@ -696,7 +700,8 @@
     const dirX = Math.sin(this.heading), dirY = Math.cos(this.heading);
     const rightX = dirY, rightY = -dirX;
     let speed = this.vx * dirX + this.vy * dirY;
-    const near = splineNearest(T, this.x, this.z);
+    const near = splineNearest(T, this.x, this.z, this._nearIdx);
+    this._nearIdx = near.idx;
     const offroad = Math.abs(near.lat) > RH + 0.7;
     if (held) { this.vx = 0; this.vy = 0; this.slip = 0; }
     this.nitroActive = !!(inp.nitro && this.nitroMeter > 0 && inp.throttle > 0.1 && !this.finished);
@@ -738,8 +743,8 @@
         if (vn < 0) { if (vn < -7) ev.crash = { x: o.x + nx * o.r, z: o.z + nz * o.r, s: Math.min(1, -vn / 22) }; this.vx -= nx * vn * 1.5; this.vy -= nz * vn * 1.5; this.vx *= 0.55; this.vy *= 0.55; }
       }
     }
-    const lim = RH + 2.4;
-    const n2 = splineNearest(T, this.x, this.z);
+    const lim = RH + 1.6;
+    const n2 = near;
     if (Math.abs(n2.lat) > lim) {
       const cd = Math.hypot(this.x - n2.cx, this.z - n2.cz) || 1;
       const sc = lim / cd;
@@ -763,13 +768,13 @@
     return _carUpdate.apply(this, arguments);
   };
   const _carReset = Car.prototype.resetState;
-  Car.prototype.resetState = function (t) { this._along = null; return _carReset.apply(this, arguments); };
+  Car.prototype.resetState = function (t) { this._along = null; this._nearIdx = null; return _carReset.apply(this, arguments); };
   const _bot = RaceRoom.prototype.botInput;
   RaceRoom.prototype.botInput = function () {
     if (this.track && this.track.type === 'spline') {
       const car = this.cars[1];
       const P = this.track.points;
-      const n = splineNearest(this.track, car.x, car.z);
+      const n = splineNearest(this.track, car.x, car.z, car._nearIdx); car._nearIdx = n.idx;
       const la = P[(n.idx + 10) % P.length];
       const desired = Math.atan2(la.x - car.x, la.z - car.z);
       let diff = desired - car.heading;
@@ -787,7 +792,7 @@
       { x: -120, z: 40 }, { x: -95, z: -20 }, { x: -30, z: -35 }, { x: 20, z: -20 },
       { x: 60, z: -45 }, { x: 110, z: -60 }
     ]);
-    canyon.theme = 'highland'; canyon.name = 'CANYON CHICANE';
+    canyon.theme = 'neon'; canyon.name = 'CANYON CHICANE';
     canyon.world = makeSplineWorld(4242, canyon, 'highland');
     const hairpin = makeSplineTrack([
       { x: 140, z: 0 }, { x: 100, z: 70 }, { x: 20, z: 92 }, { x: -60, z: 72 },
