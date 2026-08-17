@@ -622,6 +622,183 @@
     }
   }
 
+
+  // ==================================================================
+  // SPLINED TRACKS (Release 2) — additive; ellipse path untouched
+  // ==================================================================
+  function catmullRom(pts, samplesPer) {
+    const out = []; const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+      for (let j = 0; j < samplesPer; j++) {
+        const t = j / samplesPer, t2 = t * t, t3 = t2 * t;
+        out.push({
+          x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+          z: 0.5 * ((2 * p1.z) + (-p0.z + p2.z) * t + (2 * p0.z - 5 * p1.z + 4 * p2.z - p3.z) * t2 + (-p0.z + 3 * p1.z - 3 * p2.z + p3.z) * t3)
+        });
+      }
+    }
+    return out;
+  }
+  function splineNearest(track, x, z) {
+    const P = track.points; let best = 1e18, bi = 0;
+    for (let i = 0; i < P.length; i += 2) { const dx = x - P[i].x, dz = z - P[i].z, d = dx * dx + dz * dz; if (d < best) { best = d; bi = i; } }
+    for (let i = bi - 2; i <= bi + 2; i++) { const j = (i + P.length) % P.length; const dx = x - P[j].x, dz = z - P[j].z, d = dx * dx + dz * dz; if (d < best) { best = d; bi = j; } }
+    const c = P[bi], t2 = P[(bi + 1) % P.length];
+    let tx = t2.x - c.x, tz = t2.z - c.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+    const lat = tx * (z - c.z) - tz * (x - c.x);
+    return { lat, cx: c.x, cz: c.z, tx, tz, idx: bi, along: bi / P.length };
+  }
+  function makeSplineTrack(ctrl) {
+    const points = catmullRom(ctrl, 16);
+    let mx = 0, mz = 0;
+    points.forEach((p) => { mx = Math.max(mx, Math.abs(p.x)); mz = Math.max(mz, Math.abs(p.z)); });
+    return { type: 'spline', points, a: mx, b: mz };
+  }
+  function makeSplineWorld(seed, track, theme) {
+    const rnd = mulberry32(seed);
+    const colliders = [], buildings = [], trees = [];
+    const P = track.points;
+    let placed = 0, attempts = 0;
+    while (placed < 30 && attempts++ < 400) {
+      const i = Math.floor(rnd() * P.length);
+      const n = splineNearest(track, P[i].x, P[i].z);
+      const side = rnd() < 0.5 ? 1 : -1;
+      const off = (RH + 26 + rnd() * 70) * side;
+      const x = n.cx + (-n.tz) * off, z = n.cz + (n.tx) * off;
+      const w = 8 + rnd() * 10, d = 8 + rnd() * 10, h = (theme === 'neon' ? 18 : 10) + rnd() * 20;
+      if (colliders.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + Math.hypot(w, d) / 2 + 4)) continue;
+      buildings.push({ x, z, w, d, h, rot: rnd() * Math.PI, tex: placed % 3 });
+      colliders.push({ x, z, r: Math.hypot(w, d) / 2 * 0.92 });
+      placed++;
+    }
+    placed = 0; attempts = 0;
+    while (placed < 110 && attempts++ < 900) {
+      const i = Math.floor(rnd() * P.length);
+      const n = splineNearest(track, P[i].x, P[i].z);
+      const side = rnd() < 0.45 ? -1 : 1;
+      const off = (RH + 6 + rnd() * 60) * side;
+      const x = n.cx + (-n.tz) * off, z = n.cz + (n.tx) * off;
+      if (colliders.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 3.2)) continue;
+      const sc = 0.75 + rnd() * 0.9;
+      trees.push({ x, z, s: sc, rot: rnd() * Math.PI, variant: placed % 2 });
+      colliders.push({ x, z, r: 0.9 * sc });
+      placed++;
+    }
+    return { buildings, trees, mountains: [], colliders, billboard: { x: P[0].x, z: P[0].z, rot: 0 } };
+  }
+
+  Car.prototype.updateSpline = function (dt, time, raceState, colliders) {
+    const ev = { crash: null, lap: null, finish: null };
+    const T = this.track, raw = this.input;
+    const held = raceState === 'countdown';
+    const inp = held ? { steer: raw.steer, throttle: 0, brake: 0, handbrake: true, nitro: false } : raw;
+    const dirX = Math.sin(this.heading), dirY = Math.cos(this.heading);
+    const rightX = dirY, rightY = -dirX;
+    let speed = this.vx * dirX + this.vy * dirY;
+    const near = splineNearest(T, this.x, this.z);
+    const offroad = Math.abs(near.lat) > RH + 0.7;
+    if (held) { this.vx = 0; this.vy = 0; this.slip = 0; }
+    this.nitroActive = !!(inp.nitro && this.nitroMeter > 0 && inp.throttle > 0.1 && !this.finished);
+    if (this.nitroActive) this.nitroMeter = Math.max(0, this.nitroMeter - CFG.nitroDrain * dt);
+    else this.nitroMeter = Math.min(100, this.nitroMeter + CFG.nitroRegen * dt);
+    let acc = 0;
+    if (inp.throttle > 0.02) acc += inp.throttle * CFG.engineAccel * this.cls.acc;
+    if (this.nitroActive) acc += CFG.nitroAccel;
+    if (inp.brake > 0.02) acc += speed > 0.6 ? -inp.brake * CFG.brakeDecel : -inp.brake * CFG.reverseAccel;
+    acc -= speed * 0.36; acc -= Math.sign(speed) * Math.min(Math.abs(speed), 1.7);
+    if (offroad) acc -= speed * 1.5;
+    if (this.finished) acc -= speed * 1.2;
+    this.vx += dirX * acc * dt; this.vy += dirY * acc * dt;
+    speed = this.vx * dirX + this.vy * dirY;
+    let cap = speed >= 0 ? (offroad ? CFG.maxSpeedOffroad : CFG.maxSpeed * this.cls.top) : -CFG.reverseMax;
+    if (speed >= 0 && this.nitroActive) cap += CFG.nitroCapBonus;
+    if ((speed > 0 && speed > cap) || (speed < 0 && speed < cap)) { this.vx -= dirX * (speed - cap); this.vy -= dirY * (speed - cap); speed = cap; }
+    const lat = this.vx * rightX + this.vy * rightY;
+    const grip = inp.handbrake ? CFG.gripHandbrake : CFG.grip * this.cls.grip;
+    const latAfter = lat * Math.max(0, 1 - grip * dt);
+    const fwd = this.vx * dirX + this.vy * dirY;
+    this.vx = dirX * fwd + rightX * latAfter; this.vy = dirY * fwd + rightY * latAfter;
+    this.slip = Math.abs(lat);
+    if (this.slip > 3.5 && Math.abs(fwd) > 6 && !this.finished) this.driftScore += this.slip * dt * 2;
+    this.steerS += (inp.steer - this.steerS) * Math.min(1, dt * 9);
+    const speedFactor = clamp(Math.abs(fwd) / 7, 0, 1);
+    const agility = CFG.steerRate * this.cls.steer * speedFactor / (1 + Math.abs(fwd) * 0.022);
+    let yaw = this.steerS * agility * (fwd >= 0 ? 1 : -1);
+    if (inp.handbrake) yaw *= 1.5;
+    this.heading -= yaw * dt;
+    if (!held) { this.x += this.vx * dt; this.z += this.vy * dt; }
+    for (const o of colliders) {
+      if (o.r <= 0) continue;
+      const dx = this.x - o.x, dz = this.z - o.z; const rr = o.r + CFG.carRadius; const d2 = dx * dx + dz * dz;
+      if (d2 < rr * rr && d2 > 1e-6) {
+        const d = Math.sqrt(d2), nx = dx / d, nz = dz / d;
+        this.x = o.x + nx * rr; this.z = o.z + nz * rr;
+        const vn = this.vx * nx + this.vy * nz;
+        if (vn < 0) { if (vn < -7) ev.crash = { x: o.x + nx * o.r, z: o.z + nz * o.r, s: Math.min(1, -vn / 22) }; this.vx -= nx * vn * 1.5; this.vy -= nz * vn * 1.5; this.vx *= 0.55; this.vy *= 0.55; }
+      }
+    }
+    const lim = RH + 2.4;
+    const n2 = splineNearest(T, this.x, this.z);
+    if (Math.abs(n2.lat) > lim) {
+      const cd = Math.hypot(this.x - n2.cx, this.z - n2.cz) || 1;
+      const sc = lim / cd;
+      this.x = n2.cx + (this.x - n2.cx) * sc; this.z = n2.cz + (this.z - n2.cz) * sc;
+    }
+    const dc = Math.hypot(this.x, this.z); if (dc > 900) { this.x *= 900 / dc; this.z *= 900 / dc; this.vx *= 0.5; this.vy *= 0.5; }
+    const along = n2.along;
+    if (this._along != null && raceState === 'racing' && !this.finished) { let d = along - this._along; if (d > 0.5) d -= 1; if (d < -0.5) d += 1; this.progress += d; }
+    this._along = along;
+    if (!this.finished && this.progress >= 1 - 1e-4) {
+      const t = time - this.lapStart; this.lastLap = t; if (this.best == null || t < this.best) this.best = t;
+      this.lap++; this.lapStart = time; this.progress -= 1;
+      if (this.lap >= this.maxLaps) { this.finished = true; this.finishTime = time - this.goTime; ev.finish = { t: this.finishTime }; }
+      else { ev.lap = { n: this.lap, t, isFinalNext: this.lap === this.maxLaps - 1 }; }
+    } else if (this.progress <= -1) { this.progress += 1; }
+    return ev;
+  };
+  const _carUpdate = Car.prototype.update;
+  Car.prototype.update = function (dt, time, raceState, colliders) {
+    if (this.track && this.track.type === 'spline') return this.updateSpline(dt, time, raceState, colliders);
+    return _carUpdate.apply(this, arguments);
+  };
+  const _carReset = Car.prototype.resetState;
+  Car.prototype.resetState = function (t) { this._along = null; return _carReset.apply(this, arguments); };
+  const _bot = RaceRoom.prototype.botInput;
+  RaceRoom.prototype.botInput = function () {
+    if (this.track && this.track.type === 'spline') {
+      const car = this.cars[1];
+      const P = this.track.points;
+      const n = splineNearest(this.track, car.x, car.z);
+      const la = P[(n.idx + 10) % P.length];
+      const desired = Math.atan2(la.x - car.x, la.z - car.z);
+      let diff = desired - car.heading;
+      while (diff > Math.PI) diff -= PI2; while (diff < -Math.PI) diff += PI2;
+      const steer = clamp(-diff * 2.2, -1, 1);
+      const throttle = clamp(0.94 - Math.abs(steer) * 0.45, 0.4, 0.94);
+      return { steer, throttle, brake: 0, handbrake: false, nitro: Math.abs(steer) < 0.15 && Math.random() < 0.015 };
+    }
+    return _bot.call(this);
+  };
+
+  (function addSplineMaps() {
+    const canyon = makeSplineTrack([
+      { x: 130, z: 0 }, { x: 95, z: 70 }, { x: 20, z: 95 }, { x: -60, z: 80 },
+      { x: -120, z: 40 }, { x: -95, z: -20 }, { x: -30, z: -35 }, { x: 20, z: -20 },
+      { x: 60, z: -45 }, { x: 110, z: -60 }
+    ]);
+    canyon.theme = 'highland'; canyon.name = 'CANYON CHICANE';
+    canyon.world = makeSplineWorld(4242, canyon, 'highland');
+    const hairpin = makeSplineTrack([
+      { x: 140, z: 0 }, { x: 100, z: 70 }, { x: 20, z: 92 }, { x: -60, z: 72 },
+      { x: -125, z: 30 }, { x: -140, z: -30 }, { x: -90, z: -72 }, { x: -20, z: -60 },
+      { x: 20, z: -84 }, { x: 90, z: -70 }, { x: 132, z: -40 }
+    ]);
+    hairpin.theme = 'island'; hairpin.name = 'HAIRPIN GP';
+    hairpin.world = makeSplineWorld(777, hairpin, 'island');
+    MAPS.push(canyon, hairpin);
+  })();
+
   const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   function makeRoomCode(rng) {
     const r = rng || Math.random;
