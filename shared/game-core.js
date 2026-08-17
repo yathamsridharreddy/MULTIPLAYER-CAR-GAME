@@ -700,8 +700,8 @@
     const dirX = Math.sin(this.heading), dirY = Math.cos(this.heading);
     const rightX = dirY, rightY = -dirX;
     let speed = this.vx * dirX + this.vy * dirY;
-    const near = splineNearest(T, this.x, this.z, this._nearIdx);
-    this._nearIdx = near.idx;
+    const near = T.nearest ? T.nearest(this.x, this.z) : splineNearest(T, this.x, this.z, this._nearIdx);
+    if (!T.nearest) this._nearIdx = near.idx;
     const offroad = Math.abs(near.lat) > RH + 0.7;
     if (held) { this.vx = 0; this.vy = 0; this.slip = 0; }
     this.nitroActive = !!(inp.nitro && this.nitroMeter > 0 && inp.throttle > 0.1 && !this.finished);
@@ -774,7 +774,7 @@
     if (this.track && this.track.type === 'spline') {
       const car = this.cars[1];
       const P = this.track.points;
-      const n = splineNearest(this.track, car.x, car.z, car._nearIdx); car._nearIdx = n.idx;
+      const n = this.track.nearest ? this.track.nearest(car.x, car.z) : splineNearest(this.track, car.x, car.z, car._nearIdx); if (!this.track.nearest) car._nearIdx = n.idx;
       const la = P[(n.idx + 10) % P.length];
       const desired = Math.atan2(la.x - car.x, la.z - car.z);
       let diff = desired - car.heading;
@@ -802,6 +802,44 @@
     hairpin.theme = 'island'; hairpin.name = 'HAIRPIN GP';
     hairpin.world = makeSplineWorld(777, hairpin, 'island');
     MAPS.push(canyon, hairpin);
+  })();
+
+
+
+  // ==================================================================
+  // RADIAL TRACKS — robust distinct shapes (no nearest-point latch)
+  // ==================================================================
+  function makeRadialTrack(R0, harms, samples) {
+    const centerR = (th) => { let r = R0; for (const h of harms) r += R0 * h.amp * Math.cos(h.k * th + (h.ph || 0)); return r; };
+    const dR = (th) => { let r = 0; for (const h of harms) r -= R0 * h.amp * h.k * Math.sin(h.k * th + (h.ph || 0)); return r; };
+    const points = [];
+    for (let i = 0; i < samples; i++) { const th = i / samples * PI2; const r = centerR(th); points.push({ x: Math.cos(th) * r, z: Math.sin(th) * r }); }
+    let mx = 0, mz = 0; points.forEach((p) => { mx = Math.max(mx, Math.abs(p.x)); mz = Math.max(mz, Math.abs(p.z)); });
+    const track = { type: 'spline', points, a: mx, b: mz, centerR, radial: true };
+    track.nearest = (x, z) => {
+      const th = Math.atan2(z, x); const cr = centerR(th); const r = Math.hypot(x, z);
+      const lat = r - cr; const cx = Math.cos(th) * cr, cz = Math.sin(th) * cr;
+      let tx = -Math.sin(th) * cr + Math.cos(th) * dR(th), tz = Math.cos(th) * cr + Math.sin(th) * dR(th);
+      const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+      const idx = Math.round((th + PI2) % PI2 / PI2 * track.points.length) % track.points.length;
+      return { lat, cx, cz, tx, tz, idx, along: (th + PI2) % PI2 / PI2 };
+    };
+    return track;
+  }
+
+  (function buildRadialMaps() {
+    const defs = [
+      { R0: 112, harms: [{ k: 4, amp: 0.10 }], theme: 'neon',  name: 'NEON CITY' },
+      { R0: 118, harms: [{ k: 3, amp: 0.14 }], theme: 'island', name: 'ISLAND MOTORFEST' },
+      { R0: 122, harms: [{ k: 2, amp: 0.22 }], theme: 'desert', name: 'CANYON CHICANE' },
+      { R0: 106, harms: [{ k: 3, amp: 0.20 }, { k: 5, amp: 0.08 }], theme: 'snow', name: 'HAIRPIN GP' }
+    ];
+    defs.forEach((d, i) => {
+      const t = makeRadialTrack(d.R0, d.harms, 256);
+      t.theme = d.theme; t.name = d.name;
+      t.world = makeSplineWorld(1000 + i * 77, t, d.theme);
+      MAPS[1 + i] = t;
+    });
   })();
 
   const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

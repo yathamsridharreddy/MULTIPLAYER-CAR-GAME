@@ -61,21 +61,35 @@ function themeSettings(theme) {
     skyTop: 0x04060f, skyHorizon: 0x33184d, skyBottom: 0x0a0a12,
     hemiSky: 0x4455cc, hemiGround: 0x141426, hemiInt: 0.4,
     sunColor: 0x99aaff, sunInt: 0.55, sunPos: [140, 220, 90],
-    exposure: 1.1, night: true, ocean: false, palms: false, pines: false
+    exposure: 1.1, night: true, ocean: false, palms: false, pines: false, ground: '#141821'
   };
   if (theme === 'island') return {
     bg: 0xffcf9a, fogNear: 300, fogFar: 900,
     skyTop: 0x27406f, skyHorizon: 0xff9a4d, skyBottom: 0xd8865a,
     hemiSky: 0xffc08a, hemiGround: 0x8a5a3a, hemiInt: 0.6,
     sunColor: 0xffa040, sunInt: 1.8, sunPos: [260, 90, 150],
-    exposure: 1.12, night: false, ocean: true, palms: true, pines: false
+    exposure: 1.12, night: false, ocean: true, palms: true, pines: false, ground: '#d8b478'
   };
   return { // highland (default)
     bg: 0xd7e3ec, fogNear: 320, fogFar: 980,
     skyTop: 0x1d6fd6, skyHorizon: 0xdfe9f0, skyBottom: 0x98a196,
     hemiSky: 0xbfd8ff, hemiGround: 0x44543a, hemiInt: 0.5,
     sunColor: 0xffe3b8, sunInt: 1.5, sunPos: [210, 240, 110],
-    exposure: 1.05, night: false, ocean: false, palms: false, pines: true
+    exposure: 1.05, night: false, ocean: false, palms: false, pines: true, ground: '#41702f'
+  };
+  if (theme === 'desert') return {
+    bg: 0xf2d3a0, fogNear: 300, fogFar: 950,
+    skyTop: 0x2a7fd4, skyHorizon: 0xf2c078, skyBottom: 0xd8a060,
+    hemiSky: 0xffd9a0, hemiGround: 0x9a6a3a, hemiInt: 0.65,
+    sunColor: 0xffc060, sunInt: 1.9, sunPos: [240, 200, 120],
+    exposure: 1.1, night: false, ocean: false, palms: true, pines: false, ground: '#d8a35c'
+  };
+  if (theme === 'snow') return {
+    bg: 0xe8f0f6, fogNear: 300, fogFar: 900,
+    skyTop: 0x7fb2e0, skyHorizon: 0xeef4f8, skyBottom: 0xdfe8ee,
+    hemiSky: 0xdfeeff, hemiGround: 0xb8c8d4, hemiInt: 0.6,
+    sunColor: 0xfff2e0, sunInt: 1.4, sunPos: [200, 220, 140],
+    exposure: 1.08, night: false, ocean: false, palms: false, pines: true, ground: '#e8eef2'
   };
 }
 
@@ -364,7 +378,7 @@ function buildWorld(map) {
     worldGroup.add(island);
   } else {
     const ground = new THREE.Mesh(new THREE.CircleGeometry(1500, 64),
-      new THREE.MeshStandardMaterial({ map: grassTexture(T.night ? '#1a2430' : '#41702f'), roughness: 1 }));
+      new THREE.MeshStandardMaterial({ map: grassTexture(T.ground || (T.night ? '#141821' : '#41702f')), roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
     worldGroup.add(ground);
   }
