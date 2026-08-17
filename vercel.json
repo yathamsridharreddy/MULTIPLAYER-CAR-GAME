@@ -1,4 +1,5 @@
 {
+  "framework": null,
   "buildCommand": "mkdir -p public/js && cp shared/game-core.js public/js/game-core.js && echo \"window.SERVER_URL = '${SERVER_URL}';\" > public/js/config.js",
   "outputDirectory": "public",
   "rewrites": [
