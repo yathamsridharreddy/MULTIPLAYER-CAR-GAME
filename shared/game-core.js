@@ -135,7 +135,16 @@
       });
     }
 
-    return { buildings, trees, mountains, colliders, billboard };
+    const hazards = [];
+    [0.12, 0.38, 0.62, 0.88].forEach((f, i) => {
+      const t = f * PI2;
+      const px = a * Math.cos(t), pz = b * Math.sin(t);
+      let tx = -a * Math.sin(t), tz = b * Math.cos(t); const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+      const nx = -tz, nz = tx; const side = (i % 2 ? 1 : -1) * (RH - 2.5);
+      const x = px + nx * side, z = pz + nz * side;
+      hazards.push({ x, z }); colliders.push({ x, z, r: 1.1 });
+    });
+    return { buildings, trees, mountains, colliders, billboard, hazards };
   }
 
   // build a world for each map
@@ -174,8 +183,8 @@
     }
 
     resetState(raceTime) {
-      this.x = this.startX; this.z = -5;
-      this.heading = 0;
+      const st = trackStart(this.track, this.slot);
+      this.x = st.x; this.z = st.z; this.heading = st.h;
       this.vx = 0; this.vy = 0;
       this.slip = 0;
       this.progress = 0; this.lastPhi = null;
@@ -188,8 +197,8 @@
     }
 
     resetGrid(time) {
-      this.x = this.startX; this.z = -5;
-      this.heading = 0;
+      const st = trackStart(this.track, this.slot);
+      this.x = st.x; this.z = st.z; this.heading = st.h;
       this.vx = 0; this.vy = 0;
       this.slip = 0;
       this.progress = 0; this.lastPhi = null;
@@ -689,7 +698,15 @@
       colliders.push({ x, z, r: 0.9 * sc });
       placed++;
     }
-    return { buildings, trees, mountains: [], colliders, billboard: { x: P[0].x, z: P[0].z, rot: 0 } };
+    const hazards = [];
+    [0.12, 0.38, 0.62, 0.88].forEach((f, i) => {
+      const idx = Math.floor(f * P.length); const p = P[idx], p2 = P[(idx + 1) % P.length];
+      let tx = p2.x - p.x, tz = p2.z - p.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+      const nx = -tz, nz = tx; const side = (i % 2 ? 1 : -1) * (RH - 2.5);
+      const x = p.x + nx * side, z = p.z + nz * side;
+      hazards.push({ x, z }); colliders.push({ x, z, r: 1.1 });
+    });
+    return { buildings, trees, mountains: [], colliders, billboard: { x: P[0].x, z: P[0].z, rot: 0 }, hazards };
   }
 
   Car.prototype.updateSpline = function (dt, time, raceState, colliders) {
@@ -832,7 +849,7 @@
       { R0: 112, harms: [{ k: 4, amp: 0.10 }], theme: 'neon',  name: 'NEON CITY' },
       { R0: 118, harms: [{ k: 3, amp: 0.14 }], theme: 'island', name: 'ISLAND MOTORFEST' },
       { R0: 122, harms: [{ k: 2, amp: 0.22 }], theme: 'desert', name: 'CANYON CHICANE' },
-      { R0: 106, harms: [{ k: 3, amp: 0.20 }, { k: 5, amp: 0.08 }], theme: 'snow', name: 'HAIRPIN GP' }
+      { R0: 106, harms: [{ k: 3, amp: 0.16 }, { k: 5, amp: 0.05 }], theme: 'snow', name: 'HAIRPIN GP' }
     ];
     defs.forEach((d, i) => {
       const t = makeRadialTrack(d.R0, d.harms, 256);
@@ -841,6 +858,16 @@
       MAPS[1 + i] = t;
     });
   })();
+
+  function trackStart(track, slot) {
+    if (track.type === 'spline' && track.points) {
+      const P = track.points, p0 = P[0], p1 = P[1];
+      let tx = p1.x - p0.x, tz = p1.z - p0.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+      const nx = -tz, nz = tx; const side = slot === 1 ? -2.8 : 2.8;
+      return { x: p0.x + nx * side - tx * 5, z: p0.z + nz * side - tz * 5, h: Math.atan2(tx, tz) };
+    }
+    return { x: track.a + (slot === 1 ? -2.8 : 2.8), z: -5, h: 0 };
+  }
 
   const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   function makeRoomCode(rng) {

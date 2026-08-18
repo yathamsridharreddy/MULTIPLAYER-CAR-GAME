@@ -527,6 +527,21 @@ function buildWorld(map) {
         worldGroup.add(lava);
       }
     }
+
+    // on-track tire-stack hazards (visible, stop the car)
+    if (W.hazards) {
+      const hzTire = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.9 });
+      const hzRed = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.8 });
+      const hzGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.3, 12);
+      for (const hz of W.hazards) {
+        for (let k = 0; k < 3; k++) {
+          const tire = new THREE.Mesh(hzGeo, k === 1 ? hzRed : hzTire);
+          tire.position.set(hz.x, 0.15 + k * 0.3, hz.z);
+          tire.castShadow = true;
+          worldGroup.add(tire);
+        }
+      }
+    }
   }
 
   // curbs + barriers
