@@ -312,10 +312,13 @@ function buildSplineVisuals(map, T) {
   const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8 });
   ribbon(cl, RH - 0.7, 0.18, 0.045, lineMat);
   ribbon(cl, -(RH - 0.7), 0.18, 0.045, lineMat);
-  // visible guard-rail fence at the barrier limit (car stops AT it)
+  // visible guard-rail fence just OUTSIDE the barrier limit — the car stops
+  // AT the barrier and its body kisses the rail (never clips through it)
   const fenceMat = new THREE.MeshStandardMaterial({ color: 0xcfd6dd, metalness: 0.6, roughness: 0.4 });
-  ribbon(cl, RH + 1.6, 0.15, 0.5, fenceMat);
-  ribbon(cl, -(RH + 1.6), 0.15, 0.5, fenceMat);
+  ribbon(cl, RH + 2.5, 0.12, 0.34, fenceMat);
+  ribbon(cl, -(RH + 2.5), 0.12, 0.34, fenceMat);
+  ribbon(cl, RH + 2.5, 0.1, 0.78, fenceMat);
+  ribbon(cl, -(RH + 2.5), 0.1, 0.78, fenceMat);
   const p0 = cl[0], p1 = cl[1];
   const yaw = Math.atan2(p1.x - p0.x, p1.z - p0.z);
   const c = document.createElement('canvas'); c.width = 160; c.height = 32;
@@ -528,15 +531,15 @@ function buildWorld(map) {
       }
     }
 
-    // on-track tire-stack hazards (visible, stop the car)
+    // on-track tire-stack hazards (visible, solid, stop the car)
     if (W.hazards) {
       const hzTire = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.9 });
       const hzRed = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.8 });
-      const hzGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.3, 12);
+      const hzGeo = new THREE.CylinderGeometry(0.7, 0.74, 0.34, 14);
       for (const hz of W.hazards) {
-        for (let k = 0; k < 3; k++) {
-          const tire = new THREE.Mesh(hzGeo, k === 1 ? hzRed : hzTire);
-          tire.position.set(hz.x, 0.15 + k * 0.3, hz.z);
+        for (let k = 0; k < 4; k++) {
+          const tire = new THREE.Mesh(hzGeo, k % 2 === 1 ? hzRed : hzTire);
+          tire.position.set(hz.x, 0.17 + k * 0.34, hz.z);
           tire.castShadow = true;
           worldGroup.add(tire);
         }
@@ -569,7 +572,9 @@ function buildWorld(map) {
     const wallMat = new THREE.MeshStandardMaterial({ color: T.night ? 0x3a4050 : 0xb9bec4, roughness: 0.85 });
     const railGeo = new THREE.BoxGeometry(0.54, 0.14, 2.7);
     const railMat = new THREE.MeshStandardMaterial({ color: T.night ? 0x39d5ff : 0xc9302c, roughness: 0.6 });
-    for (const off of [RH + 3.2, -RH - 3.2]) {
+    // walls sit just outside the physics barrier (RH+2.4) plus car half-width,
+    // so the car scrapes the wall face instead of clipping through it
+    for (const off of [RH + 3.65, -RH - 3.65]) {
       instancedAlong(wallGeo, wallMat, off, 2.6, 0.5);
       instancedAlong(railGeo, railMat, off, 2.6, 1.02);
     }
@@ -1026,16 +1031,26 @@ const snaps = [];
 let lastBannerSeq = 0;
 let lastCountInt = 99;
 
+// Adaptive interpolation delay: grows when the network delivers snapshots in
+// bursts (mobile hotspots / free-tier hosting) so the render never starves
+// and shakes. Healthy 30 Hz stream -> stays at 120 ms.
+let interpDelay = INTERP_DELAY;
+const snapGaps = [];
 function interpState(slot) {
   if (snaps.length === 0) return null;
-  const target = performance.now() - INTERP_DELAY;
+  const target = performance.now() - interpDelay;
   let ai = -1;
   for (let i = snaps.length - 1; i >= 0; i--) { if (snaps[i].t <= target) { ai = i; break; } }
   const carOf = (snap) => snap.cars[slot - 1];
   if (ai < 0) return carOf(snaps[0].snap);
   const a = snaps[ai]; const b = snaps[ai + 1];
   const ca = carOf(a.snap);
-  if (!b) return ca;
+  if (!b) {
+    // no newer snapshot yet (network gap): dead-reckon with the car's own
+    // velocity for up to 130 ms instead of freezing (freeze = visible shake)
+    const extra = clamp((target - a.t) / 1000, 0, 0.13);
+    return { ...ca, s: slot, x: ca.x + Math.sin(ca.h) * ca.v * extra, z: ca.z + Math.cos(ca.h) * ca.v * extra };
+  }
   const cb = carOf(b.snap);
   const alpha = clamp((target - a.t) / Math.max(1, b.t - a.t), 0, 1);
   return {
@@ -1225,7 +1240,17 @@ function showRoomError(text) {
 
 let builtMapId = 0;
 function ingestSnapshot(snap) {
-  snaps.push({ t: performance.now(), snap });
+  const now = performance.now();
+  if (snaps.length > 0) {
+    snapGaps.push(now - snaps[snaps.length - 1].t);
+    if (snapGaps.length > 40) snapGaps.shift();
+    if (snapGaps.length >= 10) {
+      const mean = snapGaps.reduce((a, b) => a + b, 0) / snapGaps.length;
+      const jitter = snapGaps.reduce((a, b) => a + Math.abs(b - mean), 0) / snapGaps.length;
+      interpDelay = clamp(120 + jitter * 1.6, 120, 260);
+    }
+  }
+  snaps.push({ t: now, snap });
   if (snaps.length > 150) snaps.splice(0, snaps.length - 150);
   latest = snap;
   processEvents(snap);
@@ -1305,8 +1330,10 @@ let splitScreen = false;
 const lookTarget = new THREE.Vector3(A - 2.8, 1, 0);
 function cycleCamera() { camMode = (camMode + 1) % 3; }
 function aimChaseInstant(cs) {
-  const dir = new THREE.Vector3(Math.sin(cs.h), 0, Math.cos(cs.h));
-  const pos = new THREE.Vector3(cs.x, 0, cs.z);
+  const v = carVisuals[cs.s];
+  const cx = (v && v.netInit) ? v.netX : cs.x, cz = (v && v.netInit) ? v.netZ : cs.z, ch = (v && v.netInit) ? v.netH : cs.h;
+  const dir = new THREE.Vector3(Math.sin(ch), 0, Math.cos(ch));
+  const pos = new THREE.Vector3(cx, 0, cz);
   camera.position.copy(pos).addScaledVector(dir, -8.2);
   camera.position.y = 3.2;
   camera.lookAt(pos.clone().addScaledVector(dir, 5).add(new THREE.Vector3(0, 1.1, 0)));
@@ -1326,6 +1353,11 @@ function renderSplit(dt) {
 }
 function updateCamera(dt, mine, rival) {
   if (!mine) return;
+  // follow the SAME smoothed positions the car meshes use, so camera and
+  // car never fight each other (that fight reads as shaking)
+  const vMe = carVisuals[mine.s], vRi = rival ? carVisuals[rival.s] : null;
+  if (vMe && vMe.netInit) mine = { ...mine, x: vMe.netX, z: vMe.netZ, h: vMe.netH };
+  if (rival && vRi && vRi.netInit) rival = { ...rival, x: vRi.netX, z: vRi.netZ, h: vRi.netH };
   const dir = new THREE.Vector3(Math.sin(mine.h), 0, Math.cos(mine.h));
   let desired, look, sepFov = 0;
   const dual = rival && rival.p === 1 && camMode !== 2 && latest && latest.state !== 'waiting';
@@ -1375,7 +1407,8 @@ const _av = new THREE.Vector3(), _cd = new THREE.Vector3();
 function updateArrow(rival) {
   const el = $('arrow');
   if (!rival || rival.p !== 1 || !latest || latest.state === 'waiting') { el.style.display = 'none'; return; }
-  _av.set(rival.x, 1.2, rival.z);
+  const vRi = carVisuals[rival.s];
+  _av.set((vRi && vRi.netInit) ? vRi.netX : rival.x, 1.2, (vRi && vRi.netInit) ? vRi.netZ : rival.z);
   const toOther = _av.clone().sub(camera.position);
   camera.getWorldDirection(_cd);
   const inFront = toOther.dot(_cd) > 0;
@@ -1512,9 +1545,24 @@ function placeCar(slot, cs, dt) {
   if (!cs) return;
   if (cs.col != null && v.paint && v.paint.color.getHex() !== cs.col) v.paint.color.setHex(cs.col);
   v.group.visible = cs.p === 1;
-  if (!v.group.visible) return;
-  v.group.position.set(cs.x, 0, cs.z);
-  v.group.rotation.y = cs.h;
+  if (!v.group.visible) { v.netInit = false; return; }
+  // ---- network smoothing: exponentially follow the interpolated snapshot
+  // position. Absorbs snapshot jitter / bursty delivery so the car never
+  // shakes, and never overshoots a hard stop (e.g. hitting a tire wall).
+  if (!v.netInit) { v.netX = cs.x; v.netZ = cs.z; v.netH = cs.h; v.netInit = true; }
+  const expMove = Math.abs(cs.v) * dt;
+  const dx = cs.x - v.netX, dz = cs.z - v.netZ;
+  const dist = Math.hypot(dx, dz);
+  if (dist > expMove * 6 + 2.5 || !isFinite(dist)) {       // reset/teleport: snap
+    v.netX = cs.x; v.netZ = cs.z; v.netH = cs.h;
+  } else {
+    const k = 1 - Math.exp(-dt / 0.04);
+    v.netX += dx * k; v.netZ += dz * k;
+    let dh = cs.h - v.netH; while (dh > Math.PI) dh -= PI2; while (dh < -Math.PI) dh += PI2;
+    v.netH += dh * k;
+  }
+  v.group.position.set(v.netX, 0, v.netZ);
+  v.group.rotation.y = v.netH;
   v.body.rotation.z = lerp(v.body.rotation.z, clamp(-cs.sl * 0.042, -0.17, 0.17), Math.min(1, dt * 8));
   const sp = clamp(Math.abs(cs.v) / CFG.maxSpeed, 0, 1);
   v.body.position.y = Math.sin(performance.now() * 0.016 + slot * 3) * 0.008 * sp;
@@ -1525,8 +1573,8 @@ function placeCar(slot, cs, dt) {
   }
   if (cs.sl > 4.5 && Math.abs(cs.v) > 6) {
     for (const side of [-0.98, 0.98]) {
-      const wx = cs.x + side * Math.cos(cs.h) - 1.45 * Math.sin(cs.h);
-      const wz = cs.z - side * Math.sin(cs.h) - 1.45 * Math.cos(cs.h);
+      const wx = v.netX + side * Math.cos(v.netH) - 1.45 * Math.sin(v.netH);
+      const wz = v.netZ - side * Math.sin(v.netH) - 1.45 * Math.cos(v.netH);
       if (Math.random() < 0.5) spawnSmoke(wx, wz, Math.sin(cs.h) * cs.v, Math.cos(cs.h) * cs.v);
       spawnSkid(wx, wz, cs.h);
     }

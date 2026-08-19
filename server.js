@@ -35,8 +35,9 @@ app.get('/js/config.js', (req, res) => {
 });
 
 // shared game core (deterministic world + physics constants for the client)
+// NOTE: Express 5 requires { root } for sendFile — an absolute path alone 404s
 app.get('/js/game-core.js', (req, res) => {
-  res.sendFile(path.join(__dirname, 'shared', 'game-core.js'));
+  res.sendFile(path.join('shared', 'game-core.js'), { root: __dirname });
 });
 
 // friendly aliases used by the QR code / shared links

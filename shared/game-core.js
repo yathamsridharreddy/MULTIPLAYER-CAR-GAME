@@ -310,6 +310,7 @@
         this.x *= sc; this.z *= sc;
         const vr = this.vx * nx + this.vy * nz;
         if ((rd.d > 0 && vr > 0) || (rd.d < 0 && vr < 0)) {
+          if (Math.abs(vr) > 9) ev.crash = { x: this.x, z: this.z, s: Math.min(1, Math.abs(vr) / 26) };
           this.vx -= nx * vr * 1.6;
           this.vy -= nz * vr * 1.6;
           this.vx *= 0.9; this.vy *= 0.9;
@@ -421,8 +422,10 @@
     setController(slot, connected) { this.controllers[slot] = connected; this.lastActivity = Date.now(); }
 
     setInput(slot, input) {
+      let steer = clamp(input.steer || 0, -1, 1);
+      if (Math.abs(steer) < 0.06) steer = 0; // dead-zone: kills joystick/gyro noise so the car tracks straight
       this.inputs[slot] = {
-        steer: clamp(input.steer || 0, -1, 1),
+        steer,
         throttle: clamp(input.throttle || 0, 0, 1),
         brake: clamp(input.brake || 0, 0, 1),
         handbrake: !!input.handbrake,
@@ -562,6 +565,31 @@
             this.events.push({ type: 'win', slot: car.slot, multi, t: r3(car.finishTime) });
           } else {
             this.events.push({ type: 'finished', slot: car.slot, t: r3(car.finishTime) });
+          }
+        }
+      }
+
+      // car-vs-car collision — solid Asphalt-style bumping; cars can never
+      // ghost through each other
+      {
+        const c1 = this.cars[0], c2 = this.cars[1];
+        if (c1.participating && c2.participating && this.state !== 'waiting') {
+          const dx = c2.x - c1.x, dz = c2.z - c1.z;
+          const d2 = dx * dx + dz * dz, rr = CFG.carRadius * 2;
+          if (d2 < rr * rr) {
+            const d = Math.sqrt(d2) || 1e-3;
+            const nx = dx / d, nz = dz / d, push = (rr - d) / 2 + 0.001;
+            c1.x -= nx * push; c1.z -= nz * push;
+            c2.x += nx * push; c2.z += nz * push;
+            const rvn = (c2.vx - c1.vx) * nx + (c2.vy - c1.vy) * nz;
+            if (rvn < 0) {
+              const j = -rvn * 0.6;
+              c1.vx -= nx * j; c1.vy -= nz * j;
+              c2.vx += nx * j; c2.vy += nz * j;
+              c1.vx *= 0.97; c1.vy *= 0.97; c2.vx *= 0.97; c2.vy *= 0.97;
+              if (rvn < -8) this.events.push({ type: 'crash', slot: c2.slot, x: r3((c1.x + c2.x) / 2), z: r3((c1.z + c2.z) / 2), s: r3(Math.min(1, -rvn / 24)) });
+            }
+            clampCarToBarrier(c1); clampCarToBarrier(c2);
           }
         }
       }
@@ -760,15 +788,27 @@
         if (vn < 0) { if (vn < -7) ev.crash = { x: o.x + nx * o.r, z: o.z + nz * o.r, s: Math.min(1, -vn / 22) }; this.vx -= nx * vn * 1.5; this.vy -= nz * vn * 1.5; this.vx *= 0.55; this.vy *= 0.55; }
       }
     }
+    // barrier — recompute nearest at the NEW position so the car is clamped
+    // exactly AT the fence (never through it), and kill outward velocity so
+    // scraping the fence is smooth instead of jittery
     const lim = RH + 1.6;
-    const n2 = near;
-    if (Math.abs(n2.lat) > lim) {
-      const cd = Math.hypot(this.x - n2.cx, this.z - n2.cz) || 1;
-      const sc = lim / cd;
-      this.x = n2.cx + (this.x - n2.cx) * sc; this.z = n2.cz + (this.z - n2.cz) * sc;
+    const n3 = T.nearest ? T.nearest(this.x, this.z) : splineNearest(T, this.x, this.z, this._nearIdx);
+    if (!T.nearest) this._nearIdx = n3.idx;
+    if (Math.abs(n3.lat) > lim) {
+      let nx = this.x - n3.cx, nz = this.z - n3.cz;
+      const cd = Math.hypot(nx, nz) || 1; nx /= cd; nz /= cd;
+      const over = Math.abs(n3.lat) - lim;
+      this.x -= nx * over; this.z -= nz * over;
+      const sgn = n3.lat > 0 ? 1 : -1;
+      const vn = (this.vx * nx + this.vy * nz) * sgn; // outward speed
+      if (vn > 0) {
+        if (vn > 9) ev.crash = { x: this.x, z: this.z, s: Math.min(1, vn / 26) };
+        this.vx -= nx * vn * sgn * 1.5; this.vy -= nz * vn * sgn * 1.5;
+        this.vx *= 0.9; this.vy *= 0.9;
+      }
     }
     const dc = Math.hypot(this.x, this.z); if (dc > 900) { this.x *= 900 / dc; this.z *= 900 / dc; this.vx *= 0.5; this.vy *= 0.5; }
-    const along = n2.along;
+    const along = n3.along;
     if (this._along != null && raceState === 'racing' && !this.finished) { let d = along - this._along; if (d > 0.5) d -= 1; if (d < -0.5) d += 1; this.progress += d; }
     this._along = along;
     if (!this.finished && this.progress >= 1 - 1e-4) {
@@ -853,11 +893,36 @@
     ];
     defs.forEach((d, i) => {
       const t = makeRadialTrack(d.R0, d.harms, 256);
-      t.theme = d.theme; t.name = d.name;
+      t.id = 1 + i; t.theme = d.theme; t.name = d.name;
       t.world = makeSplineWorld(1000 + i * 77, t, d.theme);
       MAPS[1 + i] = t;
     });
   })();
+
+  // re-clamp a car inside its track barriers (used after car-vs-car bumps so
+  // a bump can never shove a car through the fence)
+  function clampCarToBarrier(car) {
+    const T = car.track;
+    if (T && T.type === 'spline') {
+      const near = T.nearest ? T.nearest(car.x, car.z) : splineNearest(T, car.x, car.z, car._nearIdx);
+      if (!T.nearest) car._nearIdx = near.idx;
+      const lim = RH + 1.6;
+      if (Math.abs(near.lat) > lim) {
+        let nx = car.x - near.cx, nz = car.z - near.cz;
+        const cd = Math.hypot(nx, nz) || 1; nx /= cd; nz /= cd;
+        const over = Math.abs(near.lat) - lim;
+        car.x -= nx * over; car.z -= nz * over;
+      }
+    } else if (T) {
+      const rd = radialDistToTrack(car.x, car.z, T.a, T.b);
+      const lim = RH + 2.4;
+      if (Math.abs(rd.d) > lim) {
+        const cur = Math.hypot(car.x, car.z) || 1;
+        const sc = (rd.re + (rd.d > 0 ? lim : -lim)) / cur;
+        car.x *= sc; car.z *= sc;
+      }
+    }
+  }
 
   function trackStart(track, slot) {
     if (track.type === 'spline' && track.points) {

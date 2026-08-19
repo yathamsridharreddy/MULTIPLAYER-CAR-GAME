@@ -1,135 +1,153 @@
-<div align="center">
+# Sridhar Rush
 
-# 🏎️ SRIDHAR RUSH
+**A real-time, server-authoritative multiplayer 3D racing game for the browser — where a smartphone becomes the controller.**
 
-### *Real-time Online Multiplayer 3D Racing — your phone is the joystick*
+Sridhar Rush is a full-stack web game in which any number of laptops render a perfectly synchronized race while each participant drives using their phone as a wireless, dual-axis gamepad. No installs, no app store: players open a URL, scan a QR code, and race in under a minute.
 
-**Race a friend across the internet.** Two laptops stay perfectly in sync while each
-player drives with their **phone as a wireless dual-stick controller** — just scan a QR code.
+Built on **three.js** for rendering and a **Node.js WebSocket simulation server** for authoritative physics, the project demonstrates real game-networking techniques — deterministic world generation, fixed-timestep simulation, snapshot interpolation, and client-side prediction-free smoothing — packaged in a deployable Vercel + Render architecture.
 
-<br/>
-
-![three.js](https://img.shields.io/badge/Engine-three.js%20r128-049EF4?style=for-the-badge&logo=threedotjs&logoColor=white)
-![Node](https://img.shields.io/badge/Server-Node.js%20%7C%20WebSocket-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
-![Multiplayer](https://img.shields.io/badge/Mode-Real--time%20Multiplayer-FF4D4D?style=for-the-badge)
-![Maps](https://img.shields.io/badge/Maps-3%20Worlds-FFB800?style=for-the-badge)
-![Vercel](https://img.shields.io/badge/Frontend-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
-![Render](https://img.shields.io/badge/Physics-Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)
-
-<br/>
-
-🏁 **3 Laps** &nbsp;·&nbsp; 🔥 **Nitro** &nbsp;·&nbsp; 💨 **Drift** &nbsp;·&nbsp; 🗺️ **3 Maps** &nbsp;·&nbsp; 📱 **Phone Joysticks**
-
-</div>
+[![three.js](https://img.shields.io/badge/rendering-three.js-049EF4?style=flat-square)](#)
+[![Node.js](https://img.shields.io/badge/server-Node.js-339933?style=flat-square)](#)
+[![Protocol](https://img.shields.io/badge/protocol-WebSocket-000?style=flat-square)](#)
+[![Simulation](https://img.shields.io/badge/simulation-30%20Hz%20fixed--step-blue?style=flat-square)](#)
+[![Frontend](https://img.shields.io/badge/hosting-Vercel-000?style=flat-square)](#)
+[![Backend](https://img.shields.io/badge/hosting-Render-46E3B7?style=flat-square)](#)
 
 ---
 
-## 🎮 What is this?
+## Overview
 
-**Sridhar Rush** is a browser-based arcade racer inspired by *Forza Horizon*, *CarX Street* and
-*The Crew*. The race is simulated on an **authoritative server (30 Hz)** and streamed to every
-laptop, which renders it with smooth client-side **interpolation** — so all players see the
-*exact same race*, live.
-
-> No apps, no installs. Open a link, scan a QR, and race. 🏁
-
----
-
-## 🗺️ Three Worlds, One Game
-
-| | Map | Inspired by | Vibe |
-|:---:|---|---|---|
-| 🏞️ | **HIGHLAND RUSH** | *Forza Horizon* | Blue-sky midday · pine forests · mountains |
-| 🌆 | **NEON CITY** | *CarX Street* | Night · neon skyscrapers · glowing signs & floodlights |
-| 🏝️ | **ISLAND MOTORFEST** | *The Crew* | Golden sunset · turquoise ocean · palms · volcano |
-
-Each map has its **own track shape** *and* its own atmosphere, lighting and props.
-Pick your circuit in the lobby, then hit **START RACE**.
-
----
-
-## ✨ Features
-
-- 📱 **Phone-as-joystick** — left stick steers, right stick gas/brake, plus **NITRO**, **DRIFT**, camera, reset & horn
-- 🖥️ **Synced laptops** — server-authoritative physics + client interpolation = zero desync
-- 🔗 **Room codes & invite links** — create a room, share the code/QR, race
-- 🤝 **2 modes** — *2 Cars (head-to-head)* or *1 Car co-op* (both phones share one car)
-- 🏁 **Real race flow** — 3-2-1-GO countdown, START & FINISH lines, final-lap call, winner podium + confetti
-- 🔥 **Arcade feel** — nitro flames, drift smoke & skid marks, crash sparks, camera shake, speed-reactive FOV
-- 🎨 **Asphalt-grade visuals** — clearcoat car paint, ACES tone mapping, soft shadows, themed lighting per map
-- ️ **Laptop fallback** — no phone? Drive with `WASD` / arrows
-
----
-
-## 🕹️ Controls
-
-| Who | Input |
+| Capability | Description |
 |---|---|
-| 📱 Phone (per player) | **Left stick** steer · **Right stick** gas/brake · **🔥 NITRO** · **DRIFT** handbrake · **CAM / RST / HORN** |
-| 🖥️ Laptop | `W A S D` / arrows drive · `Shift` nitro · `Space` drift · `C` camera |
+| **Real-time multiplayer** | Authoritative 30 Hz server simulation; every client interpolates the same state, guaranteeing a consistent race across machines. |
+| **Phone-as-controller** | A mobile web page with two virtual joysticks, gyro steering, nitro, handbrake and telemetry — connected over WebSocket by scanning a QR code. |
+| **Room-based sessions** | Private 5-character room codes and shareable invite links; up to two drivers per room. |
+| **Five environments** | Distinct circuits with independent geometry and art direction: *Highland Rush* (day), *Neon City* (night), *Island Motorfest* (sunset), *Canyon Chicane* (desert), *Hairpin GP* (snow). |
+| **Five game modes** | Rival Rush (head-to-head), Solo Rush (co-op), Local Duel (split-screen), Elimination, and Drift Score. |
+| **Solid collision world** | Guard-rail barriers, tire-stack obstacles and car-vs-car bumping that all physically stop the cars. |
+| **Arcade handling model** | Nitro boost, drift/handbrake slip, lateral grip, off-road drag, and collision response. |
+| **Race management** | Countdown start, lap validation, best-lap tracking, final-lap call, and an automated results podium. |
 
 ---
 
-## 🚀 Quick Start (local)
+## How it works
+
+The simulation is **server-authoritative**. The server advances car physics on a fixed timestep and broadcasts compact state snapshots; each browser renders a smooth view by interpolating between the two snapshots surrounding a short render-delay offset. Because clients never simulate gameplay locally, races cannot desynchronize.
+
+```
+Driver A phone ──input──▶                        ◀──input── Driver B phone
+                          ┌──────────────────┐
+Laptop A (viewer) ◀──────┤  Simulation       ├──────▶ Laptop B (viewer)
+  interpolated render     │  Server (30 Hz)  │        interpolated render
+                          └──────────────────┘
+                          rooms · physics · laps
+```
+
+**Deterministic worlds.** Each map's scenery and collision layout are produced by a seeded generator, so the server and every client derive identical geometry from the same seed and track parameters.
+
+---
+
+## Environments
+
+| Map | Theme | Lighting | Character |
+|---|---|---|---|
+| **Highland Rush** | Open countryside | Clear midday | Flowing ellipse, pine forest, mountain backdrop |
+| **Neon City** | Dense metropolis | Night, neon signage | Wavy circuit through illuminated towers |
+| **Island Motorfest** | Tropical coast | Golden-hour sunset | Wide, fast layout over a turquoise lagoon with an active volcano |
+
+Each environment carries its own track dimensions, sky, fog, sun, and prop set, selected in the lobby before the race begins.
+
+---
+
+## Controls
+
+**Mobile controller**
+- Left stick — steering
+- Right stick — throttle / brake
+- Nitro — boost (meter regenerates)
+- Drift — handbrake for controlled slides
+
+**Keyboard fallback** (when no phone is attached)
+- `W A S D` / arrows — drive · `Shift` — nitro · `Space` — drift · `C` — camera
+
+---
+
+## Getting started locally
+
+**Prerequisites:** Node.js ≥ 18.
 
 ```bash
 npm install
-npm start          # → http://localhost:3000
+npm start            # serves game + relay on http://localhost:3000
 ```
 
-Open `http://<your-LAN-IP>:3000` on the laptop, scan the QR with your phones, and go.
+Open `http://<lan-ip>:3000` on a laptop, then scan the on-screen QR code with one or two phones on the same network. Select a map and mode in the lobby and press **Start Race**.
 
 ---
 
-## ☁️ Deploy (Vercel + Render)
+## Deployment
 
-The **frontend** (static) lives on **Vercel**; the **real-time physics server** lives on **Render**
-(Vercel can't hold long-lived WebSockets).
+The project separates a static frontend from a stateful backend.
 
-1. **Render** → *New ▸ Blueprint* → pick this repo (`render.yaml`) → copy the service URL.
-2. **Vercel** → *Add New ▸ Project* → import repo → set env `SERVER_URL` = your Render URL → Deploy.
-3. Share your Vercel URL and race! 🏁
+1. **Backend (Render).** Deploy using the included `render.yaml` blueprint. Note the public URL of the service.
+2. **Frontend (Vercel).** Import the repository and set the environment variable `SERVER_URL` to the Render URL so the browser clients can reach the relay.
+3. Share the resulting Vercel URL; participants join via room code or invite link.
 
----
-
-## 🏗️ Architecture
-
-```
-Your house                                  Friend's house
-┌──────────────┐                           ┌──────────────┐
-│ Laptop (3D)  │◀── state snapshots 30Hz ──▶│ Laptop (3D)  │
-└─────────────┘            ▲              └──────▲───────┘
-       │ input (WS)         │                     │ input (WS)
-┌──────┴───────┐    ┌───────┴────────┐    ┌──────┴───────┐
-│ Your phone   │───▶│  Race Server   │◀───│ Friend's     │
-│ (joystick)   │    │ (authoritative │    │ phone        │
-└──────────────┘    │  physics+rooms)│    └──────────────┘
-                    ────────────────┘
-```
+Vercel alone cannot host the relay because serverless functions do not maintain long-lived WebSocket sessions; Render provides the persistent process the simulation requires.
 
 ---
 
-## 📁 Repo Layout
+## Project structure
 
 ```
-├── server.js            # room server: WS relay + authoritative 30Hz sim
-├── shared/game-core.js  # deterministic worlds + pure physics + race state machine
+├── server.js              # Relay + authoritative simulation loop, room lifecycle
+├── shared/game-core.js    # Isomorphic core: seeded worlds, physics, race state machine
 ├── public/
-│   ├── index.html       # laptop screen (lobby + 3D race + HUD)
-│   ├── controller.html  # phone joystick page
-│   ├── js/game.js       # screen client: interpolation, theming, FX
-│   ├── js/controller.js # phone client: sticks, buttons, telemetry
-│   └── css/             # Asphalt-style HUD & animations
-├── vercel.json          # frontend deploy config
-└── render.yaml          # server deploy blueprint
+│   ├── index.html         # Spectator/driver screen: lobby, HUD, 3D scene
+│   ├── controller.html    # Mobile gamepad UI
+│   ├── js/game.js         # Client rendering, theming, interpolation, FX
+│   ├── js/controller.js   # Touch input, telemetry, connection handling
+│   └── css/               # HUD and controller styling
+├── render.yaml            # Backend blueprint
+└── vercel.json            # Frontend build configuration
 ```
 
 ---
 
-<div align="center">
+## Technical notes
 
-**Built with ❤️ by Sridhar** &nbsp;·&nbsp; *Powered by three.js + Node WebSockets*
+- **Netcode:** fixed-timestep simulation with 30 Hz snapshots; clients render ~120 ms in the past and interpolate for jitter-free motion.
+- **Physics:** arcade model with engine/brake forces, speed-sensitive steering, lateral grip decay, nitro overdrive, off-road penalty, and radial barrier constraints.
+- **Rendering:** ACES filmic tone mapping, sRGB output, PCF soft shadows, clearcoat car paint, per-map environment maps, and pooled particle systems (smoke, sparks, nitro, skid marks).
 
-🏁 **See you on the track!**
+---
 
-</div>
+## Roadmap
+
+- Additional circuits and a desert/volcano environment
+- Persistent leaderboards and ghost replays
+- Vehicle selection and cosmetic liveries
+- Spectator mode and larger grids
+
+---
+
+## License & credits
+
+Created by **Sridhar** as a study in realtime multiplayer game engineering. Rendering by [three.js](https://threejs.org); inspired by the *Forza Horizon*, *CarX* and *The Crew* franchises.
+
+---
+
+## What's new in v2.1
+
+- **Solid obstacles** — tire stacks, guard rails, walls and other cars all physically stop the car; no more driving through anything. Guard rails and walls now sit exactly where the physics barrier is, so cars scrape them instead of clipping through.
+- **Car-vs-car bumping** — Asphalt-style body contact; two cars can no longer overlap.
+- **Stable cars** — server-side steering dead-zone plus adaptive client smoothing eliminate shaking on straight sections, even on bursty mobile-hotspot connections.
+- **Express 5 fix** — `/js/game-core.js` served correctly again (it 404'd under Express 5, which could leave a blank screen on the Node server).
+
+## What's new in v2
+
+- **Driver identity** — choose your racer name, car colour and car class (Velocity / Accelerator / Grip) in the lobby; shown on the HUD, results and leaderboards.
+- **Persistent leaderboards** — top lap times per circuit, stored server-side and shown in the lobby.
+- **AI opponent** — race a bot when you're solo.
+- **Race setup** — 1 / 3 / 5 lap formats.
+- **Live quality-of-life** — ping/latency badge, FPS meter, graphics quality presets (Low/Med/High), audio mute + music, and a share-results button.

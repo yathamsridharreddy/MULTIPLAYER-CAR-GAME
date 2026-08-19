@@ -1,8 +1,11 @@
 {
   "name": "sridhar-rush",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Sridhar Rush — online multiplayer 3D racing; phones as joysticks.",
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
     "express": "^5.1.0",
     "ws": "^8.18.0"
