@@ -139,8 +139,9 @@ Created by **Sridhar** as a study in realtime multiplayer game engineering. Rend
 
 ## What's new in v2.1
 
-- **Solid obstacles** — tire stacks, guard rails, walls and other cars all physically stop the car; no more driving through anything. Guard rails and walls now sit exactly where the physics barrier is, so cars scrape them instead of clipping through.
-- **Car-vs-car bumping** — Asphalt-style body contact; two cars can no longer overlap.
+- **Real car-shaped collision** — the car is now simulated as a capsule matching its visible body (≈4.8 m long), not a tiny circle. The nose can no longer punch through tire stacks, walls or other cars, and there is no invisible cushion on the sides either — contact is exactly where you see it.
+- **Whole-body barriers** — the nose, center and tail are all kept inside the guard rails/walls on every map, at every angle, so nothing ever clips through the fence.
+- **Car-vs-car bumping** — Asphalt-style body contact with front/rear collision zones; two cars can no longer overlap or ghost through each other.
 - **Stable cars** — server-side steering dead-zone plus adaptive client smoothing eliminate shaking on straight sections, even on bursty mobile-hotspot connections.
 - **Express 5 fix** — `/js/game-core.js` served correctly again (it 404'd under Express 5, which could leave a blank screen on the Node server).
 

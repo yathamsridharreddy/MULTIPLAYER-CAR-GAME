@@ -535,7 +535,7 @@ function buildWorld(map) {
     if (W.hazards) {
       const hzTire = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.9 });
       const hzRed = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.8 });
-      const hzGeo = new THREE.CylinderGeometry(0.7, 0.74, 0.34, 14);
+      const hzGeo = new THREE.CylinderGeometry(0.75, 0.78, 0.34, 14);
       for (const hz of W.hazards) {
         for (let k = 0; k < 4; k++) {
           const tire = new THREE.Mesh(hzGeo, k % 2 === 1 ? hzRed : hzTire);
