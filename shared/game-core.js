@@ -155,8 +155,8 @@
       placed++;
     }
 
-    colliders.push({ x: a + 16, z: 14, r: 4 });
-    const billboard = { x: a + 16, z: 14, rot: -Math.PI / 2 + 0.25 };
+    // (removed: stray invisible billboard collider — it had no visual mesh)
+    const billboard = null;
 
     const mountains = [];
     const mCount = theme === 'island' ? 4 : 14;   // island = one volcano + few hills

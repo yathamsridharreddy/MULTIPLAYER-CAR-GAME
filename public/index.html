@@ -95,7 +95,7 @@
     <div id="overlay">
     <!-- ============ PAGE 1 : MAIN ============ -->
     <div id="page1" class="page">
-      <div id="overlay-card">
+      <div class="overlay-card">
         <h1>SRIDHAR <span>RUSH</span></h1>
         <p class="tagline">Online racing — your phones are the joysticks · race a friend across the internet 🌍</p>
 
@@ -152,6 +152,8 @@
                 <button class="q-btn active" data-q="high">HIGH</button>
               </div>
               <label class="toggle-line"><input type="checkbox" id="set-mute"/> 🔇 Mute all audio</label>
+              <label class="toggle-line"><input type="checkbox" id="set-music"/> 🎵 Background music</label>
+              <label class="toggle-line"><input type="checkbox" id="set-fps"/> 📊 FPS meter</label>
               <label class="toggle-line"><input type="checkbox" id="set-rm"/> ✨ Reduced motion</label>
               <label class="toggle-line"><input type="checkbox" id="set-cb"/> 🎨 Colorblind-friendly UI</label>
               <label class="toggle-line"><input type="checkbox" id="set-ar" checked/> ⚙️ Adaptive resolution</label>
@@ -170,7 +172,7 @@
 
     <!-- ============ PAGE 2 : RACE SETUP WIZARD ============ -->
     <div id="page2" class="page" style="display:none">
-      <div id="overlay-card">
+      <div class="overlay-card">
         <div class="wiz-head">
           <button id="back-btn" class="ghost sm">← BACK</button>
           <h2 class="wiz-title">RACE SETUP</h2>
@@ -222,9 +224,9 @@
 
   <script src="js/vendor/three.min.js"></script>
   <script src="js/vendor/qrcode.js"></script>
-  <script src="js/game-core.js?v=6"></script>
+  <script src="js/game-core.js?v=7"></script>
   <script src="js/config.js"></script>
-  <script src="js/net.js?v=6"></script>
-  <script src="js/game.js?v=6"></script>
+  <script src="js/net.js?v=7"></script>
+  <script src="js/game.js?v=7"></script>
 </body>
 </html>
