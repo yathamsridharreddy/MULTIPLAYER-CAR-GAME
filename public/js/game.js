@@ -226,33 +226,7 @@ function buildingTexture(seed, night) {
   return tex;
 }
 
-function ellipseRing(rIn, rOut, segments) {
-  const shape = new THREE.Shape();
-  shape.absellipse(0, 0, A + rOut, B + rOut, 0, PI2, false, 0);
-  const hole = new THREE.Path();
-  hole.absellipse(0, 0, A + rIn, B + rIn, 0, PI2, true, 0);
-  shape.holes.push(hole);
-  const geo = new THREE.ShapeGeometry(shape, segments || 96);
-  geo.rotateX(-Math.PI / 2);
-  return geo;
-}
-
 const _im = new THREE.Matrix4(), _iq = new THREE.Quaternion(), _iup = new THREE.Vector3(0, 1, 0);
-function instancedAlong(geo, mat, offset, stepLen, y, scaleY) {
-  const ax = A + offset, bz = B + offset;
-  const per = Math.PI * (3 * (ax + bz) - Math.sqrt((3 * ax + bz) * (ax + 3 * bz)));
-  const N = Math.max(24, Math.round(per / stepLen));
-  const inst = new THREE.InstancedMesh(geo, mat, N);
-  for (let i = 0; i < N; i++) {
-    const t = (i / N) * PI2;
-    _iq.setFromAxisAngle(_iup, Math.atan2(-ax * Math.sin(t), bz * Math.cos(t)));
-    _im.compose(new THREE.Vector3(ax * Math.cos(t), y, bz * Math.sin(t)), _iq, new THREE.Vector3(1, scaleY || 1, 1));
-    inst.setMatrixAt(i, _im);
-  }
-  inst.receiveShadow = true;
-  worldGroup.add(inst);
-  return inst;
-}
 
 let clouds = [];
 function addClouds() {
@@ -285,40 +259,74 @@ function updateClouds(dt) {
 // buildWorld — rebuilds all themed geometry for a map
 // ---------------------------------------------------------------------------
 
-function centerline(map) {
-  if (map.type === 'spline') return map.points;
-  const out = [];
-  for (let i = 0; i < 256; i++) { const t = i / 256 * PI2; out.push({ x: A * Math.cos(t), z: B * Math.sin(t) }); }
-  return out;
-}
-function ribbon(pts, offset, halfW, y, mat) {
-  const n = pts.length; const pos = []; const idx = [];
-  for (let i = 0; i < n; i++) {
-    const p = pts[i], q = pts[(i + 1) % n];
-    let tx = q.x - p.x, tz = q.z - p.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
-    const nx = -tz, nz = tx;
-    pos.push(p.x + nx * (offset + halfW), y, p.z + nz * (offset + halfW), p.x + nx * (offset - halfW), y, p.z + nz * (offset - halfW));
+// ---------------------------------------------------------------------------
+// RAY-EXACT track geometry. Physics measures a car's lateral position along
+// the radial ray (distance from the centerline point at the same polar
+// angle). Offset curves built along curve normals drift away from that on
+// curvy sections — that drift WAS the invisible walls and the see-through
+// fences. Every road edge / line / fence / wall below is therefore built at
+// an exact constant ray distance, identical to the physics barrier values.
+// ---------------------------------------------------------------------------
+function rayRadius(th) { return (A * B) / Math.hypot(B * Math.cos(th), A * Math.sin(th)); }
+function radialCurve(radiusAt, off, N) {
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    const th = (i / N) * PI2;
+    const r = radiusAt(th) + off;
+    pts.push({ x: Math.cos(th) * r, z: Math.sin(th) * r });
   }
-  for (let i = 0; i < n; i++) { const a = 2 * i, b = 2 * i + 1, c = 2 * ((i + 1) % n), d = 2 * ((i + 1) % n) + 1; idx.push(a, b, c, b, d, c); }
+  return pts;
+}
+function ribbonBetween(a, b, y, mat) {
+  const n = a.length; const pos = []; const idx = [];
+  for (let i = 0; i < n; i++) pos.push(a[i].x, y, a[i].z, b[i].x, y, b[i].z);
+  for (let i = 0; i < n; i++) {
+    const a2 = 2 * i, b2 = 2 * i + 1, c2 = 2 * ((i + 1) % n), d2 = c2 + 1;
+    idx.push(a2, c2, b2, b2, c2, d2); // winding -> face normal points UP (+Y)
+  }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setIndex(idx); g.computeVertexNormals();
   const m = new THREE.Mesh(g, mat); m.receiveShadow = true;
   worldGroup.add(m); return m;
 }
+// instanced props (curbs/walls/rails) placed at exact ray distance `off`
+function instancedAlongRay(geo, mat, off, stepLen, y, scaleY) {
+  const per = Math.PI * (3 * (A + B) - Math.sqrt((3 * A + B) * (A + 3 * B)));
+  const N = Math.max(24, Math.round(per / stepLen));
+  const inst = new THREE.InstancedMesh(geo, mat, N);
+  for (let i = 0; i < N; i++) {
+    const th = (i / N) * PI2;
+    const r = rayRadius(th) + off;
+    const dth = 0.002;
+    const r2 = rayRadius(th + dth) + off;
+    const tx = r2 * Math.cos(th + dth) - r * Math.cos(th);
+    const tz = r2 * Math.sin(th + dth) - r * Math.sin(th);
+    _iq.setFromAxisAngle(_iup, Math.atan2(tx, tz));
+    _im.compose(new THREE.Vector3(Math.cos(th) * r, y, Math.sin(th) * r), _iq, new THREE.Vector3(1, scaleY || 1, 1));
+    inst.setMatrixAt(i, _im);
+  }
+  inst.receiveShadow = true;
+  worldGroup.add(inst);
+  return inst;
+}
 function buildSplineVisuals(map, T) {
-  const cl = map.points;
-  ribbon(cl, 0, RH, 0.02, new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
+  // ray-exact curves: centerR is the SAME function physics uses, so every
+  // painted edge/fence sits exactly where the car physically stops
+  const N = 512;
+  const curve = (off) => radialCurve(map.centerR, off, N);
+  ribbonBetween(curve(-RH), curve(RH), 0.02,
+    new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
   const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8 });
-  ribbon(cl, RH - 0.7, 0.18, 0.045, lineMat);
-  ribbon(cl, -(RH - 0.7), 0.18, 0.045, lineMat);
-  // visible guard-rail fence just OUTSIDE the barrier limit — the car stops
-  // AT the barrier and its body kisses the rail (never clips through it)
+  ribbonBetween(curve(RH - 0.88), curve(RH - 0.52), 0.045, lineMat);
+  ribbonBetween(curve(-(RH - 0.52)), curve(-(RH - 0.88)), 0.045, lineMat);
+  // guard-rail fence exactly at the physics body limit (nose/tail barrier)
   const fenceMat = new THREE.MeshStandardMaterial({ color: 0xcfd6dd, metalness: 0.6, roughness: 0.4 });
-  ribbon(cl, RH + 2.5, 0.12, 0.34, fenceMat);
-  ribbon(cl, -(RH + 2.5), 0.12, 0.34, fenceMat);
-  ribbon(cl, RH + 2.5, 0.1, 0.78, fenceMat);
-  ribbon(cl, -(RH + 2.5), 0.1, 0.78, fenceMat);
+  ribbonBetween(curve(RH + 2.38), curve(RH + 2.62), 0.34, fenceMat);
+  ribbonBetween(curve(-(RH + 2.62)), curve(-(RH + 2.38)), 0.34, fenceMat);
+  ribbonBetween(curve(RH + 2.4), curve(RH + 2.6), 0.78, fenceMat);
+  ribbonBetween(curve(-(RH + 2.6)), curve(-(RH + 2.4)), 0.78, fenceMat);
+  const cl = map.points;
   const p0 = cl[0], p1 = cl[1];
   const yaw = Math.atan2(p1.x - p0.x, p1.z - p0.z);
   const c = document.createElement('canvas'); c.width = 160; c.height = 32;
@@ -330,10 +338,13 @@ function buildSplineVisuals(map, T) {
   worldGroup.add(line);
   const poleMat = new THREE.MeshStandardMaterial({ color: 0xd8dbe2, metalness: 0.7, roughness: 0.35 });
   const poleGeo = new THREE.CylinderGeometry(0.28, 0.34, 8, 10);
-  const nx = Math.cos(yaw), nz = -Math.sin(yaw);
+  // poles OUTSIDE the fence (ray-exact), so the car can never clip them
+  const th0 = Math.atan2(p0.z, p0.x);
+  const rBase = map.centerR(th0);
   for (const side of [-1, 1]) {
+    const rp = rBase + side * (RH + 3.2);
     const pole = new THREE.Mesh(poleGeo, poleMat);
-    pole.position.set(p0.x + (-nz) * side * (RH + 1.4), 4, p0.z + (nx) * side * (RH + 1.4));
+    pole.position.set(Math.cos(th0) * rp, 4, Math.sin(th0) * rp);
     pole.castShadow = true; worldGroup.add(pole);
   }
   const bc = document.createElement('canvas'); bc.width = 512; bc.height = 96;
@@ -342,7 +353,7 @@ function buildSplineVisuals(map, T) {
   bg.fillStyle = 'rgba(10,12,20,0.88)'; bg.fillRect(0, 24, 512, 72);
   bg.fillStyle = '#ffd479'; bg.font = '900 44px Arial Black, Arial'; bg.textAlign = 'center'; bg.fillText('START / FINISH', 256, 78);
   const btex = new THREE.CanvasTexture(bc); btex.encoding = THREE.sRGBEncoding;
-  const bannerMesh = new THREE.Mesh(new THREE.PlaneGeometry(RH * 2 + 2.8, 2.2), new THREE.MeshStandardMaterial({ map: btex, side: THREE.DoubleSide, roughness: 0.7 }));
+  const bannerMesh = new THREE.Mesh(new THREE.PlaneGeometry(RH * 2 + 6.4, 2.2), new THREE.MeshStandardMaterial({ map: btex, side: THREE.DoubleSide, roughness: 0.7 }));
   bannerMesh.position.set(p0.x, 7.1, p0.z); bannerMesh.rotation.y = yaw;
   bannerMesh.castShadow = true; worldGroup.add(bannerMesh);
 }
@@ -388,17 +399,15 @@ function buildWorld(map) {
 
   // road
   if (map.type !== 'spline') {
-  const road = new THREE.Mesh(ellipseRing(-RH, RH, 128),
+  // ray-exact road surface: asphalt ends EXACTLY where physics says the road
+  // ends (no more visible asphalt that secretly counts as offroad)
+  const N = 256;
+  ribbonBetween(radialCurve(rayRadius, -RH, N), radialCurve(rayRadius, RH, N), 0.02,
     new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
-  road.position.y = 0.02; road.receiveShadow = true;
-  worldGroup.add(road);
 
   const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8 });
-  for (const off of [RH - 0.9, -RH + 0.55]) {
-    const line = new THREE.Mesh(ellipseRing(off, off + 0.35, 128), lineMat);
-    line.position.y = 0.045;
-    worldGroup.add(line);
-  }
+  ribbonBetween(radialCurve(rayRadius, RH - 0.9, N), radialCurve(rayRadius, RH - 0.55, N), 0.045, lineMat);
+  ribbonBetween(radialCurve(rayRadius, -RH + 0.55, N), radialCurve(rayRadius, -RH + 0.9, N), 0.045, lineMat);
 
   // center dashes
   {
@@ -441,7 +450,7 @@ function buildWorld(map) {
     const poleGeo = new THREE.CylinderGeometry(0.28, 0.34, 8, 10);
     for (const side of [-1, 1]) {
       const pole = new THREE.Mesh(poleGeo, poleMat);
-      pole.position.set(A + side * (RH + 1.4), 4, 0);
+      pole.position.set(A + side * (RH + 4.3), 4, 0); // outside the wall so cars never clip it
       pole.castShadow = true;
       worldGroup.add(pole);
     }
@@ -455,7 +464,7 @@ function buildWorld(map) {
     bg.fillStyle = '#ffd479'; bg.font = '900 44px Arial Black, Arial'; bg.textAlign = 'center';
     bg.fillText('START / FINISH', 256, 78);
     const btex = new THREE.CanvasTexture(bc); btex.encoding = THREE.sRGBEncoding;
-    const bannerMesh = new THREE.Mesh(new THREE.PlaneGeometry(RH * 2 + 2.8, 2.2),
+    const bannerMesh = new THREE.Mesh(new THREE.PlaneGeometry(RH * 2 + 8.6, 2.2),
       new THREE.MeshStandardMaterial({ map: btex, side: THREE.DoubleSide, roughness: 0.7 }));
     bannerMesh.position.set(A, 7.1, 0);
     bannerMesh.castShadow = true;
@@ -547,22 +556,27 @@ function buildWorld(map) {
     }
   }
 
-  // curbs + barriers
+  // curbs + barriers — everything at ray-exact offsets so the visuals match
+  // the physics barriers at every point of the circuit
   {
     const curbGeo = new THREE.BoxGeometry(1.0, 0.07, 2.6);
     const curbR = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.55 });
     const curbW = new THREE.MeshStandardMaterial({ color: 0xefefea, roughness: 0.55 });
     for (const off of [RH + 0.6, -RH - 0.6]) {
-      const ax = A + off, bz = B + off;
-      const per = Math.PI * (3 * (ax + bz) - Math.sqrt((3 * ax + bz) * (ax + 3 * bz)));
+      const per = Math.PI * (3 * (A + B) - Math.sqrt((3 * A + B) * (A + 3 * B)));
       const N = Math.round(per / 2.5);
       const ir = new THREE.InstancedMesh(curbGeo, curbR, Math.ceil(N / 2));
       const iw = new THREE.InstancedMesh(curbGeo, curbW, Math.floor(N / 2));
       let ri = 0, wi = 0;
       for (let i = 0; i < N; i++) {
-        const t = (i / N) * PI2;
-        _iq.setFromAxisAngle(_iup, Math.atan2(-ax * Math.sin(t), bz * Math.cos(t)));
-        _im.compose(new THREE.Vector3(ax * Math.cos(t), 0.045, bz * Math.sin(t)), _iq, new THREE.Vector3(1, 1, 1));
+        const th = (i / N) * PI2;
+        const r = rayRadius(th) + off;
+        const dth = 0.002;
+        const r2 = rayRadius(th + dth) + off;
+        const tx = r2 * Math.cos(th + dth) - r * Math.cos(th);
+        const tz = r2 * Math.sin(th + dth) - r * Math.sin(th);
+        _iq.setFromAxisAngle(_iup, Math.atan2(tx, tz));
+        _im.compose(new THREE.Vector3(Math.cos(th) * r, 0.045, Math.sin(th) * r), _iq, new THREE.Vector3(1, 1, 1));
         if (i % 2 === 0) ir.setMatrixAt(ri++, _im); else iw.setMatrixAt(wi++, _im);
       }
       ir.receiveShadow = iw.receiveShadow = true;
@@ -572,11 +586,10 @@ function buildWorld(map) {
     const wallMat = new THREE.MeshStandardMaterial({ color: T.night ? 0x3a4050 : 0xb9bec4, roughness: 0.85 });
     const railGeo = new THREE.BoxGeometry(0.54, 0.14, 2.7);
     const railMat = new THREE.MeshStandardMaterial({ color: T.night ? 0x39d5ff : 0xc9302c, roughness: 0.6 });
-    // walls sit just outside the physics barrier (RH+2.4) plus car half-width,
-    // so the car scrapes the wall face instead of clipping through it
-    for (const off of [RH + 3.65, -RH - 3.65]) {
-      instancedAlong(wallGeo, wallMat, off, 2.6, 0.5);
-      instancedAlong(railGeo, railMat, off, 2.6, 1.02);
+    // wall inner face at RH+3.35 = exactly where the car's side stops
+    for (const off of [RH + 3.6, -RH - 3.6]) {
+      instancedAlongRay(wallGeo, wallMat, off, 2.6, 0.5);
+      instancedAlongRay(railGeo, railMat, off, 2.6, 1.02);
     }
   }
 
