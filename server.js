@@ -50,6 +50,13 @@ app.get(['/game', '/screen'], (req, res) => {
   res.redirect('/' + room);
 });
 
+// HTML must never be cached, otherwise browsers keep stale ?v= script refs and
+// the client geometry drifts from the server (car appears off-track).
+app.get(['/', '/index.html', '/controller.html', '/controller'], (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.set('Pragma', 'no-cache');
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);
@@ -329,7 +336,7 @@ app.get('/health', (req, res) => {
 // build marker — lets you verify at a glance that frontend + server run the
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
-  res.json({ build: 'v23', tickHz: core.CFG.tickHz });
+  res.json({ build: 'v24', tickHz: core.CFG.tickHz, geom: core.GEOM_ID });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

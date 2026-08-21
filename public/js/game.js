@@ -1199,16 +1199,24 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v23';
+const BUILD = 'v24';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
     const base = cfg === 'local' ? location.origin : cfg.replace(/\/$/, '');
     fetch(base + '/version').then((r) => r.json()).then((v) => {
-      if (v && v.build && v.build !== BUILD) {
+      const geomMismatch = v && v.geom && CORE.GEOM_ID && v.geom !== CORE.GEOM_ID;
+      const buildMismatch = v && v.build && v.build !== BUILD;
+      if (geomMismatch || buildMismatch) {
+        const key = 'sr_reload_' + (v.build || 'x');
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, '1');
+          location.replace(location.pathname + '?r=' + Date.now());
+          return;
+        }
         const d = document.createElement('div');
         d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99;background:#b26a00;color:#fff;text-align:center;padding:7px;font:600 13px system-ui,sans-serif;letter-spacing:.4px;';
-        d.textContent = '⚠ VERSION MISMATCH — website ' + BUILD + ' / server ' + v.build + '. Update ALL game files and redeploy (frontend + Render).';
+        d.textContent = '⚠ VERSION MISMATCH — website ' + BUILD + ' / server ' + (v.build || '?') + '. Update ALL game files and redeploy (frontend + Render).';
         document.body.appendChild(d);
       }
     }).catch(() => {});
