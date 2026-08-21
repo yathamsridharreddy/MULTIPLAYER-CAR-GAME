@@ -16,7 +16,7 @@ window.addEventListener('error', (e) => {
 /* ============================================================
    SRIDHAR RUSH — online multiplayer screen client
    Renders the authoritative server simulation with smooth
-   interpolation. 3 selectable themed maps rebuild the world.
+   interpolation. 5 selectable themed maps rebuild the world.
    ============================================================ */
 
 const CORE = window.VRCore;
@@ -70,13 +70,6 @@ function themeSettings(theme) {
     sunColor: 0xffa040, sunInt: 1.8, sunPos: [260, 90, 150],
     exposure: 1.12, night: false, ocean: true, palms: true, pines: false, ground: '#d8b478'
   };
-  return { // highland (default)
-    bg: 0xd7e3ec, fogNear: 320, fogFar: 980,
-    skyTop: 0x1d6fd6, skyHorizon: 0xdfe9f0, skyBottom: 0x98a196,
-    hemiSky: 0xbfd8ff, hemiGround: 0x44543a, hemiInt: 0.5,
-    sunColor: 0xffe3b8, sunInt: 1.5, sunPos: [210, 240, 110],
-    exposure: 1.05, night: false, ocean: false, palms: false, pines: true, ground: '#41702f'
-  };
   if (theme === 'desert') return {
     bg: 0xf2d3a0, fogNear: 300, fogFar: 950,
     skyTop: 0x2a7fd4, skyHorizon: 0xf2c078, skyBottom: 0xd8a060,
@@ -90,6 +83,13 @@ function themeSettings(theme) {
     hemiSky: 0xdfeeff, hemiGround: 0xb8c8d4, hemiInt: 0.6,
     sunColor: 0xfff2e0, sunInt: 1.4, sunPos: [200, 220, 140],
     exposure: 1.08, night: false, ocean: false, palms: false, pines: true, ground: '#e8eef2'
+  };
+  return { // highland (default)
+    bg: 0xd7e3ec, fogNear: 320, fogFar: 980,
+    skyTop: 0x1d6fd6, skyHorizon: 0xdfe9f0, skyBottom: 0x98a196,
+    hemiSky: 0xbfd8ff, hemiGround: 0x44543a, hemiInt: 0.5,
+    sunColor: 0xffe3b8, sunInt: 1.5, sunPos: [210, 240, 110],
+    exposure: 1.05, night: false, ocean: false, palms: false, pines: true, ground: '#41702f'
   };
 }
 
