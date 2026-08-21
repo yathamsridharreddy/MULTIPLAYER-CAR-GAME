@@ -704,10 +704,27 @@
       for (let i = 0; i < N; i += 2) { const dx = x - P[i].x, dz = z - P[i].z, d = dx * dx + dz * dz; if (d < best) { best = d; bi = i; } }
       for (let k = -2; k <= 2; k++) { const j = (bi + k + N) % N; const dx = x - P[j].x, dz = z - P[j].z, d = dx * dx + dz * dz; if (d < best) { best = d; bi = j; } }
     }
-    const c = P[bi], t2 = P[(bi + 1) % N];
-    let tx = t2.x - c.x, tz = t2.z - c.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
-    const lat = tx * (z - c.z) - tz * (x - c.x);
-    return { lat, cx: c.x, cz: c.z, tx, tz, idx: bi, along: bi / P.length };
+    // project onto the two neighbouring segments -> EXACT perpendicular
+    // distance to the drawn centerline (this is the same metric the road,
+    // edge lines and fences are drawn with, so physics matches the visuals)
+    let out = null;
+    for (const i of [(bi - 1 + N) % N, bi]) {
+      const a = P[i], b = P[(i + 1) % N];
+      const ax = b.x - a.x, az = b.z - a.z;
+      const len2 = (ax * ax + az * az) || 1;
+      let t = ((x - a.x) * ax + (z - a.z) * az) / len2;
+      t = clamp(t, 0, 1);
+      const qx = a.x + ax * t, qz = a.z + az * t;
+      const dx = x - qx, dz = z - qz;
+      const d2 = dx * dx + dz * dz;
+      if (!out || d2 < out.d2) {
+        const L = Math.sqrt(len2);
+        const tx = ax / L, tz = az / L;
+        const lat = tx * (z - qz) - tz * (x - qx);
+        out = { d2, lat, cx: qx, cz: qz, tx, tz, idx: i, along: (i + t) / N };
+      }
+    }
+    return out;
   }
   function makeSplineTrack(ctrl) {
     const points = catmullRom(ctrl, 16);
@@ -865,19 +882,13 @@
   // ==================================================================
   function makeRadialTrack(R0, harms, samples) {
     const centerR = (th) => { let r = R0; for (const h of harms) r += R0 * h.amp * Math.cos(h.k * th + (h.ph || 0)); return r; };
-    const dR = (th) => { let r = 0; for (const h of harms) r -= R0 * h.amp * h.k * Math.sin(h.k * th + (h.ph || 0)); return r; };
     const points = [];
     for (let i = 0; i < samples; i++) { const th = i / samples * PI2; const r = centerR(th); points.push({ x: Math.cos(th) * r, z: Math.sin(th) * r }); }
     let mx = 0, mz = 0; points.forEach((p) => { mx = Math.max(mx, Math.abs(p.x)); mz = Math.max(mz, Math.abs(p.z)); });
     const track = { type: 'spline', points, a: mx, b: mz, centerR, radial: true };
-    track.nearest = (x, z) => {
-      const th = Math.atan2(z, x); const cr = centerR(th); const r = Math.hypot(x, z);
-      const lat = r - cr; const cx = Math.cos(th) * cr, cz = Math.sin(th) * cr;
-      let tx = -Math.sin(th) * cr + Math.cos(th) * dR(th), tz = Math.cos(th) * cr + Math.sin(th) * dR(th);
-      const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
-      const idx = Math.round((th + PI2) % PI2 / PI2 * track.points.length) % track.points.length;
-      return { lat, cx, cz, tx, tz, idx, along: (th + PI2) % PI2 / PI2 };
-    };
+    // physics uses the SAME perpendicular-to-centerline metric the visuals are
+    // drawn with (no more ray-vs-normal drift = no invisible walls on curves)
+    track.nearest = (x, z) => splineNearest(track, x, z, null);
     return track;
   }
 
