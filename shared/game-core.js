@@ -963,10 +963,10 @@
         const cd = Math.hypot(nx, nz) || 1; nx /= cd; nz /= cd;
         car.x -= nx * maxOver; car.z -= nz * maxOver;
         if (iter === 0) {
-          const vAway = (car.vx * nx + car.vy * nz) * sign;
+          const vAway = car.vx * nx + car.vy * nz; // outward speed (n = centerline->car)
           if (vAway > 0) {
             if (vAway > 9) crash = { x: car.x, z: car.z, s: Math.min(1, vAway / 26) };
-            car.vx -= nx * vAway * sign * 1.5; car.vy -= nz * vAway * sign * 1.5;
+            car.vx -= nx * vAway * 1.5; car.vy -= nz * vAway * 1.5;
             car.vx *= 0.9; car.vy *= 0.9;
           }
         }
@@ -977,10 +977,10 @@
         const cd = Math.hypot(nx, nz) || 1; nx /= cd; nz /= cd;
         car.x -= nx * maxOver; car.z -= nz * maxOver;
         if (iter === 0) {
-          const vAway = (car.vx * nx + car.vy * nz) * sign;
+          const vAway = car.vx * nx + car.vy * nz; // outward speed (n = centerline->car)
           if (vAway > 0) {
             if (vAway > 9) crash = { x: car.x, z: car.z, s: Math.min(1, vAway / 26) };
-            car.vx -= nx * vAway * sign * 1.5; car.vy -= nz * vAway * sign * 1.5;
+            car.vx -= nx * vAway * 1.5; car.vy -= nz * vAway * 1.5;
             car.vx *= 0.9; car.vy *= 0.9;
           }
         }
