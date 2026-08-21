@@ -1195,6 +1195,24 @@ function processEvents(snap) {
 }
 
 const wantedRoom = urlParam('room');
+// build marker — must match the server's /version build. If the website and
+// the relay run different code you get "ghost" physics; show a warning then.
+const BUILD = 'v21';
+(function () {
+  try {
+    const cfg = window.SERVER_URL || 'local';
+    const base = cfg === 'local' ? location.origin : cfg.replace(/\/$/, '');
+    fetch(base + '/version').then((r) => r.json()).then((v) => {
+      if (v && v.build && v.build !== BUILD) {
+        const d = document.createElement('div');
+        d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99;background:#b26a00;color:#fff;text-align:center;padding:7px;font:600 13px system-ui,sans-serif;letter-spacing:.4px;';
+        d.textContent = '⚠ VERSION MISMATCH — website ' + BUILD + ' / server ' + v.build + '. Update ALL game files and redeploy (frontend + Render).';
+        document.body.appendChild(d);
+      }
+    }).catch(() => {});
+  } catch (e) {}
+})();
+
 const net = new RoomLink({
   onWelcome(msg) {
     mySlot = msg.slot; roomCode = msg.code;
@@ -1560,6 +1578,31 @@ function placeCar(slot, cs, dt) {
     v.netX += dx * k; v.netZ += dz * k;
     let dh = cs.h - v.netH; while (dh > Math.PI) dh -= PI2; while (dh < -Math.PI) dh += PI2;
     v.netH += dh * k;
+  }
+  // ---- render-time physics clamp: the smoothed display position must obey
+  // the SAME bounds as the server sim, otherwise render lag visually slides
+  // the car through fences/tires for a few frames (the old "passthrough").
+  {
+    const T = curMap;
+    if (T && T.world) {
+      const limC = T.type === 'spline' ? RH + 1.45 : RH + 2.4;
+      const n = T.type === 'spline' ? T.nearest(v.netX, v.netZ) : CORE.ellipseProj(v.netX, v.netZ, T.a, T.b);
+      if (Math.abs(n.lat) > limC) {
+        const nx = v.netX - n.cx, nz = v.netZ - n.cz;
+        const cd = Math.hypot(nx, nz) || 1;
+        const over = Math.abs(n.lat) - limC;
+        v.netX -= (nx / cd) * over; v.netZ -= (nz / cd) * over;
+      }
+      const rr = 0.95 + 0.75; // capsule side + tire
+      for (const hz of T.world.hazards) {
+        const hx = v.netX - hz.x, hzz = v.netZ - hz.z;
+        const d2 = hx * hx + hzz * hzz;
+        if (d2 < rr * rr && d2 > 1e-6) {
+          const d = Math.sqrt(d2);
+          v.netX = hz.x + (hx / d) * rr; v.netZ = hz.z + (hzz / d) * rr;
+        }
+      }
+    }
   }
   v.group.position.set(v.netX, 0, v.netZ);
   v.group.rotation.y = v.netH;
