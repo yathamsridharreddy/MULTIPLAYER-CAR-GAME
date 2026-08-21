@@ -109,6 +109,20 @@
     return { re, d: Math.hypot(x, z) - re };
   }
 
+  // EXACT ellipse coordinate: lat L means the car sits on the offset ellipse
+  // (a+L, b+L) — the SAME parametric family every ellipse-map visual is drawn
+  // with (road edges ±8, curbs ±8.6, walls ±11.6). Using it for physics makes
+  // drawn walls/curbs/road and collision agree at every angle (no ghost walls).
+  function ellipseProj(x, z, a, b) {
+    const f = (L) => { const u = x / (a + L), v = z / (b + L); return u * u + v * v - 1; };
+    let lo = -Math.min(a, b) + 0.01, hi = 80;
+    if (f(hi) > 0) hi = Math.max(Math.hypot(x, z), 200); // extreme fallback
+    for (let i = 0; i < 26; i++) { const mid = (lo + hi) / 2; if (f(mid) > 0) lo = mid; else hi = mid; }
+    const L = (lo + hi) / 2;
+    const ct = x / (a + L), st = z / (b + L);
+    return { lat: L, cx: a * ct, cz: b * st };
+  }
+
   // ------------------------------------------------------------------
   // World generation (identical everywhere via fixed seed)
   // ------------------------------------------------------------------
@@ -243,7 +257,8 @@
     }
 
     isOffroad() {
-      return Math.abs(radialDistToTrack(this.x, this.z, this.track.a, this.track.b).d) > RH + 0.7;
+      if (this.track.type === 'spline') return false; // spline path uses its own near.lat
+      return Math.abs(ellipseProj(this.x, this.z, this.track.a, this.track.b).lat) > RH + 0.7;
     }
 
     forwardSpeed() {
@@ -584,12 +599,12 @@
         if (c1.participating && c2.participating && this.state !== 'waiting') {
           const discs = (c) => {
             const dx = Math.sin(c.heading), dz = Math.cos(c.heading);
-            return [{ x: c.x + dx * 1.2, z: c.z + dz * 1.2 }, { x: c.x - dx * 1.2, z: c.z - dz * 1.2 }];
+            return [-1.5, 0, 1.5].map((o) => ({ x: c.x + dx * o, z: c.z + dz * o }));
           };
           let best = null;
           for (const p of discs(c1)) for (const q of discs(c2)) {
             const dx = q.x - p.x, dz = q.z - p.z;
-            const d2 = dx * dx + dz * dz, rr = 2.0;
+            const d2 = dx * dx + dz * dz, rr = 1.9;
             if (d2 < rr * rr) {
               const d = Math.sqrt(d2) || 1e-3;
               const pen = rr - d;
@@ -917,15 +932,15 @@
     const T = car.track;
     if (!T) return null;
     const spline = T.type === 'spline';
-    const limC = spline ? RH + 1.45 : RH + 2.4; // car center limit
-    const limP = spline ? RH + 2.4 : RH + 3.4;  // nose/tail limit = fence/wall face
+    const limC = spline ? RH + 1.45 : RH + 2.4;  // car center limit
+    const limP = spline ? RH + 2.4 : RH + 3.35;  // nose/tail limit = fence/wall inner face
     const dirX = Math.sin(car.heading), dirY = Math.cos(car.heading);
     const latOf = (px, pz) => {
       if (spline) {
         const n = T.nearest ? T.nearest(px, pz) : splineNearest(T, px, pz, null);
         return n.lat;
       }
-      return radialDistToTrack(px, pz, T.a, T.b).d;
+      return ellipseProj(px, pz, T.a, T.b).lat;
     };
     // iterate: pushing along the center radial only approximately reduces an
     // angled probe's lat — 3 passes converge it fully
@@ -956,10 +971,11 @@
           }
         }
       } else {
-        // ellipse: n is the radial direction from the map origin
-        const cur = Math.hypot(car.x, car.z) || 1;
-        const nx = car.x / cur, nz = car.z / cur;
-        car.x -= nx * sign * maxOver; car.z -= nz * sign * maxOver;
+        // ellipse: n points FROM the centerline TO the car (exact parametric)
+        const c0 = ellipseProj(car.x, car.z, T.a, T.b);
+        let nx = car.x - c0.cx, nz = car.z - c0.cz;
+        const cd = Math.hypot(nx, nz) || 1; nx /= cd; nz /= cd;
+        car.x -= nx * maxOver; car.z -= nz * maxOver;
         if (iter === 0) {
           const vAway = (car.vx * nx + car.vy * nz) * sign;
           if (vAway > 0) {
@@ -991,5 +1007,5 @@
     return s;
   }
 
-  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode };
+  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode };
 });
