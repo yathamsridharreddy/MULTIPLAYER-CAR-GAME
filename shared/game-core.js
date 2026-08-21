@@ -777,14 +777,10 @@
       colliders.push({ x, z, r: 0.9 * sc });
       placed++;
     }
+    // MAPS 1-4: NO on-track hazard colliders. The racing surface must stay
+    // completely clean (no invisible/unexpected mid-track pushes). Map 0 keeps
+    // its tire-stack obstacles in generateWorld() — untouched.
     const hazards = [];
-    [0.12, 0.38, 0.62, 0.88].forEach((f, i) => {
-      const idx = Math.floor(f * P.length); const p = P[idx], p2 = P[(idx + 1) % P.length];
-      let tx = p2.x - p.x, tz = p2.z - p.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
-      const nx = -tz, nz = tx; const side = (i % 2 ? 1 : -1) * (RH - 2.5);
-      const x = p.x + nx * side, z = p.z + nz * side;
-      hazards.push({ x, z }); colliders.push({ x, z, r: 0.75 });
-    });
     return { buildings, trees, mountains: [], colliders, billboard: { x: P[0].x, z: P[0].z, rot: 0 }, hazards };
   }
 

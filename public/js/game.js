@@ -1146,10 +1146,12 @@ function updateLobby(snap) {
   if (!lobbyWired) { lobbyWired = true; wireLobbyV2(); }
 }
 let lobbyWired = false;
+let lastLb = null; // cached — server now sends the leaderboard at 1 Hz only
 function renderLeaderboard(snap) {
   const el = $('leaderboard');
   if (!el) return;
-  const rows = snap.lb || [];
+  if (snap.lb) lastLb = snap.lb;
+  const rows = lastLb || [];
   if (!rows.length) { el.innerHTML = '<div class="lb-empty">No times yet on this circuit — set the first!</div>'; return; }
   el.innerHTML = rows.map((r, i) =>
     `<div class="lb-row"><span class="lb-pos">${i + 1}</span><span class="lb-name">${escapeHtml(r.name)}</span><span class="lb-time">${fmtTime(r.t)}</span></div>`
@@ -1197,7 +1199,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v22';
+const BUILD = 'v23';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

@@ -80,7 +80,7 @@ function lbGet(mapId) { return (leaderboard[mapId] || []).slice(0, 5); }
 function newRoom(mode, mapId) {
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
-  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map() };
+  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false };
   rooms.set(code, entry);
   console.log(`[room ${code}] created (${entry.room.mode}, map ${entry.room.mapId})`);
   return entry;
@@ -296,11 +296,17 @@ setInterval(() => {
     }
 
     if (entry.screens.size > 0) {
-      const snapObj = room.snapshot();
-      snapObj.lb = lbGet(room.mapId);
-      const snap = JSON.stringify(snapObj);
-      for (const s of entry.screens) {
-        if (s.readyState === 1) { try { s.send(snap); } catch (e) {} }
+      // Bandwidth: the lobby is idle -> 5 Hz is plenty there; races keep the
+      // full 30 Hz so gameplay quality is unchanged. Leaderboard piggybacks
+      // at 1 Hz instead of every snapshot (clients cache the last one).
+      const inRace = room.state !== 'waiting';
+      if (inRace || tickCount % 6 === 0) {
+        const snapObj = room.snapshot();
+        if (tickCount % 30 === 0 || !entry.lbSent) { snapObj.lb = lbGet(room.mapId); entry.lbSent = true; }
+        const snap = JSON.stringify(snapObj);
+        for (const s of entry.screens) {
+          if (s.readyState === 1) { try { s.send(snap); } catch (e) {} }
+        }
       }
     }
 
@@ -323,7 +329,7 @@ app.get('/health', (req, res) => {
 // build marker — lets you verify at a glance that frontend + server run the
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
-  res.json({ build: 'v22', tickHz: core.CFG.tickHz });
+  res.json({ build: 'v23', tickHz: core.CFG.tickHz });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
