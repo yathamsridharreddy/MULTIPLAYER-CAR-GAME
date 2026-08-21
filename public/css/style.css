@@ -245,7 +245,7 @@ button.ghost.sm { padding: 5px 12px; font-size: 11px; letter-spacing: 1px; font-
 /* ---------- Lobby overlay ---------- */
 #overlay {
   position: fixed; inset: 0; z-index: 20;
-  display: flex; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  display: flex; flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   background: radial-gradient(120% 120% at 50% 0%, rgba(10,16,32,.82), rgba(4,6,12,.94));
   backdrop-filter: blur(7px);
@@ -415,7 +415,7 @@ button.ghost.sm { padding: 5px 12px; font-size: 11px; letter-spacing: 1px; font-
 @media (max-width: 760px) { .lobby-grid { flex-direction: column; } }
 
 /* ===== two-page lobby + card selectors ===== */
-.page { display: block; }
+.page { display: flex; width: 100%; flex: 1; }
 .big-cta {
   margin-top: 16px;
   background: linear-gradient(135deg, #ff5252, #c62b4e); color: #fff; border: none; border-radius: 999px;
