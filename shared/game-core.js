@@ -917,8 +917,8 @@
     const T = car.track;
     if (!T) return null;
     const spline = T.type === 'spline';
-    const limC = spline ? RH + 1.6 : RH + 2.4;  // car center limit
-    const limP = spline ? RH + 2.5 : RH + 3.4;  // nose/tail limit = fence/wall face
+    const limC = spline ? RH + 1.45 : RH + 2.4; // car center limit
+    const limP = spline ? RH + 2.4 : RH + 3.4;  // nose/tail limit = fence/wall face
     const dirX = Math.sin(car.heading), dirY = Math.cos(car.heading);
     const latOf = (px, pz) => {
       if (spline) {

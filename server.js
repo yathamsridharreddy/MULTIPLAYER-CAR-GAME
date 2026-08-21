@@ -320,6 +320,11 @@ setInterval(() => {
 app.get('/health', (req, res) => {
   res.json({ ok: true, rooms: rooms.size, tickHz: core.CFG.tickHz });
 });
+// build marker — lets you verify at a glance that frontend + server run the
+// SAME version (version drift between them causes "ghost" physics bugs)
+app.get('/version', (req, res) => {
+  res.json({ build: 'v17', tickHz: core.CFG.tickHz });
+});
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[velocity-rush] multiplayer server on http://0.0.0.0:${PORT} (${core.CFG.tickHz} Hz sim)`);

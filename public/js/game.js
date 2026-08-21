@@ -312,6 +312,28 @@ function buildSplineVisuals(map, T) {
   const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8 });
   ribbon(cl, RH - 0.7, 0.18, 0.045, lineMat);
   ribbon(cl, -(RH - 0.7), 0.18, 0.045, lineMat);
+  // red/white curbs at the road edge (same style as Highland) so the drivable
+  // edge is clearly visible — no more "invisible" slow-down on bare grass
+  {
+    const curbGeo = new THREE.BoxGeometry(1.0, 0.07, 2.6);
+    const curbR = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.55 });
+    const curbW = new THREE.MeshStandardMaterial({ color: 0xefefea, roughness: 0.55 });
+    const N = cl.length;
+    for (const off of [RH + 0.6, -RH - 0.6]) {
+      const ir = new THREE.InstancedMesh(curbGeo, curbR, Math.ceil(N / 2));
+      const iw = new THREE.InstancedMesh(curbGeo, curbW, Math.floor(N / 2));
+      let ri = 0, wi = 0;
+      for (let i = 0; i < N; i++) {
+        const p = cl[i], q = cl[(i + 1) % N];
+        let tx = q.x - p.x, tz = q.z - p.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+        _iq.setFromAxisAngle(_iup, Math.atan2(tx, tz));
+        _im.compose(new THREE.Vector3(p.x + (-tz) * off, 0.045, p.z + tx * off), _iq, new THREE.Vector3(1, 1, 1));
+        if (i % 2 === 0) ir.setMatrixAt(ri++, _im); else iw.setMatrixAt(wi++, _im);
+      }
+      ir.receiveShadow = iw.receiveShadow = true;
+      worldGroup.add(ir, iw);
+    }
+  }
   // visible guard-rail fence just OUTSIDE the barrier limit — the car stops
   // AT the barrier and its body kisses the rail (never clips through it)
   const fenceMat = new THREE.MeshStandardMaterial({ color: 0xcfd6dd, metalness: 0.6, roughness: 0.4 });
