@@ -1301,14 +1301,6 @@ function setNetBanner(ok) { $('net-banner').classList.toggle('hidden', ok); }
 // Keyboard fallback (unchanged)
 // ---------------------------------------------------------------------------
 const keys = new Set();
-// the game page must never scroll up/down: block wheel & touch scrolling
-// everywhere except inside the lobby card's own scrollbar
-window.addEventListener('wheel', (e) => {
-  if (!e.target.closest || !e.target.closest('.overlay-card')) e.preventDefault();
-}, { passive: false });
-window.addEventListener('touchmove', (e) => {
-  if (!e.target.closest || !e.target.closest('.overlay-card')) e.preventDefault();
-}, { passive: false });
 window.addEventListener('keydown', (e) => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;

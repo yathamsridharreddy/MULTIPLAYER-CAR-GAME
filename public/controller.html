@@ -8,9 +8,14 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <title>Sridhar Rush — Controller</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕹️</text></svg>"/>
-  <link rel="stylesheet" href="css/controller.css?v=12"/>
+  <link rel="stylesheet" href="css/controller.css?v=13"/>
 </head>
 <body data-player="p0">
+  <script>
+    // controller page must never scroll/bounce on touch
+    document.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+    document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  </script>
   <div id="topbar">
     <div id="status-col">
       <div id="status" class="pill wait">Connecting…</div>
@@ -70,7 +75,7 @@
   <div id="rotate-hint">🔄 Rotate your phone for the best layout</div>
 
   <script src="js/config.js"></script>
-  <script src="js/net.js?v=12"></script>
-  <script src="js/controller.js?v=12"></script>
+  <script src="js/net.js?v=13"></script>
+  <script src="js/controller.js?v=13"></script>
 </body>
 </html>
