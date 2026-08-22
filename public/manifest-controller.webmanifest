@@ -1,10 +1,11 @@
 {
-  "name": "Sridhar Rush — Online 3D Racing",
-  "short_name": "Sridhar Rush",
-  "description": "Real-time multiplayer 3D racing for the browser — your phone becomes the joystick. Scan, join, race.",
-  "start_url": "/",
+  "name": "Sridhar Rush — Joystick",
+  "short_name": "SR Joystick",
+  "description": "Turn your phone into a wireless joystick for Sridhar Rush.",
+  "start_url": "/controller",
   "scope": "/",
-  "display": "standalone",
+  "display": "fullscreen",
+  "orientation": "landscape",
   "background_color": "#05070c",
   "theme_color": "#05070c",
   "icons": [

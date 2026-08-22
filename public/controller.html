@@ -8,11 +8,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="theme-color" content="#05070c"/>
   <meta name="description" content="Wireless joystick for Sridhar Rush — steer, throttle, nitro and drift from your phone."/>
-  <link rel="manifest" href="manifest.webmanifest"/>
+  <link rel="manifest" href="manifest-controller.webmanifest"/>
   <link rel="apple-touch-icon" href="icon.svg"/>
   <title>Sridhar Rush — Controller</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕹️</text></svg>"/>
-  <link rel="stylesheet" href="css/controller.css?v=35"/>
+  <link rel="stylesheet" href="css/controller.css?v=36"/>
 </head>
 <body data-player="p0">
   <script>
@@ -79,7 +79,13 @@
   <div id="rotate-hint">🔄 Rotate your phone for the best layout</div>
 
   <script src="js/config.js"></script>
-  <script src="js/net.js?v=35"></script>
-  <script src="js/controller.js?v=35"></script>
+  <script src="js/net.js?v=36"></script>
+  <script src="js/controller.js?v=36"></script>
+  <script>
+  // PWA (v36): register service worker (makes the joystick installable on the phone)
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () {}); });
+  }
+  </script>
 </body>
 </html>
