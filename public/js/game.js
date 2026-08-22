@@ -848,8 +848,12 @@ function loadPrefs() {
 }
 let prefs = loadPrefs();
 function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
+// Account-lite: a stable player id persisted on this device, so returning
+// players update one leaderboard entry instead of creating duplicates.
+if (!prefs.pid) { prefs.pid = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
+if (!prefs.name) { prefs.name = 'RACER-' + prefs.pid.slice(1, 5).toUpperCase(); savePrefs(); }
 function identityPayload() {
-  return { name: prefs.name || ('RACER-' + Math.floor(100 + Math.random() * 900)), color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, map: selectedMap };
+  return { name: prefs.name, pid: prefs.pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, map: selectedMap };
 }
 
 function applyQuality(q) {
@@ -1153,9 +1157,10 @@ function renderLeaderboard(snap) {
   if (snap.lb) lastLb = snap.lb;
   const rows = lastLb || [];
   if (!rows.length) { el.innerHTML = '<div class="lb-empty">No times yet on this circuit — set the first!</div>'; return; }
-  el.innerHTML = rows.map((r, i) =>
-    `<div class="lb-row"><span class="lb-pos">${i + 1}</span><span class="lb-name">${escapeHtml(r.name)}</span><span class="lb-time">${fmtTime(r.t)}</span></div>`
-  ).join('');
+  el.innerHTML = rows.map((r, i) => {
+    const me = r.pid && r.pid === prefs.pid;
+    return `<div class="lb-row${me ? ' me' : ''}"><span class="lb-pos">${i + 1}</span><span class="lb-name">${escapeHtml(r.name)}${me ? ' ★' : ''}</span><span class="lb-time">${fmtTime(r.t)}</span></div>`;
+  }).join('');
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1199,7 +1204,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v29';
+const BUILD = 'v30';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

@@ -83,12 +83,29 @@ try { leaderboard = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); } catch (e) { 
 
 function lbAdd(mapId, entry) {
   const list = leaderboard[mapId] || (leaderboard[mapId] = []);
-  list.push(entry);
-  list.sort((a, b) => a.t - b.t);
+  // Account-lite: a returning player (same pid) updates their entry instead of
+  // adding a duplicate row; keeps the board a true "top players" list.
+  if (entry.pid) {
+    const i = list.findIndex((r) => r.pid === entry.pid);
+    if (i >= 0) {
+      const r = list[i];
+      r.name = entry.name;
+      if (entry.t != null && (r.t == null || entry.t < r.t)) r.t = entry.t;
+      if (entry.best != null && (r.best == null || entry.best < r.best)) r.best = entry.best;
+      r.ts = entry.ts;
+    } else list.push(entry);
+  } else list.push(entry);
+  list.sort((a, b) => (a.t == null ? 1e9 : a.t) - (b.t == null ? 1e9 : b.t));
   leaderboard[mapId] = list.slice(0, 20);
   try { fs.writeFileSync(LB_FILE, JSON.stringify(leaderboard)); } catch (e) {}
 }
 function lbGet(mapId) { return (leaderboard[mapId] || []).slice(0, 5); }
+// CORS-friendly HTTP endpoint so the lobby can show the global board directly.
+app.get('/lb', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  const m = parseInt(req.query.map, 10);
+  res.json(leaderboard[isNaN(m) ? 0 : m] || []);
+});
 
 function newRoom(mode, mapId) {
   let code;
@@ -335,7 +352,7 @@ setInterval(() => {
     for (const car of room.cars) {
       if (car.finished && car.finishTime != null && !car._lb) {
         car._lb = true;
-        lbAdd(room.mapId, { name: car.name, t: car.finishTime, best: car.best, ts: now });
+        lbAdd(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime, best: car.best, ts: now });
       }
     }
 
@@ -376,7 +393,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v29', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v30', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

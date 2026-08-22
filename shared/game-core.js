@@ -227,9 +227,10 @@
     }
 
     setClass(key) { if (CAR_CLASSES[key]) this.cls = CAR_CLASSES[key]; }
-    setMeta(name, color) {
+    setMeta(name, color, pid) {
       if (name) this.name = String(name).slice(0, 14);
       if (color != null) this.color = color;
+      if (pid) this.pid = String(pid).slice(0, 24); // stable account-lite id
     }
 
     resetState(raceTime) {
@@ -420,7 +421,7 @@
 
     setPlayerMeta(slot, meta) {
       const car = this.cars[slot - 1];
-      if (car && meta) car.setMeta(meta.name, meta.color);
+      if (car && meta) car.setMeta(meta.name, meta.color, meta.pid);
       if (car && meta && meta.cls) car.setClass(meta.cls);
     }
 
