@@ -749,6 +749,7 @@ function loadGhost(mapId) {
 function ghostStart(mapId) {
   ghostRec = []; ghostRecT = 0; ghostRecOn = !!prefs.ghost;
   loadGhost(mapId);
+  if (prefs.ghost) ensureGhost(); // lazy-create the ghost car (fix: it was never created before)
   if (ghostGroup) ghostGroup.visible = !!prefs.ghost && !!ghostData;
 }
 function ghostRecord(t, x, z, h) {
@@ -886,7 +887,7 @@ const CAR_NAMES = [
 function loadPrefs() {
   try { return Object.assign({
     name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false
+    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, fx: true
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
   catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false }; }
 }
@@ -905,6 +906,33 @@ function applyQuality(q) {
   if (q === 'low') { renderer.setPixelRatio(1); sunLight.castShadow = false; }
   else if (q === 'med') { renderer.setPixelRatio(Math.min(dpr, 1.5)); sunLight.castShadow = true; }
   else { renderer.setPixelRatio(Math.min(dpr, 2)); sunLight.castShadow = true; }
+}
+
+// ---------------------------------------------------------------------------
+// FX: subtle cinematic bloom (neon glow) + CSS vignette. Graphics-only, fully
+// additive: if anything fails it silently falls back to the normal renderer.
+// Only active on HIGH quality and when the FX toggle is on (default: on).
+// ---------------------------------------------------------------------------
+let fxComposer = null, fxTried = false;
+function fxActive() { return prefs.fx !== false && prefs.quality === 'high'; }
+function initFX() {
+  if (fxTried) return; fxTried = true;
+  try {
+    if (!THREE.EffectComposer || !THREE.RenderPass || !THREE.UnrealBloomPass) return;
+    const c = new THREE.EffectComposer(renderer);
+    c.addPass(new THREE.RenderPass(scene, camera));
+    // strength 0.5 / radius 0.7 / threshold 0.55 -> neon rails & lights glow, dark asphalt stays clean
+    c.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.7, 0.55));
+    c.setSize(window.innerWidth, window.innerHeight);
+    fxComposer = c;
+  } catch (e) { fxComposer = null; }
+}
+function renderMain() {
+  if (fxActive()) {
+    if (!fxComposer) initFX();
+    if (fxComposer) { fxComposer.render(); return; }
+  }
+  renderer.render(scene, camera);
 }
 
 // audio: master mute + simple synth music loop
@@ -1012,7 +1040,8 @@ function wireLobbyV2() {
   const rmEl = $('set-rm'); if (rmEl) { rmEl.checked = !!prefs.rm; rmEl.addEventListener('change', () => { prefs.rm = rmEl.checked; savePrefs(); }); }
   const cbEl = $('set-cb'); if (cbEl) { cbEl.checked = !!prefs.cb; cbEl.addEventListener('change', () => { prefs.cb = cbEl.checked; savePrefs(); }); }
   const arEl = $('set-ar'); if (arEl) { arEl.checked = !!prefs.ar; arEl.addEventListener('change', () => { prefs.ar = arEl.checked; savePrefs(); }); }
-  const ghEl = $('set-ghost'); if (ghEl) { ghEl.checked = !!prefs.ghost; ghEl.addEventListener('change', () => { prefs.ghost = ghEl.checked; savePrefs(); if (ghostGroup) ghostGroup.visible = false; }); }
+  const ghEl = $('set-ghost'); if (ghEl) { ghEl.checked = !!prefs.ghost; ghEl.addEventListener('change', () => { prefs.ghost = ghEl.checked; savePrefs(); if (prefs.ghost) ensureGhost(); if (ghostGroup) ghostGroup.visible = false; }); }
+  const fxEl = $('set-fx'); if (fxEl) { fxEl.checked = prefs.fx !== false; fxEl.addEventListener('change', () => { prefs.fx = fxEl.checked; savePrefs(); }); }
   const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutorial').style.display = 'none'; try { localStorage.setItem('sr_tut', '1'); } catch (e) {} });
   const shareEl = $('share-btn');
   if (shareEl) shareEl.addEventListener('click', () => {
@@ -1251,7 +1280,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v34';
+const BUILD = 'v35';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -1855,6 +1884,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (fxComposer) fxComposer.setSize(window.innerWidth, window.innerHeight);
 });
 window.addEventListener('pointerdown', ensureAudio, { passive: true });
 
@@ -1893,7 +1923,7 @@ function frame() {
   updateAudio(mine, rival);
   updateHUD(mine, rival);
   maybeSendKeyboard(dt);
-  if (splitScreen) { renderSplit(dt); } else { updateCamera(dt, mine, rival); renderer.render(scene, camera); }
+  if (splitScreen) { renderSplit(dt); } else { updateCamera(dt, mine, rival); renderMain(); }
   if (!bootHidden) {
     bootHidden = true;
     const bs = document.getElementById('boot-splash');

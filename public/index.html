@@ -179,6 +179,7 @@
               <label class="toggle-line"><input type="checkbox" id="set-cb"/> 🎨 Colorblind-friendly UI</label>
               <label class="toggle-line"><input type="checkbox" id="set-ar" checked/> ⚙️ Adaptive resolution</label>
               <label class="toggle-line"><input type="checkbox" id="set-ghost"/> 👻 Ghost (race your best lap)</label>
+              <label class="toggle-line"><input type="checkbox" id="set-fx" checked/> 💡 Glow FX (neon bloom)</label>
             </div>
             <div class="lsec">
               <div class="lsec-title">LEADERBOARD — TOP 5</div>
@@ -245,10 +246,16 @@
   </div>
 
   <script src="js/vendor/three.min.js"></script>
+  <script src="js/vendor/post/CopyShader.js"></script>
+  <script src="js/vendor/post/LuminosityHighPassShader.js"></script>
+  <script src="js/vendor/post/ShaderPass.js"></script>
+  <script src="js/vendor/post/EffectComposer.js"></script>
+  <script src="js/vendor/post/RenderPass.js"></script>
+  <script src="js/vendor/post/UnrealBloomPass.js"></script>
   <script src="js/vendor/qrcode.js"></script>
-  <script src="js/game-core.js?v=25"></script>
+  <script src="js/game-core.js?v=35"></script>
   <script src="js/config.js"></script>
-  <script src="js/net.js?v=25"></script>
-  <script src="js/game.js?v=25"></script>
+  <script src="js/net.js?v=35"></script>
+  <script src="js/game.js?v=35"></script>
 </body>
 </html>
