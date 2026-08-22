@@ -1204,7 +1204,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v32';
+const BUILD = 'v33';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
