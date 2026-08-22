@@ -21,6 +21,10 @@ const { WebSocketServer } = require('ws');
 const core = require('./shared/game-core.js');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
+// Opt-in lean mode for tight free tiers (set LOW_BANDWIDTH=1): race snapshots
+// 30->20 Hz and phone telemetry 6->3 Hz. Sim rate stays 30 Hz; interpolation
+// keeps motion smooth, so gameplay feel is unchanged while bandwidth drops ~1/3.
+const LOW_BW = process.env.LOW_BANDWIDTH === '1';
 const TICK_MS = 1000 / core.CFG.tickHz;
 const IDLE_ROOM_MS = 10 * 60 * 1000;
 
@@ -307,7 +311,8 @@ setInterval(() => {
       // full 30 Hz so gameplay quality is unchanged. Leaderboard piggybacks
       // at 1 Hz instead of every snapshot (clients cache the last one).
       const inRace = room.state !== 'waiting';
-      if (inRace || tickCount % 6 === 0) {
+      const sendNow = inRace ? (!LOW_BW || tickCount % 3 !== 0) : tickCount % 6 === 0;
+      if (sendNow) {
         const snapObj = room.snapshot();
         if (tickCount % 30 === 0 || !entry.lbSent) { snapObj.lb = lbGet(room.mapId); entry.lbSent = true; }
         const snap = JSON.stringify(snapObj);
@@ -317,8 +322,8 @@ setInterval(() => {
       }
     }
 
-    // telemetry to phones every 5 ticks (~6.7 Hz)
-    if (tickCount % 5 === 0 && entry.controllers.size > 0) {
+    // telemetry to phones every 5 ticks (~6.7 Hz), 10 in lean mode
+    if (tickCount % (LOW_BW ? 10 : 5) === 0 && entry.controllers.size > 0) {
       for (const [ws, slot] of entry.controllers) controllerTelemetry(entry, ws, slot);
     }
 
@@ -331,12 +336,14 @@ setInterval(() => {
 }, TICK_MS);
 
 app.get('/health', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
   res.json({ ok: true, rooms: rooms.size, tickHz: core.CFG.tickHz });
 });
 // build marker — lets you verify at a glance that frontend + server run the
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
-  res.json({ build: 'v25', tickHz: core.CFG.tickHz, geom: core.GEOM_ID });
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ build: 'v27', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
