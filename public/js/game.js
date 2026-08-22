@@ -1199,7 +1199,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v27';
+const BUILD = 'v29';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -1231,6 +1231,8 @@ const net = new RoomLink({
     $('slot-badge').style.display = '';
     setNetBanner(true);
     applyMyColor();
+    const qb = $('quickplay-btn');
+    if (qb) { qb.disabled = false; qb.textContent = '⚡ QUICK PLAY — find a rival'; }
     if (msg.snapshot) ingestSnapshot(msg.snapshot);
   },
   onMessage(msg) {
@@ -1243,6 +1245,17 @@ const net = new RoomLink({
       case 'pong': {
         const rtt = performance.now() - (msg.t || performance.now());
         pingMs = pingMs < 0 ? rtt : pingMs * 0.7 + rtt * 0.3;
+        break;
+      }
+      case 'searching': {
+        const b = $('quickplay-btn');
+        if (b) { b.disabled = true; b.textContent = '🔎 Searching for a rival…'; }
+        break;
+      }
+      case 'matched': {
+        const b = $('quickplay-btn');
+        if (b) { b.disabled = false; b.textContent = '⚡ QUICK PLAY — find a rival'; }
+        toast('⚡ Match found!');
         break;
       }
       case 'error': if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!'); break;
@@ -1259,6 +1272,14 @@ function sendHello() {
 }
 function sendMeta() { if (net.isOpen()) net.send(Object.assign({ type: 'meta' }, identityPayload())); }
 sendHello();
+
+// Quick-Play matchmaking (additive — existing create/join-by-code flows untouched)
+const qpBtn = $('quickplay-btn');
+if (qpBtn) qpBtn.addEventListener('click', () => {
+  if (!net.isOpen()) return;
+  qpBtn.disabled = true; qpBtn.textContent = '🔎 Searching…';
+  net.send({ type: 'matchmake' });
+});
 
 function showRoomError(text) {
   $('room-error').textContent = text;

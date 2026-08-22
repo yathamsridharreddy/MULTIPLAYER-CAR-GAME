@@ -70,6 +70,8 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 // Rooms
 // ---------------------------------------------------------------------------
 const rooms = new Map();   // code -> { room, screens:Set<ws>, controllers:Map<ws,slot> }
+const matchQueue = [];     // ws clients waiting for Quick-Play matchmaking
+const clientsByWs = new Map(); // ws -> client (for matchmaking pairing)
 
 // ---------------------------------------------------------------------------
 // Leaderboard (per-map, persisted to disk where available)
@@ -137,14 +139,16 @@ function controllerTelemetry(entry, ws, slot) {
 // ---------------------------------------------------------------------------
 wss.on('connection', (ws) => {
   const client = { ws, role: null, slot: null, entry: null };
+  clientsByWs.set(ws, client);
 
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
     handleMessage(client, msg);
   });
-  ws.on('close', () => handleLeave(client));
-  ws.on('error', () => handleLeave(client));
+  const drop = () => { const i = matchQueue.indexOf(ws); if (i >= 0) matchQueue.splice(i, 1); clientsByWs.delete(ws); handleLeave(client); };
+  ws.on('close', drop);
+  ws.on('error', drop);
 });
 
 function joinRoom(client, entry, role) {
@@ -254,6 +258,35 @@ function handleMessage(client, msg) {
       break;
     }
 
+    case 'matchmake': {
+      // Quick-Play: queue this screen; when two are waiting, pair them into a
+      // fresh room (each becomes a driver screen). Purely additive.
+      if (client.entry) {
+        // A fresh client auto-created an empty room on hello; leave it so we
+        // can pair. If the room already has other people, ignore the request.
+        const entry = client.entry;
+        const empty = entry.screens.size <= 1 && entry.controllers.size === 0 && entry.room.state === 'waiting';
+        if (!empty) return;
+        entry.screens.delete(client.ws);
+        client.entry = null; client.role = null; client.slot = null;
+        if (entry.screens.size === 0 && entry.controllers.size === 0) rooms.delete(entry.room.code);
+      }
+      if (!matchQueue.includes(client.ws)) matchQueue.push(client.ws);
+      sendJSON(client.ws, { type: 'searching', waiting: matchQueue.length });
+      if (matchQueue.length >= 2) {
+        const wsA = matchQueue.shift(), wsB = matchQueue.shift();
+        const cA = clientsByWs.get(wsA), cB = clientsByWs.get(wsB);
+        if (cA && cB) {
+          const entry = newRoom('race', 0);
+          joinRoom(cA, entry, 'screen');
+          joinRoom(cB, entry, 'screen');
+          sendJSON(wsA, { type: 'matched', code: entry.room.code });
+          sendJSON(wsB, { type: 'matched', code: entry.room.code });
+        }
+      }
+      break;
+    }
+
     case 'ping':
       sendJSON(client.ws, { type: 'pong', t: msg.t });
       break;
@@ -343,7 +376,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v27', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v29', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
