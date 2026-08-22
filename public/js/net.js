@@ -3,11 +3,14 @@
 /* RoomLink — WebSocket client for the online multiplayer server. */
 
 function serverWsUrl() {
-  const cfg = window.SERVER_URL || 'local';
+  let cfg = (window.SERVER_URL || 'local').trim();
   if (cfg === 'local') {
     return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
   }
-  return cfg.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + '/ws';
+  // Tolerate env values saved without a scheme (e.g. "app.up.railway.app")
+  if (!/^(https?|wss?):\/\//i.test(cfg)) cfg = 'https://' + cfg;
+  cfg = cfg.replace(/\/+$/, '');
+  return cfg.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:') + '/ws';
 }
 
 class RoomLink {
