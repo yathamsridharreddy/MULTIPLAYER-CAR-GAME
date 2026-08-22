@@ -475,3 +475,12 @@ button.ghost.sm { padding: 5px 12px; font-size: 11px; letter-spacing: 1px; font-
 }
 @keyframes bsload { 0% { transform: translateX(-100%);} 100% { transform: translateX(300%);} }
 .bs-msg { font-size: 12px; color: #8fa2b8; letter-spacing: .5px; }
+
+/* ---------- accessibility: visible keyboard focus + reduced motion ---------- */
+button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+  outline: 3px solid #ffd479; outline-offset: 2px; border-radius: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  #speedlines { display: none !important; }
+}
