@@ -336,7 +336,7 @@ app.get('/health', (req, res) => {
 // build marker — lets you verify at a glance that frontend + server run the
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
-  res.json({ build: 'v24', tickHz: core.CFG.tickHz, geom: core.GEOM_ID });
+  res.json({ build: 'v25', tickHz: core.CFG.tickHz, geom: core.GEOM_ID });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

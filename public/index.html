@@ -6,11 +6,30 @@
   <meta http-equiv="Pragma" content="no-cache"/>
   <meta http-equiv="Expires" content="0"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="description" content="Sridhar Rush — a real-time multiplayer 3D racing game for the browser. Your phone becomes the steering wheel: scan a QR code and race a friend across the internet."/>
+  <meta name="theme-color" content="#05070c"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:site_name" content="Sridhar Rush"/>
+  <meta property="og:title" content="Sridhar Rush — Online 3D Racing"/>
+  <meta property="og:description" content="Your phone is the joystick. Scan, join, and race a friend in real time."/>
+  <meta property="og:image" content="/img/map-neon.jpg"/>
+  <meta name="twitter:card" content="summary_large_image"/>
+  <meta name="twitter:title" content="Sridhar Rush — Online 3D Racing"/>
+  <meta name="twitter:description" content="Your phone is the joystick. Scan, join, and race a friend in real time."/>
+  <link rel="manifest" href="manifest.webmanifest"/>
+  <link rel="preload" as="script" href="js/vendor/three.min.js"/>
   <title>Sridhar Rush — Online 3D Racing</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏎️</text></svg>"/>
-  <link rel="stylesheet" href="css/style.css?v=24"/>
+  <link rel="stylesheet" href="css/style.css?v=25"/>
 </head>
 <body>
+  <div id="boot-splash">
+    <div class="bs-card">
+      <div class="bs-logo">SRIDHAR <span>RUSH</span></div>
+      <div class="bs-bar"><i></i></div>
+      <div class="bs-msg">Loading circuit…</div>
+    </div>
+  </div>
   <div id="stage"></div>
 
   <!-- cinematic overlays -->
@@ -166,7 +185,7 @@
         </div>
 
         <button id="next-btn" class="big-cta">SET UP RACE →</button>
-        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v24</p>
+        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v25</p>
       </div>
     </div>
 
@@ -224,9 +243,9 @@
 
   <script src="js/vendor/three.min.js"></script>
   <script src="js/vendor/qrcode.js"></script>
-  <script src="js/game-core.js?v=24"></script>
+  <script src="js/game-core.js?v=25"></script>
   <script src="js/config.js"></script>
-  <script src="js/net.js?v=24"></script>
-  <script src="js/game.js?v=24"></script>
+  <script src="js/net.js?v=25"></script>
+  <script src="js/game.js?v=25"></script>
 </body>
 </html>

@@ -1199,7 +1199,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v24';
+const BUILD = 'v25';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -1337,6 +1337,22 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 let kbAccum = 0;
+// USB/BT gamepad (additive — only used when a pad is connected, keyboard still works)
+function readGamepad() {
+  if (!navigator.getGamepads) return null;
+  const pads = navigator.getGamepads();
+  for (const gp of pads) {
+    if (!gp || !gp.connected) continue;
+    const dz = (v) => (Math.abs(v) < 0.1 ? 0 : v);
+    const steer = dz(gp.axes[0] || 0) + ((gp.buttons[14] && gp.buttons[14].pressed) ? -1 : 0) + ((gp.buttons[15] && gp.buttons[15].pressed) ? 1 : 0);
+    const throttle = gp.buttons[7] ? gp.buttons[7].value : ((gp.buttons[0] && gp.buttons[0].pressed) ? 1 : 0);
+    const brake = gp.buttons[6] ? gp.buttons[6].value : ((gp.buttons[1] && gp.buttons[1].pressed) ? 1 : 0);
+    const handbrake = !!(gp.buttons[2] && gp.buttons[2].pressed);
+    const nitro = !!((gp.buttons[5] && gp.buttons[5].pressed) || (gp.buttons[3] && gp.buttons[3].pressed));
+    if (steer || throttle || brake || handbrake || nitro || (gp.axes[0] && Math.abs(gp.axes[0]) > 0.05)) return { steer: Math.max(-1, Math.min(1, steer)), throttle, brake, handbrake, nitro };
+  }
+  return null;
+}
 function maybeSendKeyboard(dt) {
   if (!latest || !net.isOpen()) return;
   if (latest.state !== 'racing' && latest.state !== 'countdown') return;
@@ -1344,10 +1360,19 @@ function maybeSendKeyboard(dt) {
   kbAccum += dt;
   if (kbAccum < 0.033) return;
   kbAccum = 0;
-  const steer = (keys.has('ArrowLeft') || keys.has('KeyA') ? -1 : 0) + (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0);
-  const throttle = (keys.has('ArrowUp') || keys.has('KeyW')) ? 1 : 0;
-  const brake = (keys.has('ArrowDown') || keys.has('KeyS')) ? 1 : 0;
-  net.send({ type: 'input', steer, throttle, brake, handbrake: keys.has('Space'), nitro: keys.has('ShiftLeft') || keys.has('ShiftRight') });
+  let steer = (keys.has('ArrowLeft') || keys.has('KeyA') ? -1 : 0) + (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0);
+  let throttle = (keys.has('ArrowUp') || keys.has('KeyW')) ? 1 : 0;
+  let brake = (keys.has('ArrowDown') || keys.has('KeyS')) ? 1 : 0;
+  let handbrake = keys.has('Space'), nitro = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  const gp = readGamepad();
+  if (gp) {
+    if (gp.steer) steer = gp.steer;
+    throttle = Math.max(throttle, gp.throttle);
+    brake = Math.max(brake, gp.brake);
+    handbrake = handbrake || gp.handbrake;
+    nitro = nitro || gp.nitro;
+  }
+  net.send({ type: 'input', steer, throttle, brake, handbrake, nitro });
 }
 
 // ---------------------------------------------------------------------------
@@ -1790,5 +1815,11 @@ function frame() {
   updateHUD(mine, rival);
   maybeSendKeyboard(dt);
   if (splitScreen) { renderSplit(dt); } else { updateCamera(dt, mine, rival); renderer.render(scene, camera); }
+  if (!bootHidden) {
+    bootHidden = true;
+    const bs = document.getElementById('boot-splash');
+    if (bs) { bs.classList.add('done'); setTimeout(() => bs.remove(), 600); }
+  }
 }
+let bootHidden = false;
 frame();
