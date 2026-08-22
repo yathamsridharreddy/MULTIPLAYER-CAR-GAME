@@ -729,6 +729,50 @@ const carVisuals = {
 scene.add(carVisuals[1].group, carVisuals[2].group);
 
 // ---------------------------------------------------------------------------
+// Ghost (race your best lap) — OFF by default, purely visual, no physics.
+// Records your lap positions from server snapshots; replays a translucent ghost.
+// ---------------------------------------------------------------------------
+let ghostGroup = null, ghostData = null, ghostRec = [], ghostRecOn = false, ghostRecT = 0;
+function ensureGhost() {
+  if (ghostGroup) return ghostGroup;
+  ghostGroup = new THREE.Group();
+  const m = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.9, 4.2),
+    new THREE.MeshBasicMaterial({ color: 0x8fd7ff, transparent: true, opacity: 0.32, depthWrite: false }));
+  m.position.y = 0.5; ghostGroup.add(m);
+  ghostGroup.visible = false; scene.add(ghostGroup);
+  return ghostGroup;
+}
+function loadGhost(mapId) {
+  ghostData = null;
+  try { const g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); if (g && g.length) ghostData = g; } catch (e) {}
+}
+function ghostStart(mapId) {
+  ghostRec = []; ghostRecT = 0; ghostRecOn = !!prefs.ghost;
+  loadGhost(mapId);
+  if (ghostGroup) ghostGroup.visible = !!prefs.ghost && !!ghostData;
+}
+function ghostRecord(t, x, z, h) {
+  if (!ghostRecOn) return;
+  if (t - ghostRecT < 0.1) return; ghostRecT = t;
+  if (ghostRec.length < 4000) ghostRec.push([+t.toFixed(2), +x.toFixed(2), +z.toFixed(2), +h.toFixed(2)]);
+}
+function ghostSave(mapId, isBest) {
+  if (!ghostRecOn || ghostRec.length < 10) return;
+  if (isBest) { try { localStorage.setItem('sr_ghost_' + mapId, JSON.stringify(ghostRec)); } catch (e) {} }
+  ghostRecOn = false;
+}
+function ghostUpdate(raceTime) {
+  if (!ghostGroup) return;
+  if (!prefs.ghost || !ghostData) { ghostGroup.visible = false; return; }
+  ghostGroup.visible = true;
+  // find sample at raceTime (linear scan from a moving index is fine at this size)
+  let s = null;
+  for (let i = 0; i < ghostData.length; i++) { if (ghostData[i][0] >= raceTime) { s = ghostData[i]; break; } }
+  if (!s) s = ghostData[ghostData.length - 1];
+  ghostGroup.position.set(s[1], 0, s[2]); ghostGroup.rotation.y = s[3];
+}
+
+// ---------------------------------------------------------------------------
 // Particles (unchanged)
 // ---------------------------------------------------------------------------
 function radialTexture() {
@@ -842,7 +886,7 @@ const CAR_NAMES = [
 function loadPrefs() {
   try { return Object.assign({
     name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true
+    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
   catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false }; }
 }
@@ -968,6 +1012,7 @@ function wireLobbyV2() {
   const rmEl = $('set-rm'); if (rmEl) { rmEl.checked = !!prefs.rm; rmEl.addEventListener('change', () => { prefs.rm = rmEl.checked; savePrefs(); }); }
   const cbEl = $('set-cb'); if (cbEl) { cbEl.checked = !!prefs.cb; cbEl.addEventListener('change', () => { prefs.cb = cbEl.checked; savePrefs(); }); }
   const arEl = $('set-ar'); if (arEl) { arEl.checked = !!prefs.ar; arEl.addEventListener('change', () => { prefs.ar = arEl.checked; savePrefs(); }); }
+  const ghEl = $('set-ghost'); if (ghEl) { ghEl.checked = !!prefs.ghost; ghEl.addEventListener('change', () => { prefs.ghost = ghEl.checked; savePrefs(); if (ghostGroup) ghostGroup.visible = false; }); }
   const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutorial').style.display = 'none'; try { localStorage.setItem('sr_tut', '1'); } catch (e) {} });
   const shareEl = $('share-btn');
   if (shareEl) shareEl.addEventListener('click', () => {
@@ -1188,9 +1233,11 @@ function processEvents(snap) {
   for (const e of snap.events || []) {
     switch (e.type) {
       case 'count': showCount(String(e.n)); beep(392, 0.14, 'square', 0.24); break;
-      case 'go': showCount('GO!'); beep(784, 0.5, 'square', 0.28); break;
+      case 'go': showCount('GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); break;
       case 'crash': onCrashFX(e.x, e.z, e.s); break;
-      case 'lap': toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
+      case 'lap':
+        if (e.slot === mySlot) ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best);
+        toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
       case 'finallap': toast(`🔥 P${e.slot}: FINAL LAP!`); beep(660, 0.14, 'square', 0.2); break;
       case 'elim': setBanner(`❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
       case 'win': setBanner(e.multi ? `🏁 PLAYER ${e.slot} WINS!` : `🏁 FINISH — ${fmtTime(e.t)}`); confetti(); winJingle(); break;
@@ -1204,7 +1251,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v33';
+const BUILD = 'v34';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -1836,6 +1883,10 @@ function frame() {
   if (latest && latest.state === 'countdown') updateCountdownVisual();
   placeCar(1, interpState(1), dt);
   placeCar(2, interpState(2), dt);
+  if (latest && latest.state === 'racing') {
+    if (mine) ghostRecord(latest.raceTime, mine.x, mine.z, mine.h);
+    ghostUpdate(latest.raceTime);
+  } else if (ghostGroup) ghostGroup.visible = false;
   updateParticles(dt);
   updateClouds(dt);
   updateArrow(rival);
