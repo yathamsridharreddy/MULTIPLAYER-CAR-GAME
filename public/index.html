@@ -21,7 +21,7 @@
   <link rel="preload" as="script" href="js/vendor/three.min.js"/>
   <title>Sridhar Rush — Online 3D Racing</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏎️</text></svg>"/>
-  <link rel="stylesheet" href="css/style.css?v=43"/>
+  <link rel="stylesheet" href="css/style.css?v=44"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -103,7 +103,7 @@
   <!-- Lobby / start overlay : two pages -->
   <div id="tutorial" style="display:none" role="dialog" aria-modal="true" aria-labelledby="tut-title">
       <div class="tut-card">
-        <h2 id="tut-title">🎓 HOW TO PLAY</h2>
+        <h2 id="tut-title" data-i18n="howto">🎓 HOW TO PLAY</h2>
         <ul>
           <li>📱 Scan the QR with your phone — it becomes your joystick.</li>
           <li>🕹️ Left stick steers · Right stick = gas/brake · NITRO boosts.</li>
@@ -118,25 +118,26 @@
     <div id="page1" class="page">
       <div class="overlay-card">
         <h1>SRIDHAR <span>RUSH</span></h1>
-        <p class="tagline">Online racing — your phones are the joysticks · race a friend across the internet 🌍</p>
+        <p class="tagline" data-i18n="tagline">Online racing — your phones are the joysticks · race a friend across the internet 🌍</p>
 
         <div class="lobby-top">
           <div class="lobby-code">
             ROOM <span id="room-code">·····</span>
-            <button id="copy-code" class="ghost sm">COPY</button>
-            <button id="install-btn" class="ghost sm" hidden>📲 INSTALL</button>
+            <button id="copy-code" class="ghost sm" data-i18n="copy">COPY</button>
+            <button id="install-btn" class="ghost sm" hidden data-i18n="install">📲 INSTALL</button>
+            <button id="lang-btn" class="ghost sm" title="Language">🌐 EN</button>
           </div>
           <div id="lobby-conn">🟡 connecting…</div>
         </div>
         <p id="lobby-status">Waiting for joysticks…</p>
         <div id="recent-line" class="recent-line" hidden></div>
         <div id="account-line" class="account-line" hidden>
-          <span id="account-chip">👤 guest</span>
-          <button id="account-btn" class="ghost sm">SIGN IN</button>
-          <button id="account-out" class="ghost sm" hidden>SIGN OUT</button>
+          <span id="account-chip">👤 guest</span><span id="streak-badge" hidden></span>
+          <button id="account-btn" class="ghost sm" data-i18n="signin">SIGN IN</button>
+          <button id="account-out" class="ghost sm" hidden data-i18n="signout">SIGN OUT</button>
         </div>
         <p id="room-error" style="display:none"></p>
-        <button id="quickplay-btn" class="big-cta" style="margin:10px 0 2px">⚡ QUICK PLAY — find a rival</button>
+        <button id="quickplay-btn" class="big-cta" style="margin:10px 0 2px" data-i18n="quickplay">⚡ QUICK PLAY — find a rival</button>
 
         <div class="cols">
           <div class="col">
@@ -177,7 +178,7 @@
         <div class="lobby-grid">
           <div class="lcol">
             <div class="lsec">
-              <div class="lsec-title">SETTINGS</div>
+              <div class="lsec-title" data-i18n="settings">SETTINGS</div>
               <div class="btn-row-sm">
                 <span class="opt-label">GFX</span>
                 <button class="q-btn" data-q="low">LOW</button>
@@ -194,19 +195,24 @@
               <label class="toggle-line"><input type="checkbox" id="set-fx" checked/> 💡 Glow FX (neon bloom)</label>
             </div>
             <div class="lsec">
-              <div class="lsec-title">LEADERBOARD — TOP 5</div>
+              <div class="lsec-title" data-i18n="leaderboard">LEADERBOARD — TOP 5</div>
               <div id="leaderboard" class="leaderboard"></div>
             </div>
             <div class="lsec" id="daily-box" hidden>
               <div class="lsec-title" id="daily-title">📅 DAILY CHALLENGE</div>
               <div id="daily-lb" class="leaderboard"></div>
-              <button id="daily-play" class="ghost sm">▶ PLAY TODAY'S MAP</button>
+              <button id="daily-play" class="ghost sm" data-i18n="playToday">▶ PLAY TODAY'S MAP</button>
+            </div>
+            <div class="lsec" id="cup-box" hidden>
+              <div class="lsec-title" id="cup-title" data-i18n="cup">🏆 FOUNDERS CUP — WEEK TOP 5</div>
+              <div id="cup-lb" class="leaderboard"></div>
+              <button id="cup-share" class="ghost sm">📤 SHARE CUP</button>
             </div>
           </div>
         </div>
 
-        <button id="next-btn" class="big-cta">SET UP RACE →</button>
-        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v43</p>
+        <button id="next-btn" class="big-cta" data-i18n="setup">SET UP RACE →</button>
+        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v44</p>
       </div>
     </div>
 
@@ -214,14 +220,14 @@
     <div id="page2" class="page" style="display:none">
       <div class="overlay-card">
         <div class="wiz-head">
-          <button id="back-btn" class="ghost sm">← BACK</button>
+          <button id="back-btn" class="ghost sm" data-i18n="back">← BACK</button>
           <h2 class="wiz-title">RACE SETUP</h2>
           <span class="wiz-step" id="wiz-step">1 · MAP</span>
         </div>
 
         <!-- step 1 : map cards -->
         <div class="wiz-sec" id="wiz-map">
-          <div class="lsec-title">1 · CHOOSE YOUR CIRCUIT</div>
+          <div class="lsec-title" data-i18n="mapTitle">1 · CHOOSE YOUR CIRCUIT</div>
           <div class="card-row" id="map-cards">
             <button class="map-card active" data-map="0"><img src="img/map-highland.webp" alt="Highland"/><div class="mc-name">HIGHLAND RUSH</div><div class="mc-sub">Day · forests &amp; mountains</div></button>
             <button class="map-card" data-map="1"><img src="img/map-neon.webp" alt="Neon"/><div class="mc-name">NEON CITY</div><div class="mc-sub">Night · neon downtown</div></button>
@@ -233,13 +239,13 @@
 
         <!-- step 2 : car cards -->
         <div class="wiz-sec" id="wiz-car">
-          <div class="lsec-title">2 · CHOOSE YOUR CAR</div>
+          <div class="lsec-title" data-i18n="carTitle">2 · CHOOSE YOUR CAR</div>
           <div class="card-row" id="car-cards"></div>
         </div>
 
         <!-- step 3 : identity -->
         <div class="wiz-sec" id="wiz-id">
-          <div class="lsec-title">3 · DRIVER IDENTITY</div>
+          <div class="lsec-title" data-i18n="idTitle">3 · DRIVER IDENTITY</div>
           <div class="id-grid">
             <input id="inp-name" class="name-input" maxlength="14" placeholder="Your racer name" autocomplete="off"/>
             <div class="btn-row-sm">
@@ -257,7 +263,7 @@
           </div>
         </div>
 
-        <button id="start-btn" class="big-cta">🏁 START RACE</button>
+        <button id="start-btn" class="big-cta" data-i18n="start">🏁 START RACE</button>
       </div>
     </div>
   </div>
@@ -280,11 +286,12 @@
 
   <script src="js/vendor/three.min.js"></script>
   <script src="js/vendor/qrcode.js"></script>
-  <script src="js/game-core.js?v=43"></script>
+  <script src="js/game-core.js?v=44"></script>
   <script src="js/config.js"></script>
-  <script src="js/account.js?v=43"></script>
-  <script src="js/net.js?v=43"></script>
-  <script src="js/game.js?v=43"></script>
+  <script src="js/account.js?v=44"></script>
+  <script src="js/i18n.js?v=44"></script>
+  <script src="js/net.js?v=44"></script>
+  <script src="js/game.js?v=44"></script>
   <script>
   // PWA (v36): register service worker + show INSTALL button when the browser allows it
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {

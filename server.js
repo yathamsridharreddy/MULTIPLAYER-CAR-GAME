@@ -149,6 +149,30 @@ function dailyInfo() {
   const day = Math.floor(Date.now() / 86400000);
   return { map: day % 5, key: new Date().toISOString().slice(0, 10) };
 }
+// v44 Founders Cup: best times across ALL maps since Monday 00:00 UTC
+function weekStartUTC() {
+  const d = new Date();
+  const mondayShift = (d.getUTCDay() + 6) % 7;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - mondayShift * 86400000;
+}
+app.get('/cup', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  const ws = weekStartUTC();
+  let rows = [];
+  if (sbOn()) {
+    try {
+      const r = await fetch(SB_URL + '/rest/v1/leaderboard?updated_at=gte.' + new Date(ws).toISOString() + '&order=time_ms.asc&limit=40&select=map,name,time_ms',
+        { headers: { apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE } });
+      if (r.ok) rows = (await r.json()).map((x) => ({ map: x.map, name: x.name, t: x.time_ms / 1000 }));
+    } catch (e) { rows = []; }
+  }
+  if (!rows.length) {
+    for (const [m, list] of Object.entries(leaderboard))
+      for (const r of list) if ((r.ts || 0) >= ws) rows.push({ map: parseInt(m, 10), name: r.name, t: r.t });
+    rows.sort((a, b) => (a.t || 1e9) - (b.t || 1e9));
+  }
+  res.json(rows.slice(0, 5));
+});
 app.get('/daily', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.json(dailyInfo());
@@ -544,7 +568,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v43', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v44', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

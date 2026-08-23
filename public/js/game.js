@@ -890,7 +890,7 @@ const CAR_NAMES = [
 function loadPrefs() {
   try { return Object.assign({
     name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, fx: true
+    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, fx: true, lang: 'en'
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
   catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false }; }
 }
@@ -1330,6 +1330,7 @@ async function pollLobbyExtras() {
   if (document.hidden) return;
   const base = httpBase();
   try { const r = await fetch(base + '/recent'); if (r.ok) renderRecent(await r.json()); } catch (e) {}
+  try { const c = await fetch(base + '/cup'); if (c.ok) renderCup(await c.json()); } catch (e) {}
   try {
     if (!dailyInfoCache) {
       const d = await fetch(base + '/daily'); if (!d.ok) return;
@@ -1353,7 +1354,7 @@ function paintDailyHeader() {
   const box = $('daily-box'); if (!box || !dailyInfoCache) return;
   const M = CORE.MAPS[dailyInfoCache.map];
   box.hidden = false;
-  $('daily-title').textContent = '📅 DAILY CHALLENGE — ' + (M ? M.name : 'CIRCUIT');
+  $('daily-title').textContent = (tI18n('daily') || '📅 DAILY CHALLENGE') + ' — ' + (M ? M.name : 'CIRCUIT');
   const b = $('daily-play'); if (b) b.onclick = () => net.send({ type: 'map', map: dailyInfoCache.map });
 }
 function renderDailyBoard(rows) {
@@ -1379,6 +1380,79 @@ track('visit');
 window.addEventListener('appinstalled', () => track('inst'));
 window.addEventListener('error', (ev) => track('err', undefined, String((ev && ev.message) || 'error')));
 window.addEventListener('unhandledrejection', (ev) => track('err', undefined, 'promise: ' + String((ev.reason && ev.reason.message) || ev.reason || 'rejection')));
+
+// ---------------------------------------------------------------------------
+// v44: lobby i18n (EN/TE/HI) + Founders Cup panel + 🔥 streak badge. Additive.
+// ---------------------------------------------------------------------------
+function tI18n(k) {
+  const D = window.SRI18N; if (!D) return null;
+  const L = D[prefs.lang] || D.en;
+  return L[k] || D.en[k] || null;
+}
+function applyI18n() {
+  if (!window.SRI18N) return;
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const s = tI18n(el.getAttribute('data-i18n'));
+    if (s) el.textContent = s;
+  });
+  const lb = $('lang-btn'); if (lb) lb.textContent = '🌐 ' + (window.SRI18N_LABEL[prefs.lang] || 'EN');
+  paintDailyHeader();
+}
+// pure + testable: consecutive play days ending today (or yesterday if not yet played today)
+function computeStreak(days, todayStr) {
+  const set = new Set(days);
+  let n = 0;
+  const d = new Date(todayStr + 'T00:00:00Z');
+  if (!set.has(todayStr)) d.setUTCDate(d.getUTCDate() - 1);
+  for (;;) {
+    const k = d.toISOString().slice(0, 10);
+    if (!set.has(k)) break;
+    n++; d.setUTCDate(d.getUTCDate() - 1);
+    if (n > 365) break;
+  }
+  return n;
+}
+function updateStreak() {
+  const el = $('streak-badge'); if (!el) return;
+  let days = []; try { days = JSON.parse(localStorage.getItem('sr_days') || '[]'); } catch (e) {}
+  const n = computeStreak(days, new Date().toISOString().slice(0, 10));
+  if (n >= 2) { el.hidden = false; el.textContent = '🔥' + n; el.title = n + ' day streak'; }
+  else el.hidden = true;
+}
+function recordPlayDay() {
+  try {
+    const k = new Date().toISOString().slice(0, 10);
+    let days = JSON.parse(localStorage.getItem('sr_days') || '[]');
+    if (!days.includes(k)) { days.push(k); localStorage.setItem('sr_days', JSON.stringify(days.slice(-40))); }
+  } catch (e) {}
+  updateStreak();
+}
+function renderCup(rows) {
+  const box = $('cup-box'); if (!box) return;
+  if (!rows || !rows.length) { box.hidden = true; return; }
+  box.hidden = false;
+  $('cup-lb').innerHTML = rows.map((r, i) =>
+    '<div class="lb-row"><span class="lb-pos">' + (i + 1) + '</span><span class="lb-name">' +
+    escapeHtml(r.name) + ' · ' + escapeHtml(((CORE.MAPS[r.map] || {}).name || '')) +
+    '</span><span class="lb-time">' + fmtTime(r.t) + '</span></div>').join('');
+}
+// v44 wiring: language cycler + cup share
+(function () {
+  const langBtn = $('lang-btn');
+  if (langBtn) langBtn.addEventListener('click', () => {
+    const order = ['en', 'te', 'hi'];
+    prefs.lang = order[(order.indexOf(prefs.lang || 'en') + 1) % 3];
+    savePrefs(); applyI18n();
+  });
+  const cupBtn = $('cup-share');
+  if (cupBtn) cupBtn.addEventListener('click', () => {
+    const top = $('cup-lb') && $('cup-lb').querySelector('.lb-time');
+    const msg = '🏆 Sridhar Rush FOUNDERS CUP this week' + (top ? ' — best: ' + top.textContent : '') + '! Beat it: ' + location.origin + '/';
+    window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+  });
+  applyI18n();
+  updateStreak();
+})();
 
 // v41 "race my ghost" deep link: ?g=ID loads a friend's ghost for the matching map
 (function () {
@@ -1420,7 +1494,7 @@ function processEvents(snap) {
       case 'go': showCount('GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); break;
       case 'crash': onCrashFX(e.x, e.z, e.s); break;
       case 'lap':
-        if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); track('fin'); }
+        if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); track('fin'); recordPlayDay(); }
         toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
       case 'finallap': toast(`🔥 P${e.slot}: FINAL LAP!`); beep(660, 0.14, 'square', 0.2); break;
       case 'elim': setBanner(`❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
@@ -1435,7 +1509,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v43';
+const BUILD = 'v44';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
