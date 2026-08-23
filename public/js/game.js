@@ -1153,7 +1153,7 @@ function wireLobbyV2() {
   // v46: community links (configured via env; hidden otherwise)
   (function () {
     const row = $('community-row'); if (!row) return;
-    const wa = window.COMMUNITY_WA || '', dc = window.COMMUNITY_DC || '';
+    const wa = window.C_WA || window.COMMUNITY_WA || '', dc = window.C_DC || window.COMMUNITY_DC || '';
     if (!wa && !dc) return;
     row.hidden = false;
     const a = $('comm-wa'), b = $('comm-dc');
@@ -1543,7 +1543,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v46';
+const BUILD = 'v47';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

@@ -7,8 +7,8 @@
    reports available()=false and the game behaves exactly like before.
    ========================================================================== */
 (function () {
-  const url = String(window.SUPABASE_URL || '').replace(/\/+$/, '');
-  const key = String(window.SUPABASE_ANON || '');
+  const url = String(window.SB_U || window.SUPABASE_URL || '').replace(/\/+$/, '');
+  const key = String(window.SB_A || window.SUPABASE_ANON || '');
   const SKEY = 'sr_sb_session';
   const NKEY = 'sr_sb_name';
   let ses = null;

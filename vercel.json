@@ -1,6 +1,6 @@
 {
   "framework": null,
-  "buildCommand": "mkdir -p public/js && cp shared/game-core.js public/js/game-core.js && echo \"window.SERVER_URL = '${SERVER_URL}';window.SUPABASE_URL = '${SUPABASE_URL}';window.SUPABASE_ANON = '${SUPABASE_ANON}';window.COMMUNITY_WA = '${COMMUNITY_WA}';window.COMMUNITY_DC = '${COMMUNITY_DC}';\" > public/js/config.js",
+  "buildCommand": "mkdir -p public/js && cp shared/game-core.js public/js/game-core.js && echo \"window.SERVER_URL='${SERVER_URL}';window.SB_U='${SUPABASE_URL}';window.SB_A='${SUPABASE_ANON}';window.C_WA='${COMMUNITY_WA}';window.C_DC='${COMMUNITY_DC}';\" > public/js/config.js",
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/controller", "destination": "/controller.html" },
