@@ -9,20 +9,20 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v40';
+const CACHE = 'sridhar-rush-v41';
 
 const CORE = [
   '/', '/controller',
-  '/css/style.css?v=40', '/css/controller.css?v=40',
-  '/js/game-core.js?v=40', '/js/net.js?v=40', '/js/game.js?v=40', '/js/controller.js?v=40', '/js/account.js?v=40',
+  '/css/style.css?v=41', '/css/controller.css?v=41',
+  '/js/game-core.js?v=41', '/js/net.js?v=41', '/js/game.js?v=41', '/js/controller.js?v=41', '/js/account.js?v=41',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
   '/js/vendor/post/RenderPass.js', '/js/vendor/post/UnrealBloomPass.js',
   '/manifest.webmanifest', '/manifest-controller.webmanifest',
   '/icon.svg', '/img/icon-192.png', '/img/icon-512.png',
-  '/img/map-highland.jpg', '/img/map-neon.jpg', '/img/map-island.jpg',
-  '/img/map-canyon.jpg', '/img/map-snow.jpg'
+  '/img/map-highland.webp', '/img/map-neon.webp', '/img/map-island.webp',
+  '/img/map-canyon.webp', '/img/map-snow.webp'
 ];
 
 // live data — always straight from the network, never stored

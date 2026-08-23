@@ -502,3 +502,5 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   #speedlines { display: none !important; }
 }
+
+.share-row { display: flex; gap: 8px; margin-top: 8px; }

@@ -210,6 +210,46 @@ app.get('/lb', async (req, res) => {
   res.json(rows.slice(0, 5));
 });
 
+// ---------------------------------------------------------------------------
+// v41 "race my ghost" links: ghosts live in Supabase (public read; writes only
+// through the server). Without Supabase configured -> 503, client hides feature.
+// ---------------------------------------------------------------------------
+app.post('/ghost', (req, res) => {
+  let b = '';
+  req.on('data', (c) => { if (b.length < 400000) b += c; });
+  req.on('end', async () => {
+    if (!sbOn()) return res.status(503).json({ error: 'unavailable' });
+    try {
+      const j = JSON.parse(b || '{}');
+      const map = parseInt(j.map, 10);
+      if (!(map >= 0 && map < 5) || !Array.isArray(j.data) || j.data.length < 10 || j.data.length > 4000)
+        return res.status(400).json({ error: 'bad' });
+      const id = Math.random().toString(36).slice(2, 8);
+      const r = await fetch(SB_URL + '/rest/v1/ghosts', {
+        method: 'POST',
+        headers: { apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify([{ id, map, name: String(j.name || 'RACER').slice(0, 16), data: j.data }]),
+      });
+      if (!r.ok) return res.status(500).json({ error: 'db' });
+      res.json({ id });
+    } catch (e) { res.status(400).json({ error: 'bad' }); }
+  });
+});
+app.get('/ghost', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  if (!sbOn()) return res.status(503).json({ error: 'unavailable' });
+  const id = String(req.query.id || '').replace(/[^a-z0-9]/i, '').slice(0, 12);
+  if (!id) return res.status(400).json({ error: 'bad' });
+  try {
+    const r = await fetch(SB_URL + '/rest/v1/ghosts?id=eq.' + id + '&select=map,name,data',
+      { headers: { apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE } });
+    if (!r.ok) return res.status(404).json({ error: 'nf' });
+    const rows = await r.json();
+    if (!rows.length) return res.status(404).json({ error: 'nf' });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: 'db' }); }
+});
+
 function newRoom(mode, mapId) {
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
@@ -499,7 +539,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v40', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v41', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

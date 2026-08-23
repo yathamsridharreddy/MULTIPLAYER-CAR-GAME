@@ -733,6 +733,7 @@ scene.add(carVisuals[1].group, carVisuals[2].group);
 // Records your lap positions from server snapshots; replays a translucent ghost.
 // ---------------------------------------------------------------------------
 let ghostGroup = null, ghostData = null, ghostRec = [], ghostRecOn = false, ghostRecT = 0;
+let remoteGhost = null; // v41: a friend's ghost loaded from a ?g= link
 function ensureGhost() {
   if (ghostGroup) return ghostGroup;
   ghostGroup = new THREE.Group();
@@ -749,8 +750,10 @@ function loadGhost(mapId) {
 function ghostStart(mapId) {
   ghostRec = []; ghostRecT = 0; ghostRecOn = !!prefs.ghost;
   loadGhost(mapId);
-  if (prefs.ghost) ensureGhost(); // lazy-create the ghost car (fix: it was never created before)
-  if (ghostGroup) ghostGroup.visible = !!prefs.ghost && !!ghostData;
+  if (remoteGhost && remoteGhost.map === mapId) ghostData = remoteGhost.data; // friend's ghost wins over local
+  const show = !!ghostData && (!!prefs.ghost || !!remoteGhost);
+  if (show) ensureGhost(); // lazy-create the ghost car (fix: it was never created before)
+  if (ghostGroup) ghostGroup.visible = show;
 }
 function ghostRecord(t, x, z, h) {
   if (!ghostRecOn) return;
@@ -764,7 +767,7 @@ function ghostSave(mapId, isBest) {
 }
 function ghostUpdate(raceTime) {
   if (!ghostGroup) return;
-  if (!prefs.ghost || !ghostData) { ghostGroup.visible = false; return; }
+  if (!ghostData || (!prefs.ghost && !remoteGhost)) { ghostGroup.visible = false; return; }
   ghostGroup.visible = true;
   // find sample at raceTime (linear scan from a moving index is fine at this size)
   let s = null;
@@ -919,10 +922,21 @@ function applyQuality(q) {
 // additive: if anything fails it silently falls back to the normal renderer.
 // Only active on HIGH quality and when the FX toggle is on (default: on).
 // ---------------------------------------------------------------------------
-let fxComposer = null, fxTried = false;
+let fxComposer = null, fxFailed = false, fxLoading = null;
 function fxActive() { return prefs.fx !== false && prefs.quality === 'high'; }
+// v41: bloom scripts load on demand (LOW/MED users never download/compile them)
+function loadFxScripts() {
+  if (THREE.EffectComposer && THREE.UnrealBloomPass) return Promise.resolve();
+  if (fxLoading) return fxLoading;
+  const files = ['CopyShader.js', 'LuminosityHighPassShader.js', 'ShaderPass.js', 'EffectComposer.js', 'RenderPass.js', 'UnrealBloomPass.js'];
+  fxLoading = files.reduce((p, f) => p.then(() => new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'js/vendor/post/' + f; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  })), Promise.resolve()).catch(() => { fxFailed = true; });
+  return fxLoading;
+}
 function initFX() {
-  if (fxTried) return; fxTried = true;
   try {
     if (!THREE.EffectComposer || !THREE.RenderPass || !THREE.UnrealBloomPass) return;
     const c = new THREE.EffectComposer(renderer);
@@ -931,12 +945,12 @@ function initFX() {
     c.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.7, 0.55));
     c.setSize(window.innerWidth, window.innerHeight);
     fxComposer = c;
-  } catch (e) { fxComposer = null; }
+  } catch (e) { fxComposer = null; fxFailed = true; }
 }
 function renderMain() {
-  if (fxActive()) {
-    if (!fxComposer) initFX();
+  if (fxActive() && !fxFailed) {
     if (fxComposer) { fxComposer.render(); return; }
+    loadFxScripts().then(initFX); // plain render until the pass is ready
   }
   renderer.render(scene, camera);
 }
@@ -1089,6 +1103,29 @@ function wireLobbyV2() {
     copyText(`🏁 SRIDHAR RUSH — ${mapName}\n${lines}`);
     toast('Result copied — share it!');
   });
+
+  // ---- v41 growth: WhatsApp / Telegram invites + share-my-ghost link --------
+  const roomUrl = () => location.origin + '/?room=' + (($('room-code') || {}).textContent || '');
+  const waEl = $('wa-share');
+  if (waEl) waEl.addEventListener('click', () => {
+    window.open('https://wa.me/?text=' + encodeURIComponent('🏎️ Sridhar Rush — your phone is the joystick! Join my room: ' + roomUrl()), '_blank');
+  });
+  const tgEl = $('tg-share');
+  if (tgEl) tgEl.addEventListener('click', () => {
+    window.open('https://t.me/share/url?url=' + encodeURIComponent(roomUrl()) + '&text=' + encodeURIComponent('🏎️ Your phone is the joystick — join my Sridhar Rush room!'), '_blank');
+  });
+  const gsBtn = $('ghost-share-btn');
+  if (gsBtn) gsBtn.addEventListener('click', () => {
+    const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+    let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
+    if (!g || !g.length) { toast('Set a best lap first (enable 👻 Ghost in settings)'); return; }
+    gsBtn.disabled = true;
+    fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, data: g }) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('unavailable'))))
+      .then((j) => { copyText(location.origin + '/?g=' + j.id); toast('👻 Ghost link copied — send it to a friend!'); })
+      .catch(() => toast('Ghost sharing needs the Supabase setup'))
+      .finally(() => { gsBtn.disabled = false; });
+  });
 }
 function cbCol(slot) {
   return prefs.cb ? (slot === 1 ? 0xff9500 : 0x0072e6) : (slot === 1 ? 0xff5252 : 0x42a5f5);
@@ -1240,7 +1277,7 @@ function showResults(order) {
     rows.appendChild(div);
   });
   $('results-title').textContent = winner ? `🏁 ${escapeHtml(winner.name || ('PLAYER ' + winner.slot))} WINS!` : '🏁 RACE RESULTS';
-  $('results').classList.remove('hidden');
+  $('results').classList.remove('hidden'); { const gb = $('ghost-share-btn'); if (gb) gb.hidden = false; }
 }
 
 function updateLobby(snap) {
@@ -1338,6 +1375,21 @@ function track(e, map) {
 track('visit');
 window.addEventListener('appinstalled', () => track('inst'));
 
+// v41 "race my ghost" deep link: ?g=ID loads a friend's ghost for the matching map
+(function () {
+  const id = new URLSearchParams(location.search).get('g');
+  if (!id) return;
+  fetch(httpBase() + '/ghost?id=' + encodeURIComponent(id))
+    .then((r) => (r.ok ? r.json() : null))
+    .then((g) => {
+      if (g && Array.isArray(g.data) && g.data.length > 9) {
+        remoteGhost = { map: g.map, data: g.data };
+        toast('👻 Racing ' + (g.name || 'a friend') + "'s ghost!");
+      }
+    })
+    .catch(() => {});
+})();
+
 let qrDrawnFor = '';
 function drawQR(url) {
   if (qrDrawnFor === url) return;
@@ -1378,7 +1430,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v40';
+const BUILD = 'v41';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

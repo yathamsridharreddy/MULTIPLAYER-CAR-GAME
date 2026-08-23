@@ -13,7 +13,7 @@
   <meta property="og:title" content="Sridhar Rush — Online 3D Racing"/>
   <meta property="og:description" content="Your phone is the joystick. Scan, join, and race a friend in real time."/>
   <meta property="og:url" content="https://sridhar-drift.vercel.app/"/>
-  <meta property="og:image" content="https://sridhar-drift.vercel.app/img/map-neon.jpg"/>
+  <meta property="og:image" content="https://sridhar-drift.vercel.app/img/map-neon.webp"/>
   <meta name="twitter:card" content="summary_large_image"/>
   <meta name="twitter:title" content="Sridhar Rush — Online 3D Racing"/>
   <meta name="twitter:description" content="Your phone is the joystick. Scan, join, and race a friend in real time."/>
@@ -21,7 +21,7 @@
   <link rel="preload" as="script" href="js/vendor/three.min.js"/>
   <title>Sridhar Rush — Online 3D Racing</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏎️</text></svg>"/>
-  <link rel="stylesheet" href="css/style.css?v=40"/>
+  <link rel="stylesheet" href="css/style.css?v=41"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -94,6 +94,7 @@
       <div class="results-btns">
         <button id="rematch-btn">🔁 REMATCH</button>
         <button id="share-btn" class="ghost">📤 SHARE</button>
+        <button id="ghost-share-btn" class="ghost" hidden>👻 RACE MY GHOST</button>
         <button id="menu-btn" class="ghost">LOBBY</button>
       </div>
     </div>
@@ -143,6 +144,10 @@
             <p class="small">Send them this link — they open it, join this room, and their screen syncs with yours live:</p>
             <p class="url" id="game-link"></p>
             <button id="copy-game-link" class="ghost">COPY GAME LINK</button>
+            <div class="share-row">
+              <button id="wa-share" class="ghost sm">🟢 WHATSAPP</button>
+              <button id="tg-share" class="ghost sm">✈️ TELEGRAM</button>
+            </div>
             <ul class="keys">
               <li><b>W A S D</b> — drive if your phone isn't connected</li>
               <li><b>Shift</b> nitro 🔥 · <b>Space</b> drift · <b>C</b> camera</li>
@@ -201,7 +206,7 @@
         </div>
 
         <button id="next-btn" class="big-cta">SET UP RACE →</button>
-        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v40</p>
+        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v41</p>
       </div>
     </div>
 
@@ -218,11 +223,11 @@
         <div class="wiz-sec" id="wiz-map">
           <div class="lsec-title">1 · CHOOSE YOUR CIRCUIT</div>
           <div class="card-row" id="map-cards">
-            <button class="map-card active" data-map="0"><img src="img/map-highland.jpg" alt="Highland"/><div class="mc-name">HIGHLAND RUSH</div><div class="mc-sub">Day · forests &amp; mountains</div></button>
-            <button class="map-card" data-map="1"><img src="img/map-neon.jpg" alt="Neon"/><div class="mc-name">NEON CITY</div><div class="mc-sub">Night · neon downtown</div></button>
-            <button class="map-card" data-map="2"><img src="img/map-island.jpg" alt="Island"/><div class="mc-name">ISLAND MOTORFEST</div><div class="mc-sub">Sunset · volcano &amp; ocean</div></button>
-            <button class="map-card" data-map="3"><img src="img/map-canyon.jpg" alt="Canyon"/><div class="mc-name">CANYON CHICANE</div><div class="mc-sub">Desert · S-curves &amp; chicanes</div></button>
-            <button class="map-card" data-map="4"><img src="img/map-snow.jpg" alt="Hairpin"/><div class="mc-name">HAIRPIN GP</div><div class="mc-sub">Snow · alpine hairpins</div></button>
+            <button class="map-card active" data-map="0"><img src="img/map-highland.webp" alt="Highland"/><div class="mc-name">HIGHLAND RUSH</div><div class="mc-sub">Day · forests &amp; mountains</div></button>
+            <button class="map-card" data-map="1"><img src="img/map-neon.webp" alt="Neon"/><div class="mc-name">NEON CITY</div><div class="mc-sub">Night · neon downtown</div></button>
+            <button class="map-card" data-map="2"><img src="img/map-island.webp" alt="Island"/><div class="mc-name">ISLAND MOTORFEST</div><div class="mc-sub">Sunset · volcano &amp; ocean</div></button>
+            <button class="map-card" data-map="3"><img src="img/map-canyon.webp" alt="Canyon"/><div class="mc-name">CANYON CHICANE</div><div class="mc-sub">Desert · S-curves &amp; chicanes</div></button>
+            <button class="map-card" data-map="4"><img src="img/map-snow.webp" alt="Hairpin"/><div class="mc-name">HAIRPIN GP</div><div class="mc-sub">Snow · alpine hairpins</div></button>
           </div>
         </div>
 
@@ -274,18 +279,12 @@
   </div>
 
   <script src="js/vendor/three.min.js"></script>
-  <script src="js/vendor/post/CopyShader.js"></script>
-  <script src="js/vendor/post/LuminosityHighPassShader.js"></script>
-  <script src="js/vendor/post/ShaderPass.js"></script>
-  <script src="js/vendor/post/EffectComposer.js"></script>
-  <script src="js/vendor/post/RenderPass.js"></script>
-  <script src="js/vendor/post/UnrealBloomPass.js"></script>
   <script src="js/vendor/qrcode.js"></script>
-  <script src="js/game-core.js?v=40"></script>
+  <script src="js/game-core.js?v=41"></script>
   <script src="js/config.js"></script>
-  <script src="js/account.js?v=40"></script>
-  <script src="js/net.js?v=40"></script>
-  <script src="js/game.js?v=40"></script>
+  <script src="js/account.js?v=41"></script>
+  <script src="js/net.js?v=41"></script>
+  <script src="js/game.js?v=41"></script>
   <script>
   // PWA (v36): register service worker + show INSTALL button when the browser allows it
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
