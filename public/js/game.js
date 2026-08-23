@@ -1367,13 +1367,18 @@ setInterval(pollLobbyExtras, 8000);
 setTimeout(pollLobbyExtras, 1200);
 
 // v40 analytics beacons (aggregate-only server counters; fire-and-forget)
-function track(e, map) {
+// v43: also carries client-side crash reports so /stats shows them remotely
+let lastErrSent = '';
+function track(e, map, m) {
+  if (e === 'err') { if (m === lastErrSent) return; lastErrSent = m; } // no beacon loops on repeat errors
   try {
-    fetch(httpBase() + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e, map }) });
+    fetch(httpBase() + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e, map, m }) }).catch(() => {});
   } catch (err) {}
 }
 track('visit');
 window.addEventListener('appinstalled', () => track('inst'));
+window.addEventListener('error', (ev) => track('err', undefined, String((ev && ev.message) || 'error')));
+window.addEventListener('unhandledrejection', (ev) => track('err', undefined, 'promise: ' + String((ev.reason && ev.reason.message) || ev.reason || 'rejection')));
 
 // v41 "race my ghost" deep link: ?g=ID loads a friend's ghost for the matching map
 (function () {
@@ -1430,7 +1435,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v42';
+const BUILD = 'v43';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

@@ -35,7 +35,7 @@ app.disable('x-powered-by');
 // v40 lite analytics — aggregate counters only. No IPs, no cookies, no
 // personal data; a privacy-friendly pulse on how the game is used.
 // ---------------------------------------------------------------------------
-const AN = { visits: 0, controller: 0, races: 0, finishes: 0, installs: 0, byMap: [0, 0, 0, 0, 0] };
+const AN = { visits: 0, controller: 0, races: 0, finishes: 0, installs: 0, errors: 0, lastErr: [], byMap: [0, 0, 0, 0, 0] };
 app.post('/a', (req, res) => {
   let b = '';
   req.on('data', (c) => { if (b.length < 500) b += c; });
@@ -47,6 +47,11 @@ app.post('/a', (req, res) => {
       else if (j.e === 'race') { AN.races++; if (j.map >= 0 && j.map < 5) AN.byMap[j.map]++; }
       else if (j.e === 'fin') AN.finishes++;
       else if (j.e === 'inst') AN.installs++;
+      else if (j.e === 'err') {
+        AN.errors++;
+        AN.lastErr.push({ m: String(j.m || 'error').slice(0, 140), ts: Date.now() });
+        if (AN.lastErr.length > 10) AN.lastErr.shift();
+      }
     } catch (e) {}
     res.json({ ok: true });
   });
@@ -539,7 +544,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v42', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v43', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

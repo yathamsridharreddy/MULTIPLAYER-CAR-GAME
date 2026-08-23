@@ -186,17 +186,21 @@ if (vibBtn) {
     if (vibOn) vibrate(20);
   });
 }
-function trackCtl(e) {
+function trackCtl(e, m) {
   try {
     let cfg = String(window.SERVER_URL || 'local').trim();
     if (cfg !== 'local') {
       if (!/^(https?):\/\//i.test(cfg)) cfg = 'https://' + cfg;
       cfg = cfg.replace(/\/+$/, '');
     } else cfg = '';
-    fetch(cfg + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e }) });
+    fetch(cfg + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e, m }) }).catch(() => {});
   } catch (err) {}
 }
 trackCtl('ctrl');
+// v43: crash reports from the phone pad too
+let lastErrCtl = '';
+window.addEventListener('error', (ev) => { const m = String((ev && ev.message) || 'error'); if (m === lastErrCtl) return; lastErrCtl = m; trackCtl('err', m); });
+window.addEventListener('unhandledrejection', (ev) => trackCtl('err', 'promise: ' + String((ev.reason && ev.reason.message) || ev.reason || 'rejection')));
 document.addEventListener('touchmove', (e) => { if (e.scale !== 1) e.preventDefault(); }, { passive: false });
 function checkOrientation() { $('rotate-hint').classList.toggle('show', window.innerHeight > window.innerWidth); }
 window.addEventListener('resize', checkOrientation);
