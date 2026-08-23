@@ -1137,6 +1137,29 @@ function wireLobbyV2() {
       .catch(() => toast('Ghost sharing needs the Supabase setup'))
       .finally(() => { gsBtn.disabled = false; });
   });
+  // v46: watchable replay link (same ghost upload, spectator page)
+  const rpBtn = $('replay-btn');
+  if (rpBtn) rpBtn.addEventListener('click', () => {
+    const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+    let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
+    if (!g || !g.length) { toast('Set a best lap first (enable 👻 Ghost in settings)'); return; }
+    rpBtn.disabled = true;
+    fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, data: g }) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('unavailable'))))
+      .then((j) => { copyText(location.origin + '/replay?g=' + j.id); toast('🎥 Replay link copied!'); })
+      .catch(() => toast('Replays need the Supabase setup'))
+      .finally(() => { rpBtn.disabled = false; });
+  });
+  // v46: community links (configured via env; hidden otherwise)
+  (function () {
+    const row = $('community-row'); if (!row) return;
+    const wa = window.COMMUNITY_WA || '', dc = window.COMMUNITY_DC || '';
+    if (!wa && !dc) return;
+    row.hidden = false;
+    const a = $('comm-wa'), b = $('comm-dc');
+    if (wa && a) a.href = wa; else if (a) a.style.display = 'none';
+    if (dc && b) b.href = dc; else if (b) b.style.display = 'none';
+  })();
 }
 function cbCol(slot) {
   return prefs.cb ? (slot === 1 ? 0xff9500 : 0x0072e6) : (slot === 1 ? 0xff5252 : 0x42a5f5);
@@ -1520,7 +1543,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v45';
+const BUILD = 'v46';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

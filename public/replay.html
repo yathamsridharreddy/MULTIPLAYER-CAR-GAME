@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="theme-color" content="#05070c"/>
+  <meta property="og:title" content="Sridhar Rush — Ghost Replay"/>
+  <meta property="og:description" content="Watch a friend's lap, then open the game and beat their ghost."/>
+  <meta property="og:image" content="https://sridhar-drift.vercel.app/img/og-card.png"/>
+  <title>Sridhar Rush — Ghost Replay</title>
+  <link rel="icon" href="img/logo.png"/>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; background: #05070c; color: #e8ecf2; font-family: "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+    #wrap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px; }
+    h1 { font-size: 16px; letter-spacing: 2px; }
+    #hud { font-size: 13px; opacity: .85; letter-spacing: .5px; }
+    canvas { background: #070a12; border: 1px solid rgba(255,255,255,.14); border-radius: 14px; max-width: 96vw; max-height: 72vh; }
+    #bar { display: flex; gap: 10px; align-items: center; }
+    button { background: rgba(255,255,255,.08); color: #e8ecf2; border: 1px solid rgba(255,255,255,.2); border-radius: 10px; padding: 8px 14px; font-weight: 700; cursor: pointer; }
+    input[type=range] { width: min(60vw, 420px); accent-color: #35e0ff; }
+    a { color: #35e0ff; text-decoration: none; font-weight: 700; }
+    #err { color: #ff8f7a; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <h1>🎥 GHOST REPLAY — <span id="who">…</span></h1>
+    <div id="hud">—</div>
+    <canvas id="cv" width="900" height="620"></canvas>
+    <div id="bar">
+      <button id="play">⏸</button>
+      <input id="scrub" type="range" min="0" max="1000" value="0"/>
+      <button id="spd">×1</button>
+      <a id="open-game" href="/">🏁 RACE THIS GHOST</a>
+    </div>
+    <p id="err" hidden></p>
+  </div>
+  <script src="js/config.js"></script>
+  <script src="js/game-core.js?v=46"></script>
+  <script src="js/replay.js?v=46"></script>
+</body>
+</html>

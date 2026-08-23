@@ -68,7 +68,9 @@ app.get('/js/config.js', (req, res) => {
   // Public (anon) Supabase values for the browser, when configured.
   const sbU = process.env.SUPABASE_URL || '', sbA = process.env.SUPABASE_ANON || '';
   const sb = (sbU && sbA) ? 'window.SUPABASE_URL = ' + JSON.stringify(sbU) + ';\nwindow.SUPABASE_ANON = ' + JSON.stringify(sbA) + ';\n' : '';
-  res.type('application/javascript').send('window.SERVER_URL = "local";\n' + sb);
+  const cw = process.env.COMMUNITY_WA || '', cd = process.env.COMMUNITY_DC || '';
+  const com = (cw ? 'window.COMMUNITY_WA = ' + JSON.stringify(cw) + ';\n' : '') + (cd ? 'window.COMMUNITY_DC = ' + JSON.stringify(cd) + ';\n' : '');
+  res.type('application/javascript').send('window.SERVER_URL = "local";\n' + sb + com);
 });
 
 // shared game core (deterministic world + physics constants for the client)
@@ -571,7 +573,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v45', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v46', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

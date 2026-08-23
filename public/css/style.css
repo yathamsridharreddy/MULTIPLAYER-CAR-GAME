@@ -504,3 +504,9 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 }
 
 .share-row { display: flex; gap: 8px; margin-top: 8px; }
+
+/* ---------- brand pass (v46) ---------- */
+.bs-logo-img { width: 74px; height: 74px; margin: 0 auto 10px; display: block; filter: drop-shadow(0 0 18px rgba(53,224,255,.45)); }
+.bs-logo, h1 { font-family: "Orbitron", "Segoe UI", system-ui, sans-serif; }
+#community-row { justify-content: center; margin-top: 10px; }
+a.ghost { display: inline-flex; align-items: center; }

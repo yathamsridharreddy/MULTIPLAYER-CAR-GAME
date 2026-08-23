@@ -9,17 +9,17 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v45';
+const CACHE = 'sridhar-rush-v46';
 
 const CORE = [
   '/', '/controller',
-  '/css/style.css?v=45', '/css/controller.css?v=45',
-  '/js/game-core.js?v=45', '/js/net.js?v=45', '/js/game.js?v=45', '/js/controller.js?v=45', '/js/account.js?v=45', '/js/i18n.js?v=45',
+  '/css/style.css?v=46', '/css/controller.css?v=46',
+  '/js/game-core.js?v=46', '/js/net.js?v=46', '/js/game.js?v=46', '/js/controller.js?v=46', '/js/account.js?v=46', '/js/i18n.js?v=46',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
   '/js/vendor/post/RenderPass.js', '/js/vendor/post/UnrealBloomPass.js',
-  '/manifest.webmanifest', '/manifest-controller.webmanifest',
+  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=46',
   '/icon.svg', '/img/icon-192.png', '/img/icon-512.png',
   '/img/map-highland.webp', '/img/map-neon.webp', '/img/map-island.webp',
   '/img/map-canyon.webp', '/img/map-snow.webp'
