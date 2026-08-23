@@ -928,7 +928,7 @@ function fxActive() { return prefs.fx !== false && prefs.quality === 'high'; }
 function loadFxScripts() {
   if (THREE.EffectComposer && THREE.UnrealBloomPass) return Promise.resolve();
   if (fxLoading) return fxLoading;
-  const files = ['CopyShader.js', 'LuminosityHighPassShader.js', 'ShaderPass.js', 'EffectComposer.js', 'RenderPass.js', 'UnrealBloomPass.js'];
+  const files = ['CopyShader.js', 'LuminosityHighPassShader.js', 'EffectComposer.js', 'ShaderPass.js', 'RenderPass.js', 'UnrealBloomPass.js'];
   fxLoading = files.reduce((p, f) => p.then(() => new Promise((res, rej) => {
     const s = document.createElement('script');
     s.src = 'js/vendor/post/' + f; s.onload = res; s.onerror = rej;
@@ -1430,7 +1430,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v41';
+const BUILD = 'v42';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

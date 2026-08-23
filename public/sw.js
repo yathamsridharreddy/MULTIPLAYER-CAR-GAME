@@ -9,12 +9,12 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v41';
+const CACHE = 'sridhar-rush-v42';
 
 const CORE = [
   '/', '/controller',
-  '/css/style.css?v=41', '/css/controller.css?v=41',
-  '/js/game-core.js?v=41', '/js/net.js?v=41', '/js/game.js?v=41', '/js/controller.js?v=41', '/js/account.js?v=41',
+  '/css/style.css?v=42', '/css/controller.css?v=42',
+  '/js/game-core.js?v=42', '/js/net.js?v=42', '/js/game.js?v=42', '/js/controller.js?v=42', '/js/account.js?v=42',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
