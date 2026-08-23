@@ -1278,6 +1278,57 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// ---------------------------------------------------------------------------
+// v39 "alive lobby": recent-finishes ticker + daily challenge panel.
+// Additive & silent on failure — an older server simply shows neither.
+// ---------------------------------------------------------------------------
+function httpBase() {
+  let cfg = String(window.SERVER_URL || 'local').trim();
+  if (cfg === 'local') return '';
+  if (!/^(https?):\/\//i.test(cfg)) cfg = 'https://' + cfg;
+  return cfg.replace(/\/+$/, '');
+}
+let dailyInfoCache = null;
+async function pollLobbyExtras() {
+  if (document.hidden) return;
+  const base = httpBase();
+  try { const r = await fetch(base + '/recent'); if (r.ok) renderRecent(await r.json()); } catch (e) {}
+  try {
+    if (!dailyInfoCache) {
+      const d = await fetch(base + '/daily'); if (!d.ok) return;
+      dailyInfoCache = await d.json();
+      paintDailyHeader();
+    }
+    const lb = await fetch(base + '/lb?map=' + dailyInfoCache.map + '&daily=1');
+    if (lb.ok) renderDailyBoard(await lb.json());
+  } catch (e) {}
+}
+function renderRecent(rows) {
+  const el = $('recent-line'); if (!el) return;
+  if (!rows || !rows.length) { el.hidden = true; return; }
+  const r = rows[0];
+  const mn = (CORE.MAPS[r.map] && CORE.MAPS[r.map].name) || 'CIRCUIT';
+  el.hidden = false;
+  el.textContent = '🏁 ' + r.name + ' just finished ' + mn + ' — ' + fmtTime(r.t) +
+    (rows.length > 1 ? '  ·  +' + (rows.length - 1) + ' more recent' : '');
+}
+function paintDailyHeader() {
+  const box = $('daily-box'); if (!box || !dailyInfoCache) return;
+  const M = CORE.MAPS[dailyInfoCache.map];
+  box.hidden = false;
+  $('daily-title').textContent = '📅 DAILY CHALLENGE — ' + (M ? M.name : 'CIRCUIT');
+  const b = $('daily-play'); if (b) b.onclick = () => net.send({ type: 'map', map: dailyInfoCache.map });
+}
+function renderDailyBoard(rows) {
+  const el = $('daily-lb'); if (!el) return;
+  if (!rows || !rows.length) { el.innerHTML = '<div class="lb-empty">No times today yet — set the first!</div>'; return; }
+  el.innerHTML = rows.map((r, i) =>
+    '<div class="lb-row"><span class="lb-pos">' + (i + 1) + '</span><span class="lb-name">' +
+    escapeHtml(r.name) + '</span><span class="lb-time">' + fmtTime(r.t) + '</span></div>').join('');
+}
+setInterval(pollLobbyExtras, 8000);
+setTimeout(pollLobbyExtras, 1200);
+
 let qrDrawnFor = '';
 function drawQR(url) {
   if (qrDrawnFor === url) return;
@@ -1318,7 +1369,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v38';
+const BUILD = 'v39';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

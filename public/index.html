@@ -21,7 +21,7 @@
   <link rel="preload" as="script" href="js/vendor/three.min.js"/>
   <title>Sridhar Rush — Online 3D Racing</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏎️</text></svg>"/>
-  <link rel="stylesheet" href="css/style.css?v=38"/>
+  <link rel="stylesheet" href="css/style.css?v=39"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -128,6 +128,7 @@
           <div id="lobby-conn">🟡 connecting…</div>
         </div>
         <p id="lobby-status">Waiting for joysticks…</p>
+        <div id="recent-line" class="recent-line" hidden></div>
         <div id="account-line" class="account-line" hidden>
           <span id="account-chip">👤 guest</span>
           <button id="account-btn" class="ghost sm">SIGN IN</button>
@@ -191,11 +192,16 @@
               <div class="lsec-title">LEADERBOARD — TOP 5</div>
               <div id="leaderboard" class="leaderboard"></div>
             </div>
+            <div class="lsec" id="daily-box" hidden>
+              <div class="lsec-title" id="daily-title">📅 DAILY CHALLENGE</div>
+              <div id="daily-lb" class="leaderboard"></div>
+              <button id="daily-play" class="ghost sm">▶ PLAY TODAY'S MAP</button>
+            </div>
           </div>
         </div>
 
         <button id="next-btn" class="big-cta">SET UP RACE →</button>
-        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v38</p>
+        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v39</p>
       </div>
     </div>
 
@@ -275,11 +281,11 @@
   <script src="js/vendor/post/RenderPass.js"></script>
   <script src="js/vendor/post/UnrealBloomPass.js"></script>
   <script src="js/vendor/qrcode.js"></script>
-  <script src="js/game-core.js?v=38"></script>
+  <script src="js/game-core.js?v=39"></script>
   <script src="js/config.js"></script>
-  <script src="js/account.js?v=38"></script>
-  <script src="js/net.js?v=38"></script>
-  <script src="js/game.js?v=38"></script>
+  <script src="js/account.js?v=39"></script>
+  <script src="js/net.js?v=39"></script>
+  <script src="js/game.js?v=39"></script>
   <script>
   // PWA (v36): register service worker + show INSTALL button when the browser allows it
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {

@@ -9,12 +9,12 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v38';
+const CACHE = 'sridhar-rush-v39';
 
 const CORE = [
   '/', '/controller',
-  '/css/style.css?v=38', '/css/controller.css?v=38',
-  '/js/game-core.js?v=38', '/js/net.js?v=38', '/js/game.js?v=38', '/js/controller.js?v=38', '/js/account.js?v=38',
+  '/css/style.css?v=39', '/css/controller.css?v=39',
+  '/js/game-core.js?v=39', '/js/net.js?v=39', '/js/game.js?v=39', '/js/controller.js?v=39', '/js/account.js?v=39',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
@@ -26,7 +26,7 @@ const CORE = [
 ];
 
 // live data — always straight from the network, never stored
-const NOCACHE = ['/js/config.js', '/version', '/health', '/lb'];
+const NOCACHE = ['/js/config.js', '/version', '/health', '/lb', '/recent', '/daily'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

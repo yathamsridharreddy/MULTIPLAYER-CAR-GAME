@@ -105,6 +105,27 @@ function lbAdd(mapId, entry) {
 function lbGet(mapId) { return (leaderboard[mapId] || []).slice(0, 5); }
 
 // ---------------------------------------------------------------------------
+// v39 "alive lobby": global recent-finishes feed + daily challenge.
+// Purely additive endpoints; the race/snapshot pipeline is untouched.
+// ---------------------------------------------------------------------------
+const recentFinishes = []; // ring buffer of the latest finishes across rooms
+function recentAdd(entry) { recentFinishes.push(entry); if (recentFinishes.length > 30) recentFinishes.shift(); }
+app.get('/recent', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json(recentFinishes.slice(-8).reverse());
+});
+// deterministic map-of-the-day (same for everyone, rotates at UTC midnight)
+function dailyInfo() {
+  const day = Math.floor(Date.now() / 86400000);
+  return { map: day % 5, key: new Date().toISOString().slice(0, 10) };
+}
+app.get('/daily', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json(dailyInfo());
+});
+function startOfTodayUTC() { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); }
+
+// ---------------------------------------------------------------------------
 // Optional Supabase persistence (v37): cross-device global leaderboard.
 // Additive by design — without SUPABASE_URL + SUPABASE_SERVICE_ROLE env vars
 // the file/memory leaderboard above is used and nothing else changes.
@@ -136,17 +157,19 @@ async function sbUpsert(mapId, entry) {
 }
 
 let sbCache = { key: -1, t: 0, rows: null };
-async function sbTop(mapId) {
+async function sbTop(mapId, daily) {
   if (!sbOn()) return null;
   const now = Date.now();
-  if (sbCache.key === mapId && sbCache.rows && now - sbCache.t < 5000) return sbCache.rows;
+  const ck = mapId + (daily ? 100 : 0);
+  if (sbCache.key === ck && sbCache.rows && now - sbCache.t < 5000) return sbCache.rows;
   try {
-    const r = await fetch(SB_URL + '/rest/v1/leaderboard?map=eq.' + mapId + '&order=time_ms.asc&limit=5&select=name,pid,time_ms',
-      { headers: { apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE } });
+    let q = SB_URL + '/rest/v1/leaderboard?map=eq.' + mapId + '&order=time_ms.asc&limit=5&select=name,pid,time_ms';
+    if (daily) q += '&updated_at=gte.' + new Date(startOfTodayUTC()).toISOString();
+    const r = await fetch(q, { headers: { apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE } });
     if (!r.ok) return null;
     const rows = await r.json();
     const out = rows.map((x) => ({ name: x.name, pid: x.pid, t: x.time_ms / 1000 }));
-    sbCache = { key: mapId, t: now, rows: out };
+    sbCache = { key: ck, t: now, rows: out };
     return out;
   } catch (e) { return null; }
 }
@@ -155,8 +178,11 @@ app.get('/lb', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   const m = parseInt(req.query.map, 10);
   const mapId = isNaN(m) ? 0 : m;
-  if (sbOn()) { const rows = await sbTop(mapId); if (rows) return res.json(rows); }
-  res.json(leaderboard[mapId] || []);
+  const daily = req.query.daily === '1';
+  if (sbOn()) { const rows = await sbTop(mapId, daily); if (rows) return res.json(rows); }
+  let rows = leaderboard[mapId] || [];
+  if (daily) rows = rows.filter((r) => (r.ts || 0) >= startOfTodayUTC());
+  res.json(rows.slice(0, 5));
 });
 
 function newRoom(mode, mapId) {
@@ -406,6 +432,7 @@ setInterval(() => {
         car._lb = true;
         lbAdd(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime, best: car.best, ts: now });
         sbUpsert(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime });
+        recentAdd({ name: car.name, map: room.mapId, t: car.finishTime, ts: now });
       }
     }
 
@@ -446,7 +473,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v38', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v39', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
