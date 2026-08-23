@@ -1329,6 +1329,15 @@ function renderDailyBoard(rows) {
 setInterval(pollLobbyExtras, 8000);
 setTimeout(pollLobbyExtras, 1200);
 
+// v40 analytics beacons (aggregate-only server counters; fire-and-forget)
+function track(e, map) {
+  try {
+    fetch(httpBase() + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e, map }) });
+  } catch (err) {}
+}
+track('visit');
+window.addEventListener('appinstalled', () => track('inst'));
+
 let qrDrawnFor = '';
 function drawQR(url) {
   if (qrDrawnFor === url) return;
@@ -1354,7 +1363,7 @@ function processEvents(snap) {
       case 'go': showCount('GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); break;
       case 'crash': onCrashFX(e.x, e.z, e.s); break;
       case 'lap':
-        if (e.slot === mySlot) ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best);
+        if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); track('fin'); }
         toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
       case 'finallap': toast(`🔥 P${e.slot}: FINAL LAP!`); beep(660, 0.14, 'square', 0.2); break;
       case 'elim': setBanner(`❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
@@ -1369,7 +1378,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v39';
+const BUILD = 'v40';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -1948,8 +1957,8 @@ function updateCountdownVisual() {
 // ---------------------------------------------------------------------------
 // Lobby buttons (+ map selection)
 // ---------------------------------------------------------------------------
-$('start-btn').addEventListener('click', () => { ensureAudio(); net.send({ type: 'start' }); });
-$('rematch-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'start' }); });
+$('start-btn').addEventListener('click', () => { ensureAudio(); net.send({ type: 'start' }); track('race', selectedMap); });
+$('rematch-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'start' }); track('race', selectedMap); });
 $('menu-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'reset' }); });
 document.querySelectorAll('.map-card').forEach((b) => b.addEventListener('click', () => {
   selectedMap = parseInt(b.dataset.map, 10);

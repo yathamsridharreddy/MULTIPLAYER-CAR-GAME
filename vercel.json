@@ -6,5 +6,25 @@
     { "source": "/controller", "destination": "/controller.html" },
     { "source": "/join", "destination": "/controller.html" },
     { "source": "/phone", "destination": "/controller.html" }
+  ],
+  "headers": [
+    {
+      "source": "/js/vendor/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/img/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/js/config.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
   ]
 }

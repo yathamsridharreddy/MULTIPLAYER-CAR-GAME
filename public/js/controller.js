@@ -7,7 +7,29 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dz = (v) => (Math.abs(v) < 0.07 ? 0 : v);
 
 const state = { steer: 0, throttle: 0, brake: 0, hb: false, nitro: false, slot: null, full: false, gyro: false };
-function vibrate(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+let vibOn = true; try { vibOn = localStorage.getItem('sr_vib') !== '0'; } catch (e) {}
+function vibrate(ms) { try { if (vibOn && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+
+// ---------------------------------------------------------------------------
+// v40 haptics: phone buzzes on game events. Pure function => unit-testable.
+// Returns vibration patterns for a telemetry frame; `prev` carries memory.
+// ---------------------------------------------------------------------------
+function hapticEvents(d, prev) {
+  const out = [];
+  if (d.state && d.state !== prev.state) {
+    if (d.state === 'racing') out.push([60, 40, 60]);      // GO!
+    if (d.state === 'finished') out.push([120, 60, 120]);  // chequered flag
+    prev.state = d.state;
+  }
+  if (typeof d.speed === 'number') {
+    if (prev.speed != null && prev.speed > 45 && prev.speed - d.speed > 28) out.push(70); // hard impact
+    prev.speed = d.speed;
+  }
+  if (d.nitroOn && !prev.nitro) out.push(18);              // nitro kick
+  prev.nitro = !!d.nitroOn;
+  return out;
+}
+const hPrev = { state: '', speed: null, nitro: false };
 
 // ---- virtual joysticks ----
 function makeStick(zoneId, knobId, onMove) {
@@ -112,8 +134,9 @@ const net = new RoomLink({
       $('lap-info').textContent = bits.join('  ·  ');
       if (d.state === 'countdown') setStatus('Get ready…', 'wait');
       else setStatus('Connected · Player ' + state.slot + (d.rank ? ' · ' + d.rank : ''), 'ok');
-      if (d.banner && d.banner !== lastBanner) { lastBanner = d.banner; showBanner(d.banner); }
-      return;
+    if (d.banner && d.banner !== lastBanner) { lastBanner = d.banner; showBanner(d.banner); }
+    for (const p of hapticEvents(d, hPrev)) vibrate(p);
+    return;
     }
     if (msg.type === 'disconnected') setStatus('Reconnecting…', 'err');
   },
@@ -150,6 +173,30 @@ $('btn-full').addEventListener('click', async () => {
   try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch (e) {}
 });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// v40: vibration toggle + tiny privacy-friendly analytics beacon
+const vibBtn = $('btn-vib');
+if (vibBtn) {
+  const paintVib = () => vibBtn.classList.toggle('on', vibOn);
+  paintVib();
+  vibBtn.addEventListener('click', () => {
+    vibOn = !vibOn;
+    try { localStorage.setItem('sr_vib', vibOn ? '1' : '0'); } catch (e) {}
+    paintVib();
+    if (vibOn) vibrate(20);
+  });
+}
+function trackCtl(e) {
+  try {
+    let cfg = String(window.SERVER_URL || 'local').trim();
+    if (cfg !== 'local') {
+      if (!/^(https?):\/\//i.test(cfg)) cfg = 'https://' + cfg;
+      cfg = cfg.replace(/\/+$/, '');
+    } else cfg = '';
+    fetch(cfg + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e }) });
+  } catch (err) {}
+}
+trackCtl('ctrl');
 document.addEventListener('touchmove', (e) => { if (e.scale !== 1) e.preventDefault(); }, { passive: false });
 function checkOrientation() { $('rotate-hint').classList.toggle('show', window.innerHeight > window.innerWidth); }
 window.addEventListener('resize', checkOrientation);

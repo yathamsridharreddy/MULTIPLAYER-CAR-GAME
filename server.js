@@ -31,6 +31,31 @@ const IDLE_ROOM_MS = 10 * 60 * 1000;
 const app = express();
 app.disable('x-powered-by');
 
+// ---------------------------------------------------------------------------
+// v40 lite analytics — aggregate counters only. No IPs, no cookies, no
+// personal data; a privacy-friendly pulse on how the game is used.
+// ---------------------------------------------------------------------------
+const AN = { visits: 0, controller: 0, races: 0, finishes: 0, installs: 0, byMap: [0, 0, 0, 0, 0] };
+app.post('/a', (req, res) => {
+  let b = '';
+  req.on('data', (c) => { if (b.length < 500) b += c; });
+  req.on('end', () => {
+    try {
+      const j = JSON.parse(b || '{}');
+      if (j.e === 'visit') AN.visits++;
+      else if (j.e === 'ctrl') AN.controller++;
+      else if (j.e === 'race') { AN.races++; if (j.map >= 0 && j.map < 5) AN.byMap[j.map]++; }
+      else if (j.e === 'fin') AN.finishes++;
+      else if (j.e === 'inst') AN.installs++;
+    } catch (e) {}
+    res.json({ ok: true });
+  });
+});
+app.get('/stats', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json(AN);
+});
+
 // Dynamic client config. For local runs the server URL is same-origin
 // ("local"). The Vercel deploy overwrites this file at build time with the
 // public URL of this server.
@@ -222,6 +247,7 @@ function controllerTelemetry(entry, ws, slot) {
       best: car.best != null ? core.fmtTime(car.best) : null,
       mode: room.mode,
       nitro: Math.round(car.nitroMeter),
+      nitroOn: !!car.nitroActive,
       state: room.state,
       rank: rank >= 0 ? ['1st', '2nd', '3rd'][rank] || '' : '',
       banner: room.banner.text
@@ -473,7 +499,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v39', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v40', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
