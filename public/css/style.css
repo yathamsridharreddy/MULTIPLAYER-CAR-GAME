@@ -510,3 +510,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .bs-logo, h1 { font-family: "Orbitron", "Segoe UI", system-ui, sans-serif; }
 #community-row { justify-content: center; margin-top: 10px; }
 a.ghost { display: inline-flex; align-items: center; }
+
+.ach-row { display: inline-flex; gap: 6px; margin-left: 10px; }
+.ach { filter: grayscale(1); opacity: .3; font-size: 16px; }
+.ach.on { filter: none; opacity: 1; text-shadow: 0 0 10px rgba(53,224,255,.6); }

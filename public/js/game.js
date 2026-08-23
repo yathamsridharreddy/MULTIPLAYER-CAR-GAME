@@ -1311,7 +1311,7 @@ function showResults(order) {
     rows.appendChild(div);
   });
   $('results-title').textContent = winner ? `🏁 ${escapeHtml(winner.name || ('PLAYER ' + winner.slot))} WINS!` : '🏁 RACE RESULTS';
-  $('results').classList.remove('hidden'); { const gb = $('ghost-share-btn'); if (gb) gb.hidden = false; }
+  $('results').classList.remove('hidden'); { const gb = $('ghost-share-btn'); if (gb) gb.hidden = false; const pb = $('photo-btn'); if (pb) pb.hidden = false; }
 }
 
 function updateLobby(snap) {
@@ -1416,6 +1416,61 @@ window.addEventListener('error', (ev) => track('err', undefined, String((ev && e
 window.addEventListener('unhandledrejection', (ev) => track('err', undefined, 'promise: ' + String((ev.reason && ev.reason.message) || ev.reason || 'rejection')));
 
 // ---------------------------------------------------------------------------
+// v48 achievements (device-local medals) + photo-finish share. Purely additive.
+// ---------------------------------------------------------------------------
+const ACH_DEFS = [
+  { id: 'firstwin', icon: '🥇', name: 'First Win' },
+  { id: 'streak3', icon: '🔥', name: '3-Day Streak' },
+  { id: 'fastlap', icon: '⚡', name: 'Lap Under 0:30' },
+  { id: 'ghostwin', icon: '👻', name: 'Ghost Beaten' },
+  { id: 'allmaps', icon: '🌍', name: 'All 5 Circuits' },
+];
+function evalAchievements(facts, have) {
+  const out = [];
+  if (facts.wins >= 1 && !have.firstwin) out.push('firstwin');
+  if (facts.streak >= 3 && !have.streak3) out.push('streak3');
+  if (facts.fastLap && !have.fastlap) out.push('fastlap');
+  if (facts.ghostBeat && !have.ghostwin) out.push('ghostwin');
+  if ((facts.mapsDone || []).length >= 5 && !have.allmaps) out.push('allmaps');
+  return out;
+}
+function achLoad() { try { return JSON.parse(localStorage.getItem('sr_ach') || '{}'); } catch (e) { return {}; } }
+function paintAchievements() {
+  const row = $('ach-row'); if (!row) return;
+  const have = achLoad();
+  row.innerHTML = ACH_DEFS.map((a) =>
+    '<span class="ach' + (have[a.id] ? ' on' : '') + '" title="' + a.name + '">' + a.icon + '</span>').join('');
+}
+function achCheck(extra) {
+  extra = extra || {};
+  try {
+    if (extra.map != null) {
+      let maps = JSON.parse(localStorage.getItem('sr_maps_done') || '[]');
+      if (!maps.includes(extra.map)) { maps.push(extra.map); localStorage.setItem('sr_maps_done', JSON.stringify(maps)); }
+    }
+    if (extra.win) localStorage.setItem('sr_wins', String((parseInt(localStorage.getItem('sr_wins') || '0', 10) || 0) + 1));
+    if (extra.lapT != null && extra.lapT < 30) localStorage.setItem('sr_fastlap', '1');
+    const days = JSON.parse(localStorage.getItem('sr_days') || '[]');
+    const facts = {
+      wins: parseInt(localStorage.getItem('sr_wins') || '0', 10) || 0,
+      streak: computeStreak(days, new Date().toISOString().slice(0, 10)),
+      fastLap: !!localStorage.getItem('sr_fastlap'),
+      ghostBeat: !!extra.ghostBeat,
+      mapsDone: JSON.parse(localStorage.getItem('sr_maps_done') || '[]'),
+    };
+    const have = achLoad();
+    const news = evalAchievements(facts, have);
+    if (news.length) {
+      const now = Date.now();
+      news.forEach((id) => { have[id] = now; });
+      localStorage.setItem('sr_ach', JSON.stringify(have));
+      news.forEach((id) => { const d = ACH_DEFS.find((a) => a.id === id); if (d) toast('🎖️ ' + d.name + ' unlocked!'); });
+    }
+    paintAchievements();
+  } catch (e) {}
+}
+
+// ---------------------------------------------------------------------------
 // v44: lobby i18n (EN/TE/HI) + Founders Cup panel + 🔥 streak badge. Additive.
 // ---------------------------------------------------------------------------
 function tI18n(k) {
@@ -1486,6 +1541,45 @@ function renderCup(rows) {
   });
   applyI18n();
   updateStreak();
+  paintAchievements();
+})();
+
+// v48 photo-finish: render results + logo into a downloadable PNG
+(function () {
+  const phBtn = $('photo-btn'); if (!phBtn) return;
+  phBtn.addEventListener('click', () => {
+    try {
+      const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+      const M = CORE.MAPS[mapId] || CORE.MAPS[0];
+      const c = document.createElement('canvas'); c.width = 1080; c.height = 1080;
+      const g = c.getContext('2d');
+      const grad = g.createLinearGradient(0, 0, 0, 1080);
+      grad.addColorStop(0, '#0a0f1e'); grad.addColorStop(0.55, '#141a2e'); grad.addColorStop(1, '#05070c');
+      g.fillStyle = grad; g.fillRect(0, 0, 1080, 1080);
+      g.textAlign = 'center';
+      g.fillStyle = '#35e0ff'; g.font = '700 64px Orbitron, "Segoe UI", sans-serif';
+      g.fillText('SRIDHAR RUSH', 540, 160);
+      g.fillStyle = '#ff2038'; g.font = '700 40px Orbitron, "Segoe UI", sans-serif';
+      g.fillText(M.name, 540, 225);
+      g.fillStyle = '#e8ecf2'; g.font = '700 46px "Segoe UI", sans-serif';
+      (lastResults || []).slice(0, 5).forEach((r, i) => {
+        g.fillText((i + 1) + '.  ' + (r.name || 'P' + r.slot) + '   ' + (r.t != null ? fmtTime(r.t) : 'DNF'), 540, 400 + i * 74);
+      });
+      g.fillStyle = 'rgba(232,236,242,.65)'; g.font = '30px "Segoe UI", sans-serif';
+      g.fillText(new Date().toLocaleDateString() + '  ·  race your friends at sridhar-drift.vercel.app', 540, 1016);
+      const save = () => {
+        const a = document.createElement('a');
+        a.download = 'sridhar-rush-results.png';
+        a.href = c.toDataURL('image/png');
+        a.click();
+        toast('📸 Photo saved — share it!');
+      };
+      const logo = new Image();
+      logo.onload = () => { try { g.drawImage(logo, 440, 780, 200, 200); } catch (e) {} save(); };
+      logo.onerror = save;
+      logo.src = 'img/logo.png';
+    } catch (e) { toast('Photo unavailable'); }
+  });
 })();
 
 // v41 "race my ghost" deep link: ?g=ID loads a friend's ghost for the matching map
@@ -1528,12 +1622,23 @@ function processEvents(snap) {
       case 'go': showCount('GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); break;
       case 'crash': onCrashFX(e.x, e.z, e.s); break;
       case 'lap':
-        if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); track('fin'); recordPlayDay(); }
+        if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); track('fin'); recordPlayDay(); achCheck({ map: snap.map, lapT: e.t }); }
         toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
       case 'finallap': toast(`🔥 P${e.slot}: FINAL LAP!`); beep(660, 0.14, 'square', 0.2); break;
       case 'elim': setBanner(`❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
-      case 'win': setBanner(e.multi ? `🏁 PLAYER ${e.slot} WINS!` : `🏁 FINISH — ${fmtTime(e.t)}`); confetti(); winJingle(); break;
-      case 'finished': toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
+      case 'win':
+        if (e.slot === mySlot) achCheck({ win: true, map: snap.map });
+        setBanner(e.multi ? `🏁 PLAYER ${e.slot} WINS!` : `🏁 FINISH — ${fmtTime(e.t)}`); confetti(); winJingle(); break;
+      case 'finished':
+        if (e.slot === mySlot) {
+          let gb = false;
+          if (remoteGhost && remoteGhost.map === (snap.map != null ? snap.map : builtMapId) && remoteGhost.data.length) {
+            const gt = remoteGhost.data[remoteGhost.data.length - 1][0];
+            gb = e.t != null && e.t < gt;
+          }
+          achCheck({ map: snap.map, finishT: e.t, ghostBeat: gb });
+        }
+        toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
       case 'results': showResults(e.order); break;
     }
   }
@@ -1543,7 +1648,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v47';
+const BUILD = 'v48';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
