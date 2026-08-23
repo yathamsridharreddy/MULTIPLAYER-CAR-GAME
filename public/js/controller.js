@@ -201,6 +201,17 @@ trackCtl('ctrl');
 let lastErrCtl = '';
 window.addEventListener('error', (ev) => { const m = String((ev && ev.message) || 'error'); if (m === lastErrCtl) return; lastErrCtl = m; trackCtl('err', m); });
 window.addEventListener('unhandledrejection', (ev) => trackCtl('err', 'promise: ' + String((ev.reason && ev.reason.message) || ev.reason || 'rejection')));
+
+// v45: iOS install hint (iPhones have no native install prompt)
+(function () {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone;
+  let seen = false; try { seen = !!localStorage.getItem('sr_ios_hint'); } catch (e) {}
+  const el = $('ios-hint'); if (!el || !isIOS || seen) return;
+  el.hidden = false;
+  const done = () => { el.hidden = true; try { localStorage.setItem('sr_ios_hint', '1'); } catch (e) {} };
+  const x = $('ios-hint-x'); if (x) x.addEventListener('click', done);
+  setTimeout(done, 12000);
+})();
 document.addEventListener('touchmove', (e) => { if (e.scale !== 1) e.preventDefault(); }, { passive: false });
 function checkOrientation() { $('rotate-hint').classList.toggle('show', window.innerHeight > window.innerWidth); }
 window.addEventListener('resize', checkOrientation);

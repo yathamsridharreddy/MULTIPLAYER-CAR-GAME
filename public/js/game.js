@@ -896,6 +896,12 @@ function loadPrefs() {
 }
 let prefs = loadPrefs();
 function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
+// v45: brand-new visitors start vs the ROOKIE bot so their first race is winnable;
+// returning players keep whatever they chose (PRO remains the historic bot).
+try {
+  if (!localStorage.getItem('sr_prefs') && prefs.botSkill == null) { prefs.botSkill = 0; savePrefs(); }
+} catch (e) {}
+if (prefs.botSkill == null) prefs.botSkill = 1;
 // Account-lite: a stable player id persisted on this device, so returning
 // players update one leaderboard entry instead of creating duplicates.
 if (!prefs.pid) { prefs.pid = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
@@ -907,7 +913,7 @@ function identityPayload() {
     pid = 'sb:' + SRAccount.uid();
     name = SRAccount.name() || prefs.name;
   }
-  return { name, pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, map: selectedMap };
+  return { name, pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap };
 }
 
 function applyQuality(q) {
@@ -1054,6 +1060,11 @@ function wireLobbyV2() {
       applyQuality(prefs.quality);
     });
   });
+  // v45 AI difficulty
+  const bskBtns = [$('bsk-rookie'), $('bsk-pro')];
+  const paintBsk = () => { if (bskBtns[0]) bskBtns[0].classList.toggle('active', !prefs.botSkill); if (bskBtns[1]) bskBtns[1].classList.toggle('active', !!prefs.botSkill); };
+  bskBtns.forEach((b, i) => { if (b) b.addEventListener('click', () => { prefs.botSkill = i; savePrefs(); paintBsk(); sendMeta(); }); });
+  paintBsk();
   const muteEl = $('set-mute'); if (muteEl) { muteEl.checked = !!prefs.mute; muteEl.addEventListener('change', () => { prefs.mute = muteEl.checked; savePrefs(); setAudio(); }); }
   const musicEl = $('set-music'); if (musicEl) { musicEl.checked = !!prefs.music; musicEl.addEventListener('change', () => { prefs.music = musicEl.checked; savePrefs(); ensureAudio(); setAudio(); }); }
   const fpsEl = $('set-fps'); if (fpsEl) { fpsEl.checked = !!prefs.fpsmeter; fpsEl.addEventListener('change', () => { prefs.fpsmeter = fpsEl.checked; savePrefs(); }); }
@@ -1509,7 +1520,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v44';
+const BUILD = 'v45';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

@@ -388,6 +388,7 @@ function handleMessage(client, msg) {
         const room = entry.room;
         if (msg.laps != null) room.setLaps(msg.laps);
         if (msg.bot != null) room.setBot(msg.bot);
+        if (msg.botSkill != null) room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
         if (msg.name || msg.color || msg.cls) room.setPlayerMeta(client.slot, msg);
       }
       break;
@@ -398,8 +399,10 @@ function handleMessage(client, msg) {
       break;
 
     case 'meta':
-      if (client.entry && client.role === 'screen' && client.slot)
+      if (client.entry && client.role === 'screen' && client.slot) {
         client.entry.room.setPlayerMeta(client.slot, msg);
+        if (msg.botSkill != null) client.entry.room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
+      }
       break;
 
     case 'laps':
@@ -568,7 +571,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v44', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v45', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

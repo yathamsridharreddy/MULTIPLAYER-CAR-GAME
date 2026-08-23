@@ -390,6 +390,7 @@
       this.mapId = (mapId != null && MAPS[mapId]) ? mapId : 0;
       this.track = MAPS[this.mapId];
       this.state = 'waiting';
+      this.botSkill = 1; // v45: PRO by default = byte-identical historic bot unless a client opts to ROOKIE
       this.raceTime = 0;
       this.countVal = 0;
       this.countTimer = 0;
@@ -418,6 +419,9 @@
       this.bot = !!on;
       return true;
     }
+    // v45: AI difficulty. 1 = PRO (identical to historic bot), 0 = ROOKIE
+    // (slower, no nitro) so first-time players can taste a win.
+    setBotSkill(v) { this.botSkill = v ? 1 : 0; }
 
     setPlayerMeta(slot, meta) {
       const car = this.cars[slot - 1];
@@ -529,8 +533,8 @@
       while (diff > Math.PI) diff -= PI2;
       while (diff < -Math.PI) diff += PI2;
       const steer = clamp(-diff * 2.2, -1, 1);
-      const throttle = clamp(0.94 - Math.abs(steer) * 0.45, 0.4, 0.94);
-      return { steer, throttle, brake: 0, handbrake: false, nitro: Math.abs(steer) < 0.15 && Math.random() < 0.015 };
+      const bCap = this.botSkill ? 0.94 : 0.72; /* v45: ROOKIE tops out slower */ const throttle = clamp(bCap - Math.abs(steer) * 0.45, 0.4, bCap);
+      return { steer, throttle, brake: 0, handbrake: false, nitro: !!this.botSkill && Math.abs(steer) < 0.15 && Math.random() < 0.015 };
     }
 
     update(dt) {
@@ -870,8 +874,8 @@
       let diff = desired - car.heading;
       while (diff > Math.PI) diff -= PI2; while (diff < -Math.PI) diff += PI2;
       const steer = clamp(-diff * 2.2, -1, 1);
-      const throttle = clamp(0.94 - Math.abs(steer) * 0.45, 0.4, 0.94);
-      return { steer, throttle, brake: 0, handbrake: false, nitro: Math.abs(steer) < 0.15 && Math.random() < 0.015 };
+      const bCap = this.botSkill ? 0.94 : 0.72; /* v45: ROOKIE tops out slower */ const throttle = clamp(bCap - Math.abs(steer) * 0.45, 0.4, bCap);
+      return { steer, throttle, brake: 0, handbrake: false, nitro: !!this.botSkill && Math.abs(steer) < 0.15 && Math.random() < 0.015 };
     }
     return _bot.call(this);
   };
