@@ -898,7 +898,13 @@ function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(pre
 if (!prefs.pid) { prefs.pid = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
 if (!prefs.name) { prefs.name = 'RACER-' + prefs.pid.slice(1, 5).toUpperCase(); savePrefs(); }
 function identityPayload() {
-  return { name: prefs.name, pid: prefs.pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, map: selectedMap };
+  // v37: a signed-in racer uses their Supabase id, so times follow them across devices
+  let name = prefs.name, pid = prefs.pid;
+  if (window.SRAccount && SRAccount.loggedIn() && SRAccount.uid()) {
+    pid = 'sb:' + SRAccount.uid();
+    name = SRAccount.name() || prefs.name;
+  }
+  return { name, pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, map: selectedMap };
 }
 
 function applyQuality(q) {
@@ -1042,6 +1048,38 @@ function wireLobbyV2() {
   const arEl = $('set-ar'); if (arEl) { arEl.checked = !!prefs.ar; arEl.addEventListener('change', () => { prefs.ar = arEl.checked; savePrefs(); }); }
   const ghEl = $('set-ghost'); if (ghEl) { ghEl.checked = !!prefs.ghost; ghEl.addEventListener('change', () => { prefs.ghost = ghEl.checked; savePrefs(); if (prefs.ghost) ensureGhost(); if (ghostGroup) ghostGroup.visible = false; }); }
   const fxEl = $('set-fx'); if (fxEl) { fxEl.checked = prefs.fx !== false; fxEl.addEventListener('change', () => { prefs.fx = fxEl.checked; savePrefs(); }); }
+
+  // ---- optional racer account (Supabase, v37) — purely additive ------------
+  (function () {
+    const line = $('account-line'); if (!line) return;
+    if (!(window.SRAccount && SRAccount.available())) return;
+    line.hidden = false;
+    const chip = $('account-chip'), btn = $('account-btn'), out = $('account-out'), dlg = $('account-dlg');
+    function paint(s) {
+      if (s) { chip.textContent = '👤 ' + (s.name || (s.email || 'racer').split('@')[0]); btn.hidden = true; out.hidden = false; }
+      else { chip.textContent = '👤 guest'; btn.hidden = false; out.hidden = true; }
+      sendMeta();
+    }
+    SRAccount.session().then((s) => { if (s && !SRAccount.name() && s.email) SRAccount.setName(s.email.split('@')[0]); paint(s); });
+    btn.addEventListener('click', () => { dlg.hidden = false; $('acc-err').textContent = ''; });
+    $('acc-close').addEventListener('click', () => { dlg.hidden = true; });
+    out.addEventListener('click', () => { SRAccount.logout(); paint(null); toast('Signed out'); });
+    function doIt(fn) {
+      const err = $('acc-err'); err.textContent = '…';
+      const em = $('acc-email').value.trim(), pw = $('acc-pass').value;
+      const nm = ($('acc-name').value.trim() || prefs.name).slice(0, 14);
+      fn(em, pw, nm).then(async (r) => {
+        if (r.error === 'CHECK_EMAIL') { err.textContent = r.msg; return; }
+        if (r.error) { err.textContent = r.error === 'NETWORK' ? 'Network error — try again.' : r.error; return; }
+        if (!SRAccount.name()) SRAccount.setName(nm);
+        dlg.hidden = true;
+        paint(await SRAccount.session());
+        toast('Welcome, ' + nm + '! 🏁');
+      });
+    }
+    $('acc-signup').addEventListener('click', () => doIt((e, p, n) => SRAccount.signup(e, p, n)));
+    $('acc-login').addEventListener('click', () => doIt((e, p) => SRAccount.login(e, p)));
+  })();
   const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutorial').style.display = 'none'; try { localStorage.setItem('sr_tut', '1'); } catch (e) {} });
   const shareEl = $('share-btn');
   if (shareEl) shareEl.addEventListener('click', () => {
@@ -1280,7 +1318,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v36';
+const BUILD = 'v37';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

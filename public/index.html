@@ -21,7 +21,7 @@
   <link rel="preload" as="script" href="js/vendor/three.min.js"/>
   <title>Sridhar Rush — Online 3D Racing</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏎️</text></svg>"/>
-  <link rel="stylesheet" href="css/style.css?v=36"/>
+  <link rel="stylesheet" href="css/style.css?v=37"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -128,6 +128,11 @@
           <div id="lobby-conn">🟡 connecting…</div>
         </div>
         <p id="lobby-status">Waiting for joysticks…</p>
+        <div id="account-line" class="account-line" hidden>
+          <span id="account-chip">👤 guest</span>
+          <button id="account-btn" class="ghost sm">SIGN IN</button>
+          <button id="account-out" class="ghost sm" hidden>SIGN OUT</button>
+        </div>
         <p id="room-error" style="display:none"></p>
         <button id="quickplay-btn" class="big-cta" style="margin:10px 0 2px">⚡ QUICK PLAY — find a rival</button>
 
@@ -190,7 +195,7 @@
         </div>
 
         <button id="next-btn" class="big-cta">SET UP RACE →</button>
-        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v36</p>
+        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v37</p>
       </div>
     </div>
 
@@ -246,6 +251,22 @@
     </div>
   </div>
 
+  <div id="account-dlg" class="dlg" hidden>
+    <div class="dlg-card">
+      <h2>🔐 RACER ACCOUNT</h2>
+      <p class="dlg-sub">Your race times, on every device.</p>
+      <input id="acc-name" class="name-input" maxlength="14" placeholder="Driver name" autocomplete="nickname"/>
+      <input id="acc-email" class="name-input" type="email" placeholder="Email" autocomplete="email"/>
+      <input id="acc-pass" class="name-input" type="password" placeholder="Password (6+ characters)" autocomplete="current-password"/>
+      <p id="acc-err" class="dlg-err"></p>
+      <div class="dlg-row">
+        <button id="acc-signup" class="big-cta">CREATE</button>
+        <button id="acc-login" class="ghost sm">SIGN IN</button>
+        <button id="acc-close" class="ghost sm">CANCEL</button>
+      </div>
+    </div>
+  </div>
+
   <script src="js/vendor/three.min.js"></script>
   <script src="js/vendor/post/CopyShader.js"></script>
   <script src="js/vendor/post/LuminosityHighPassShader.js"></script>
@@ -254,10 +275,11 @@
   <script src="js/vendor/post/RenderPass.js"></script>
   <script src="js/vendor/post/UnrealBloomPass.js"></script>
   <script src="js/vendor/qrcode.js"></script>
-  <script src="js/game-core.js?v=36"></script>
+  <script src="js/game-core.js?v=37"></script>
   <script src="js/config.js"></script>
-  <script src="js/net.js?v=36"></script>
-  <script src="js/game.js?v=36"></script>
+  <script src="js/account.js?v=37"></script>
+  <script src="js/net.js?v=37"></script>
+  <script src="js/game.js?v=37"></script>
   <script>
   // PWA (v36): register service worker + show INSTALL button when the browser allows it
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {

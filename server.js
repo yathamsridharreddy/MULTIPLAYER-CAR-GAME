@@ -35,7 +35,10 @@ app.disable('x-powered-by');
 // ("local"). The Vercel deploy overwrites this file at build time with the
 // public URL of this server.
 app.get('/js/config.js', (req, res) => {
-  res.type('application/javascript').send('window.SERVER_URL = "local";\n');
+  // Public (anon) Supabase values for the browser, when configured.
+  const sbU = process.env.SUPABASE_URL || '', sbA = process.env.SUPABASE_ANON || '';
+  const sb = (sbU && sbA) ? 'window.SUPABASE_URL = ' + JSON.stringify(sbU) + ';\nwindow.SUPABASE_ANON = ' + JSON.stringify(sbA) + ';\n' : '';
+  res.type('application/javascript').send('window.SERVER_URL = "local";\n' + sb);
 });
 
 // shared game core (deterministic world + physics constants for the client)
@@ -100,11 +103,60 @@ function lbAdd(mapId, entry) {
   try { fs.writeFileSync(LB_FILE, JSON.stringify(leaderboard)); } catch (e) {}
 }
 function lbGet(mapId) { return (leaderboard[mapId] || []).slice(0, 5); }
+
+// ---------------------------------------------------------------------------
+// Optional Supabase persistence (v37): cross-device global leaderboard.
+// Additive by design — without SUPABASE_URL + SUPABASE_SERVICE_ROLE env vars
+// the file/memory leaderboard above is used and nothing else changes.
+// Writes use the service role (server only); the browser never sees it.
+// ---------------------------------------------------------------------------
+const SB_URL = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+const SB_ROLE = String(process.env.SUPABASE_SERVICE_ROLE || '');
+const sbOn = () => !!(SB_URL && SB_ROLE && typeof fetch === 'function');
+
+async function sbUpsert(mapId, entry) {
+  if (!sbOn() || !entry.pid || entry.t == null) return;
+  const pid = String(entry.pid);
+  try {
+    // keep the player's BEST time (read existing, write the minimum)
+    const q = await fetch(SB_URL + '/rest/v1/leaderboard?map=eq.' + mapId + '&pid=eq.' + encodeURIComponent(pid) + '&select=time_ms',
+      { headers: { apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE } });
+    let t = Math.round(entry.t * 1000);
+    if (q.ok) { const rows = await q.json(); if (rows && rows.length && rows[0].time_ms < t) t = rows[0].time_ms; }
+    await fetch(SB_URL + '/rest/v1/leaderboard', {
+      method: 'POST',
+      headers: {
+        apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE, 'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify([{ map: mapId, pid, name: String(entry.name || 'RACER').slice(0, 16), time_ms: t }]),
+    });
+    sbCache.t = 0; // invalidate top-5 cache
+  } catch (e) { /* leaderboard persistence must never break a race */ }
+}
+
+let sbCache = { key: -1, t: 0, rows: null };
+async function sbTop(mapId) {
+  if (!sbOn()) return null;
+  const now = Date.now();
+  if (sbCache.key === mapId && sbCache.rows && now - sbCache.t < 5000) return sbCache.rows;
+  try {
+    const r = await fetch(SB_URL + '/rest/v1/leaderboard?map=eq.' + mapId + '&order=time_ms.asc&limit=5&select=name,pid,time_ms',
+      { headers: { apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE } });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    const out = rows.map((x) => ({ name: x.name, pid: x.pid, t: x.time_ms / 1000 }));
+    sbCache = { key: mapId, t: now, rows: out };
+    return out;
+  } catch (e) { return null; }
+}
 // CORS-friendly HTTP endpoint so the lobby can show the global board directly.
-app.get('/lb', (req, res) => {
+app.get('/lb', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   const m = parseInt(req.query.map, 10);
-  res.json(leaderboard[isNaN(m) ? 0 : m] || []);
+  const mapId = isNaN(m) ? 0 : m;
+  if (sbOn()) { const rows = await sbTop(mapId); if (rows) return res.json(rows); }
+  res.json(leaderboard[mapId] || []);
 });
 
 function newRoom(mode, mapId) {
@@ -353,6 +405,7 @@ setInterval(() => {
       if (car.finished && car.finishTime != null && !car._lb) {
         car._lb = true;
         lbAdd(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime, best: car.best, ts: now });
+        sbUpsert(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime });
       }
     }
 
@@ -393,7 +446,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v36', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v37', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
