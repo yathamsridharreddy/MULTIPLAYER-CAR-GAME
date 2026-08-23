@@ -1,5 +1,8 @@
 /* ============ VELOCITY RUSH — laptop screen ============ */
 * { margin: 0; padding: 0; box-sizing: border-box; }
+/* v38 fix: author display rules must never defeat the hidden attribute
+   (the account dialog overlay was eating all clicks while "hidden") */
+[hidden] { display: none !important; }
 html, body { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; background: #05070c; }
 body { font-family: "Segoe UI", system-ui, -apple-system, sans-serif; color: #e8ecf2; }
 
