@@ -1648,7 +1648,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v49';
+const BUILD = 'v50';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2280,13 +2280,38 @@ function adaptRes() {
   if (fps < 45 && cur > 1) { renderer.setPixelRatio(Math.max(1, cur - 0.5)); arCooldown = 3; }
   else if (fps > 57 && cur < Math.min(dpr, 2)) { renderer.setPixelRatio(Math.min(Math.min(dpr, 2), cur + 0.5)); arCooldown = 3; }
 }
+// v50 auto smoothness ladder (only when Adaptive resolution is ON):
+// sustained <45 FPS on HIGH -> drop glow, then shadows, for this session.
+// Manual choices in Settings always win again on next load.
+function autoTune(fpsNow, st) {
+  if (fpsNow < 45) st.low++; else st.low = 0;
+  if (st.low < 3) return null;
+  st.low = 0;
+  if (!st.fxOff) { st.fxOff = true; return 'fx'; }
+  if (!st.shOff) { st.shOff = true; return 'shadows'; }
+  return null;
+}
+const autoSt = { low: 0, fxOff: false, shOff: false };
 const clock = new THREE.Clock();
 applyQuality(prefs.quality);
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05);
   fpsFrames++; fpsTime += dt;
-  if (fpsTime >= 1) { fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; adaptRes(); }
+  if (fpsTime >= 1) {
+    fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; adaptRes();
+    if (prefs.ar && prefs.quality === 'high') {
+      const act = autoTune(fps, autoSt);
+      if (act === 'fx') {
+        prefs.fx = false;
+        const fxEl = $('set-fx'); if (fxEl) fxEl.checked = false;
+        toast('⚡ Glow auto-off for smoothness (Settings to re-enable)');
+      } else if (act === 'shadows') {
+        sunLight.castShadow = false;
+        toast('⚡ Shadows auto-off for smoothness');
+      }
+    }
+  }
   const mine = interpState(mySlot);
   const rival = interpState(mySlot === 1 ? 2 : 1);
   if (latest && latest.state === 'countdown') updateCountdownVisual();
