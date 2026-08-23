@@ -1591,7 +1591,12 @@ function renderCup(rows) {
     .then((g) => {
       if (g && Array.isArray(g.data) && g.data.length > 9) {
         remoteGhost = { map: g.map, data: g.data };
-        toast('👻 Racing ' + (g.name || 'a friend') + "'s ghost!");
+        // v51 fix: a ghost link must also switch the room to the ghost's map,
+        // otherwise the friend races the wrong circuit and never sees the ghost.
+        const pick = () => { if (net.isOpen()) net.send({ type: 'map', map: g.map }); };
+        pick(); setTimeout(pick, 1500);
+        const mn = (CORE.MAPS[g.map] || {}).name || '';
+        toast('👻 Racing ' + (g.name || 'a friend') + "'s ghost on " + mn + '!');
       }
     })
     .catch(() => {});
