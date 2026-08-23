@@ -2099,7 +2099,7 @@ function placeCar(slot, cs, dt) {
   {
     const T = curMap;
     if (T && T.world) {
-      const limC = T.type === 'spline' ? RH + 1.45 : RH + 2.4;
+      const limC = T.type === 'spline' ? RH - 0.55 : RH + 2.4; // v52 match sim
       const n = T.type === 'spline' ? T.nearest(v.netX, v.netZ) : CORE.ellipseProj(v.netX, v.netZ, T.a, T.b);
       if (Math.abs(n.lat) > limC) {
         const nx = v.netX - n.cx, nz = v.netZ - n.cz;

@@ -806,7 +806,7 @@
     let speed = this.vx * dirX + this.vy * dirY;
     const near = T.nearest ? T.nearest(this.x, this.z) : splineNearest(T, this.x, this.z, this._nearIdx);
     if (!T.nearest) this._nearIdx = near.idx;
-    const offroad = Math.abs(near.lat) > RH + 0.7;
+    const offroad = Math.abs(near.lat) > (T.type === 'spline' ? RH - 0.9 : RH + 0.7); // v52: grass drag begins at the asphalt edge
     if (held) { this.vx = 0; this.vy = 0; this.slip = 0; }
     this.nitroActive = !!(inp.nitro && this.nitroMeter > 0 && inp.throttle > 0.1 && !this.finished);
     if (this.nitroActive) this.nitroMeter = Math.max(0, this.nitroMeter - CFG.nitroDrain * dt);
@@ -940,8 +940,8 @@
     const T = car.track;
     if (!T) return null;
     const spline = T.type === 'spline';
-    const limC = spline ? RH + 1.45 : RH + 2.4;  // car center limit
-    const limP = spline ? RH + 2.4 : RH + 3.35;  // nose/tail limit = fence/wall inner face
+    const limC = spline ? RH - 0.55 : RH + 2.4;  // v52: car center limit — whole body stays on asphalt
+    const limP = spline ? RH + 0.55 : RH + 3.35;  // v52: nose/tail may kiss the edge line
     const dirX = Math.sin(car.heading), dirY = Math.cos(car.heading);
     const latOf = (px, pz) => {
       if (spline) {
@@ -1019,7 +1019,7 @@
   // browser caches an old game-core, its drawn track won't match the server's
   // car positions; the client detects this via /version.geom and forces reload.
   const GEOM_ID = (function () {
-    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length })));
+    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 2 }))); // k = barrier generation (v52)
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
     return (h >>> 0).toString(36);
