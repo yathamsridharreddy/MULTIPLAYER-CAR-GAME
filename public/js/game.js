@@ -1648,7 +1648,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v48';
+const BUILD = 'v49';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -1930,27 +1930,29 @@ function updateCamera(dt, mine, rival) {
 }
 const _av = new THREE.Vector3(), _cd = new THREE.Vector3();
 function updateArrow(rival) {
-  const el = $('arrow');
-  if (!rival || rival.p !== 1 || !latest || latest.state === 'waiting') { el.style.display = 'none'; return; }
+  const el = hEl('arrow');
+  if (!rival || rival.p !== 1 || !latest || latest.state === 'waiting') { hStyle(el, 'display', 'none'); return; }
   const vRi = carVisuals[rival.s];
   _av.set((vRi && vRi.netInit) ? vRi.netX : rival.x, 1.2, (vRi && vRi.netInit) ? vRi.netZ : rival.z);
   const toOther = _av.clone().sub(camera.position);
   camera.getWorldDirection(_cd);
   const inFront = toOther.dot(_cd) > 0;
   _av.project(camera);
-  if (inFront && Math.abs(_av.x) < 0.92 && Math.abs(_av.y) < 0.86) { el.style.display = 'none'; return; }
+  if (inFront && Math.abs(_av.x) < 0.92 && Math.abs(_av.y) < 0.86) { hStyle(el, 'display', 'none'); return; }
   let sx = _av.x, sy = -_av.y;
   if (!inFront) { sx = -sx; sy = -sy; }
   const ang = Math.atan2(sy, sx);
   const W = window.innerWidth / 2 - 56, H = window.innerHeight / 2 - 56;
   const t = Math.min(W / Math.max(1e-6, Math.abs(Math.cos(ang))), H / Math.max(1e-6, Math.abs(Math.sin(ang))));
-  el.style.display = 'flex';
-  el.style.left = (window.innerWidth / 2 + Math.cos(ang) * t * 0.94) + 'px';
-  el.style.top = (window.innerHeight / 2 + Math.sin(ang) * t * 0.94) + 'px';
-  el.style.transform = `translate(-50%,-50%) rotate(${ang}rad)`;
-  el.classList.toggle('p2', rival.s === 2);
-  el.classList.toggle('p1', rival.s === 1);
-  el.querySelector('.dist').textContent = Math.round(Math.hypot(rival.x - camera.position.x, rival.z - camera.position.z)) + 'm';
+  hStyle(el, 'display', 'flex');
+  hStyle(el, 'left', (window.innerWidth / 2 + Math.cos(ang) * t * 0.94) + 'px');
+  hStyle(el, 'top', (window.innerHeight / 2 + Math.sin(ang) * t * 0.94) + 'px');
+  hStyle(el, 'transform', `translate(-50%,-50%) rotate(${ang}rad)`);
+  const isP2 = rival.s === 2, isP1 = rival.s === 1;
+  if (el.__p2 !== isP2) { el.__p2 = isP2; el.classList.toggle('p2', isP2); }
+  if (el.__p1 !== isP1) { el.__p1 = isP1; el.classList.toggle('p1', isP1); }
+  if (!el.__dist) el.__dist = el.querySelector('.dist');
+  hText(el.__dist, Math.round(Math.hypot(rival.x - camera.position.x, rival.z - camera.position.z)) + 'm');
 }
 
 // ---------------------------------------------------------------------------
@@ -2168,54 +2170,63 @@ function drawMinimap(mine, rival) {
   }
   mctx.restore();
 }
+// v49 smoothness pass: HUD refs cached once; DOM written ONLY when the value
+// changes (innerHTML rebuilds at 60 fps were the main jank source).
+const HUD = {};
+const hEl = (id) => HUD[id] || (HUD[id] = $(id));
+function hText(el, v) { if (el && el.__t !== v) { el.__t = v; el.textContent = v; } }
+function hHTML(el, v) { if (el && el.__h !== v) { el.__h = v; el.innerHTML = v; } }
+function hStyle(el, k, v) { if (el && el['__s' + k] !== v) { el['__s' + k] = v; el.style[k] = v; } }
+let hudPill1 = null, hudPill2 = null;
 function updateHUD(mine, rival) {
   if (!latest || !mine) return;
   updateModeLabels(latest.mode);
-  // player names on pills
+  if (!hudPill1) { const p1 = hEl('pill-p1'), p2 = hEl('pill-p2'); hudPill1 = p1 && p1.querySelector('span'); hudPill2 = p2 && p2.querySelector('span'); }
   const c1 = latest.cars[0], c2 = latest.cars[1];
   if (latest.mode !== 'coop') {
-    $('pill-p1').querySelector('span').textContent = c1.nm || 'PLAYER 1';
-    $('pill-p2').querySelector('span').textContent = c2.nm || 'PLAYER 2';
+    hText(hudPill1, c1.nm || 'PLAYER 1');
+    hText(hudPill2, c2.nm || 'PLAYER 2');
   } else {
-    $('pill-p1').querySelector('span').textContent = 'CO-OP · ' + (c1.nm || 'YOU');
+    hText(hudPill1, 'CO-OP · ' + (c1.nm || 'YOU'));
   }
-  // ping badge
-  const pingEl = $('ping-badge');
+  const pingEl = hEl('ping-badge');
   if (pingEl) {
-    if (pingMs < 0) { pingEl.textContent = '… ms'; pingEl.className = 'ping'; }
+    if (pingMs < 0) { hText(pingEl, '… ms'); if (pingEl.__c !== 'ping') { pingEl.__c = 'ping'; pingEl.className = 'ping'; } }
     else {
       const p = Math.round(pingMs);
-      pingEl.textContent = p + ' ms';
-      pingEl.className = 'ping ' + (p < 90 ? 'good' : p < 180 ? 'ok' : 'bad');
+      hText(pingEl, p + ' ms');
+      const cls = 'ping ' + (p < 90 ? 'good' : p < 180 ? 'ok' : 'bad');
+      if (pingEl.__c !== cls) { pingEl.__c = cls; pingEl.className = cls; }
     }
   }
-  // fps meter
-  const fpsEl = $('fps-meter');
+  const fpsEl = hEl('fps-meter');
   if (fpsEl) {
-    if (prefs.fpsmeter) { fpsEl.style.display = ''; fpsEl.textContent = fps + ' FPS'; }
-    else fpsEl.style.display = 'none';
+    if (prefs.fpsmeter) { hStyle(fpsEl, 'display', ''); hText(fpsEl, fps + ' FPS'); }
+    else hStyle(fpsEl, 'display', 'none');
   }
-  $('speed-val').textContent = Math.round(Math.abs(mine.v) * 3.6);
-  $('gear').textContent = mine.v < -0.5 ? 'R' : (Math.abs(mine.v) < 0.4 ? 'N' : 'D');
-  $('nitro-fill').style.width = (mine.m || 0) + '%';
-  $('nitro-fill').classList.toggle('burn', mine.n === 1);
+  hText(hEl('speed-val'), String(Math.round(Math.abs(mine.v) * 3.6)));
+  hText(hEl('gear'), mine.v < -0.5 ? 'R' : (Math.abs(mine.v) < 0.4 ? 'N' : 'D'));
+  const nf = hEl('nitro-fill');
+  hStyle(nf, 'width', (mine.m || 0) + '%');
+  const burn = mine.n === 1;
+  if (nf && nf.__burn !== burn) { nf.__burn = burn; nf.classList.toggle('burn', burn); }
   const order = standingsFrom(latest);
   const myRank = order.findIndex((c) => c.s === mySlot);
-  $('raceinfo').innerHTML =
+  let raceStr =
     `<span id="lapchip">LAP ${Math.min(mine.lap + 1, CFG.totalLaps)}<small>/${CFG.totalLaps}</small></span>` +
     (order.length > 1 && myRank >= 0 ? `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">${ordinal(myRank + 1).toUpperCase()}</span>` : '');
+  if (latest.mode === 'drift') raceStr += `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">DRIFT ${mine.drift || 0}</span>`;
+  hHTML(hEl('raceinfo'), raceStr);
   const row = (c) => `L${Math.min(c.lap + 1, CFG.totalLaps)}  ${c.ll != null ? fmtTime(c.ll) : '--:--.--'}  <span class="dim">best ${c.best != null ? fmtTime(c.best) : '--:--.--'}</span>`;
-  $('lap-p1').innerHTML = `<b style="color:#ff6b6b">P1</b> ${row(latest.cars[0])}`;
+  hHTML(hEl('lap-p1'), `<b style="color:#ff6b6b">P1</b> ${row(latest.cars[0])}`);
+  const lp2 = hEl('lap-p2');
   if (latest.mode === 'race') {
-    $('lap-p2').style.display = '';
-    $('lap-p2').innerHTML = `<b style="color:#64b5f6">P2</b> ${latest.cars[1].p === 1 ? row(latest.cars[1]) : '<span class="dim">waiting…</span>'}`;
+    hStyle(lp2, 'display', '');
+    hHTML(lp2, `<b style="color:#64b5f6">P2</b> ${latest.cars[1].p === 1 ? row(latest.cars[1]) : '<span class="dim">waiting…</span>'}`);
   } else {
-    $('lap-p2').style.display = 'none';
+    hStyle(lp2, 'display', 'none');
   }
-  if (latest.mode === 'drift') {
-    $('raceinfo').innerHTML += `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">DRIFT ${mine.drift || 0}</span>`;
-  }
-  $('speedlines').style.opacity = prefs.rm ? 0 : clamp((Math.abs(mine.v) - 26) / 34, 0, 0.6);
+  hStyle(hEl('speedlines'), 'opacity', String(prefs.rm ? 0 : clamp((Math.abs(mine.v) - 26) / 34, 0, 0.6)));
   drawMinimap(mine, rival);
 }
 function updateCountdownVisual() {
