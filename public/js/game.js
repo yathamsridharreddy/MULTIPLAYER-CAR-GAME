@@ -20,6 +20,16 @@ window.addEventListener('error', (e) => {
    ============================================================ */
 
 const CORE = window.VRCore;
+// v54 tripwire: the #1 historic bug was a stale shared/game-core.js in the deploy
+// repo (Vercel's build copies it over public/js every deploy). If the core is an
+// old 3-map build while this client expects 5 radial maps, the client draws one
+// circuit while the server simulates another = "car off the track". Fail LOUDLY.
+if (!CORE || !CORE.MAPS || CORE.MAPS.length < 5 || !CORE.MAPS[1].radial) {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#5a0000;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;font:600 15px system-ui,sans-serif;letter-spacing:.3px;';
+  d.textContent = '⚠ OLD GAME CORE DETECTED (3-map build). Update shared/game-core.js in the deploy repo from the latest release, then redeploy. Until then the drawn track and the server track disagree.';
+  document.addEventListener('DOMContentLoaded', () => document.body.appendChild(d));
+}
 const CFG = CORE.CFG;
 const RH = CFG.roadHalf;
 const PI2 = Math.PI * 2;
@@ -1653,7 +1663,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v53';
+const BUILD = 'v54';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
