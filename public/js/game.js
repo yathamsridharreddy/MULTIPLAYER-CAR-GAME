@@ -1653,7 +1653,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v50';
+const BUILD = 'v53';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2100,12 +2100,24 @@ function placeCar(slot, cs, dt) {
     const T = curMap;
     if (T && T.world) {
       const limC = T.type === 'spline' ? RH - 0.55 : RH + 2.4; // v52 match sim
-      const n = T.type === 'spline' ? T.nearest(v.netX, v.netZ) : CORE.ellipseProj(v.netX, v.netZ, T.a, T.b);
-      if (Math.abs(n.lat) > limC) {
-        const nx = v.netX - n.cx, nz = v.netZ - n.cz;
-        const cd = Math.hypot(nx, nz) || 1;
-        const over = Math.abs(n.lat) - limC;
-        v.netX -= (nx / cd) * over; v.netZ -= (nz / cd) * over;
+      const limP = T.type === 'spline' ? RH + 0.55 : RH + 3.35; // v53 nose/tail parity
+      const dirX = Math.sin(v.netH), dirZ = Math.cos(v.netH);
+      const proj = (px, pz) => (T.type === 'spline' ? T.nearest(px, pz) : CORE.ellipseProj(px, pz, T.a, T.b));
+      // v53: clamp center+nose+tail exactly like the sim (2-pass converge), so
+      // no part of the rendered car can ever appear beyond the asphalt edge.
+      for (let iter = 0; iter < 2; iter++) {
+        let maxOver = 0, sx = 0, sz = 0;
+        for (const pr of [[0, limC], [2.6, limP], [-2.4, limP]]) {
+          const n = proj(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0]);
+          const over = Math.abs(n.lat) - pr[1];
+          if (over > maxOver) {
+            maxOver = over;
+            const cd = Math.hypot(v.netX - n.cx, v.netZ - n.cz) || 1;
+            sx = (v.netX - n.cx) / cd; sz = (v.netZ - n.cz) / cd;
+          }
+        }
+        if (maxOver <= 0) break;
+        v.netX -= sx * maxOver; v.netZ -= sz * maxOver;
       }
       const rr = 0.95 + 0.75; // capsule side + tire
       for (const hz of T.world.hazards) {
