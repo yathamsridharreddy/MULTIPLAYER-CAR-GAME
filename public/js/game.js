@@ -1663,7 +1663,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v55';
+const BUILD = 'v56';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2109,8 +2109,8 @@ function placeCar(slot, cs, dt) {
   {
     const T = curMap;
     if (T && T.world) {
-      const limC = T.type === 'spline' ? RH - 0.55 : RH + 2.4; // v52 match sim
-      const limP = T.type === 'spline' ? RH + 0.55 : RH + 3.35; // v53 nose/tail parity
+      const limC = T.type === 'spline' ? 6.3 : RH + 2.4; // v56 match sim corridor
+      const limP = T.type === 'spline' ? 7.3 : RH + 3.35; // v56 nose/tail parity
       const dirX = Math.sin(v.netH), dirZ = Math.cos(v.netH);
       const proj = (px, pz) => (T.type === 'spline' ? T.nearest(px, pz) : CORE.ellipseProj(px, pz, T.a, T.b));
       // v53: clamp center+nose+tail exactly like the sim (2-pass converge), so

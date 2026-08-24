@@ -9,7 +9,7 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v55';
+const CACHE = 'sridhar-rush-v56';
 
 const CORE = [
   '/', '/controller',
