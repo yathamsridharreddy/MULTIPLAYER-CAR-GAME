@@ -1663,7 +1663,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v54';
+const BUILD = 'v55';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2304,14 +2304,14 @@ function adaptRes() {
   if (arCooldown > 0) return;
   const dpr = window.devicePixelRatio || 1;
   const cur = renderer.getPixelRatio();
-  if (fps < 45 && cur > 1) { renderer.setPixelRatio(Math.max(1, cur - 0.5)); arCooldown = 3; }
+  if (fps < 48 && cur > 1) { renderer.setPixelRatio(Math.max(1, cur - 0.5)); arCooldown = 3; } // v55: adapt earlier
   else if (fps > 57 && cur < Math.min(dpr, 2)) { renderer.setPixelRatio(Math.min(Math.min(dpr, 2), cur + 0.5)); arCooldown = 3; }
 }
 // v50 auto smoothness ladder (only when Adaptive resolution is ON):
 // sustained <45 FPS on HIGH -> drop glow, then shadows, for this session.
 // Manual choices in Settings always win again on next load.
 function autoTune(fpsNow, st) {
-  if (fpsNow < 45) st.low++; else st.low = 0;
+  if (fpsNow < 52) st.low++; else st.low = 0; // v55: 50-52 FPS + glow = dips; shed glow in that band
   if (st.low < 3) return null;
   st.low = 0;
   if (!st.fxOff) { st.fxOff = true; return 'fx'; }
