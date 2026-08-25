@@ -1,8 +1,8 @@
-![Sridhar Rush banner](https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/1fa5062/delivery/img/readme-banner.png)
+![Sridhar Rush banner](https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/f7042ff/delivery/img/readme-banner.png)
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/1fa5062/delivery/img/logo.png" width="120"/>
+<img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/f7042ff/delivery/img/logo.png" width="120"/>
 
 # 🏎️ SRIDHAR RUSH
 ### **Your phone is the joystick. The browser is the console. The internet is your racetrack.**
@@ -21,7 +21,7 @@
 
 > **Sridhar Rush** is a real-time 3D racing game where **laptops render the race** and **phones become wireless gamepads** — scan a QR code and your phone grows sticks, nitro and haptics. Race a friend across the internet, or duel a ROOKIE/PRO AI with WASD.
 
-<img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/1fa5062/delivery/img/poster.png" width="460" align="right" alt="poster with QR"/>
+<img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/f7042ff/delivery/img/poster.png" width="460" align="right" alt="poster with QR"/>
 
 **The loop that hooks you:**
 🏁 win your first race vs ROOKIE → 🔥 keep the streak → 📅 top the Daily board → 🏆 take the weekly Founders Cup → 👻 ghost-share your lap so friends race *you* → 📸 flex the photo-finish card on WhatsApp.
@@ -34,8 +34,8 @@
 
 | | | |
 |:---:|:---:|:---:|
-| <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/1fa5062/delivery/img/og-map-highland.png" width="260"/><br/>**HIGHLAND RUSH**<br/>🌲 day · forests & mountains | <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/1fa5062/delivery/img/og-map-neon.png" width="260"/><br/>**NEON CITY**<br/>🌃 night · bloom-soaked downtown | <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/1fa5062/delivery/img/og-map-island.png" width="260"/><br/>**ISLAND MOTORFEST**<br/>🌋 sunset · volcano & ocean |
-| <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/1fa5062/delivery/img/og-map-canyon.png" width="260"/><br/>**CANYON CHICANE**<br/>🏜️ desert · S-curves | <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/1fa5062/delivery/img/og-map-snow.png" width="260"/><br/>**HAIRPIN GP**<br/>❄️ snow · alpine hairpins | <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/1fa5062/delivery/img/logo.png" width="120"/><br/>**YOUR FAVOURITE?**<br/>🏁 settle it on track |
+| <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/f7042ff/delivery/img/og-map-highland.png" width="260"/><br/>**HIGHLAND RUSH**<br/>🌲 day · forests & mountains | <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/f7042ff/delivery/img/og-map-neon.png" width="260"/><br/>**NEON CITY**<br/>🌃 night · bloom-soaked downtown | <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/f7042ff/delivery/img/og-map-island.png" width="260"/><br/>**ISLAND MOTORFEST**<br/>🌋 sunset · volcano & ocean |
+| <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/f7042ff/delivery/img/og-map-canyon.png" width="260"/><br/>**CANYON CHICANE**<br/>🏜️ desert · S-curves | <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/f7042ff/delivery/img/og-map-snow.png" width="260"/><br/>**HAIRPIN GP**<br/>❄️ snow · alpine hairpins | <img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/f7042ff/delivery/img/logo.png" width="120"/><br/>**YOUR FAVOURITE?**<br/>🏁 settle it on track |
 
 ---
 
@@ -89,7 +89,7 @@
 
 ## 🧠 How it's built
 
-<img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/1fa5062/delivery/img/readme-architecture.png" width="760" alt="architecture: phone and laptop talk wss to the 30Hz relay; relay writes SQL to Supabase; Vercel serves the client over https"/>
+<img src="https://raw.githubusercontent.com/yathamsridharreddy/yathamsridharreddy/f7042ff/delivery/img/readme-architecture.png" width="760" alt="architecture: phone and laptop talk wss to the 30Hz relay; relay writes SQL to Supabase; Vercel serves the client over https"/>
 
 | Layer | Tech | Job |
 |---|---|---|
