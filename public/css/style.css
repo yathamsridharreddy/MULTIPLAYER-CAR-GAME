@@ -514,3 +514,12 @@ a.ghost { display: inline-flex; align-items: center; }
 .ach-row { display: inline-flex; gap: 6px; margin-left: 10px; }
 .ach { filter: grayscale(1); opacity: .3; font-size: 16px; }
 .ach.on { filter: none; opacity: 1; text-shadow: 0 0 10px rgba(53,224,255,.6); }
+
+/* ---------- HD lobby (v57): art lives only inside #overlay, which is
+   display:none during races => ZERO GPU cost while playing ---------- */
+#lobby-bg { position: absolute; inset: 0; z-index: -1; opacity: 0; transition: opacity .9s ease; background: #05070c center/cover no-repeat; }
+body.hd #lobby-bg { opacity: .55; }
+body.hd #overlay { background: radial-gradient(120% 120% at 50% 0%, rgba(10,16,32,.5), rgba(4,6,12,.82)); }
+body.hd .overlay-card { background: rgba(8,12,22,.72); border: 1px solid rgba(53,224,255,.3); box-shadow: 0 0 44px rgba(53,224,255,.12), 0 24px 80px rgba(0,0,0,.65); backdrop-filter: blur(7px); }
+body.hd h1 span { text-shadow: 0 0 20px rgba(255,32,56,.75); }
+body.hd .big-cta { box-shadow: 0 0 26px rgba(61,220,132,.45); }

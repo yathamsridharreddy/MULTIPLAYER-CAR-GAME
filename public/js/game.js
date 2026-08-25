@@ -900,7 +900,7 @@ const CAR_NAMES = [
 function loadPrefs() {
   try { return Object.assign({
     name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, fx: true, lang: 'en'
+    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, fx: true, lang: 'en', hdLobby: true
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
   catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false }; }
 }
@@ -1068,6 +1068,7 @@ function wireLobbyV2() {
       prefs.quality = b.dataset.q; savePrefs();
       document.querySelectorAll('.q-btn').forEach((x) => x.classList.toggle('active', x === b));
       applyQuality(prefs.quality);
+      applyHD();
     });
   });
   // v45 AI difficulty
@@ -1083,6 +1084,10 @@ function wireLobbyV2() {
   const arEl = $('set-ar'); if (arEl) { arEl.checked = !!prefs.ar; arEl.addEventListener('change', () => { prefs.ar = arEl.checked; savePrefs(); }); }
   const ghEl = $('set-ghost'); if (ghEl) { ghEl.checked = !!prefs.ghost; ghEl.addEventListener('change', () => { prefs.ghost = ghEl.checked; savePrefs(); if (prefs.ghost) ensureGhost(); if (ghostGroup) ghostGroup.visible = false; }); }
   const fxEl = $('set-fx'); if (fxEl) { fxEl.checked = prefs.fx !== false; fxEl.addEventListener('change', () => { prefs.fx = fxEl.checked; savePrefs(); }); }
+  // v57 HD lobby: pure CSS skin inside the (race-hidden) lobby overlay; the art
+  // file lazy-loads 1.2 s after window.load so it never competes with boot/race.
+  const hdEl = $('set-hd');
+  if (hdEl) { hdEl.checked = prefs.hdLobby !== false; hdEl.addEventListener('change', () => { prefs.hdLobby = hdEl.checked; savePrefs(); applyHD(); }); }
 
   // ---- optional racer account (Supabase, v37) — purely additive ------------
   (function () {
@@ -1552,6 +1557,7 @@ function renderCup(rows) {
   applyI18n();
   updateStreak();
   paintAchievements();
+  applyHD();
 })();
 
 // v48 photo-finish: render results + logo into a downloadable PNG
@@ -1663,7 +1669,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v56';
+const BUILD = 'v57';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2319,6 +2325,20 @@ function autoTune(fpsNow, st) {
   return null;
 }
 const autoSt = { low: 0, fxOff: false, shOff: false };
+let hdLoaded = false;
+function applyHD() {
+  const on = prefs.hdLobby !== false && prefs.quality !== 'low';
+  document.body.classList.toggle('hd', on);
+  if (on && !hdLoaded) {
+    hdLoaded = true;
+    const kick = () => setTimeout(() => {
+      const im = new Image();
+      im.onload = () => { const el = $('lobby-bg'); if (el) el.style.backgroundImage = "url('img/lobby-bg.jpg')"; };
+      im.src = 'img/lobby-bg.jpg';
+    }, 1200);
+    if (document.readyState === 'complete') kick(); else window.addEventListener('load', kick);
+  }
+}
 const clock = new THREE.Clock();
 applyQuality(prefs.quality);
 function frame() {
