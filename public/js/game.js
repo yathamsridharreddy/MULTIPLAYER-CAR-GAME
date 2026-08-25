@@ -1026,7 +1026,6 @@ function startMusic() {
 }
 function stopMusic() { if (musicNodes) { clearInterval(musicNodes.timer); try { musicNodes.g.disconnect(); } catch (e) {} musicNodes = null; } }
 
-setInterval(() => { if (net.isOpen()) net.send({ type: 'ping', t: performance.now() }); }, 2000);
 
 function wireLobbyV2() {
   const nameEl = $('inp-name');
@@ -1456,6 +1455,21 @@ function paintAchievements() {
   row.innerHTML = ACH_DEFS.map((a) =>
     '<span class="ach' + (have[a.id] ? ' on' : '') + '" title="' + a.name + '">' + a.icon + '</span>').join('');
 }
+
+let hdLoaded = false;
+function applyHD() {
+  const on = prefs.hdLobby !== false && prefs.quality !== 'low';
+  document.body.classList.toggle('hd', on);
+  if (on && !hdLoaded) {
+    hdLoaded = true;
+    const kick = () => setTimeout(() => {
+      const im = new Image();
+      im.onload = () => { const el = $('lobby-bg'); if (el) el.style.backgroundImage = "url('img/lobby-bg.jpg')"; };
+      im.src = 'img/lobby-bg.jpg';
+    }, 1200);
+    if (document.readyState === 'complete') kick(); else window.addEventListener('load', kick);
+  }
+}
 function achCheck(extra) {
   extra = extra || {};
   try {
@@ -1669,7 +1683,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v57';
+const BUILD = 'v58';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -1739,6 +1753,8 @@ const net = new RoomLink({
     $('lobby-conn').textContent = s === 'connected' ? '🟢 connected' : (s === 'connecting' ? '🟡 connecting…' : '🔴 reconnecting…');
   }
 });
+setInterval(() => { if (net.isOpen()) net.send({ type: 'ping', t: performance.now() }); }, 2000);
+
 function sendHello() {
   net.connect(Object.assign({ type: 'hello', role: 'screen', room: wantedRoom || null }, identityPayload()));
 }
@@ -2325,20 +2341,6 @@ function autoTune(fpsNow, st) {
   return null;
 }
 const autoSt = { low: 0, fxOff: false, shOff: false };
-let hdLoaded = false;
-function applyHD() {
-  const on = prefs.hdLobby !== false && prefs.quality !== 'low';
-  document.body.classList.toggle('hd', on);
-  if (on && !hdLoaded) {
-    hdLoaded = true;
-    const kick = () => setTimeout(() => {
-      const im = new Image();
-      im.onload = () => { const el = $('lobby-bg'); if (el) el.style.backgroundImage = "url('img/lobby-bg.jpg')"; };
-      im.src = 'img/lobby-bg.jpg';
-    }, 1200);
-    if (document.readyState === 'complete') kick(); else window.addEventListener('load', kick);
-  }
-}
 const clock = new THREE.Clock();
 applyQuality(prefs.quality);
 function frame() {
