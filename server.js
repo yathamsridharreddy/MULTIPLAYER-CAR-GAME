@@ -284,7 +284,7 @@ app.get('/ghost', async (req, res) => {
 function newRoom(mode, mapId) {
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
-  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false };
+  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set() };
   rooms.set(code, entry);
   console.log(`[room ${code}] created (${entry.room.mode}, map ${entry.room.mapId})`);
   return entry;
@@ -392,6 +392,7 @@ function handleMessage(client, msg) {
         if (msg.bot != null) room.setBot(msg.bot);
         if (msg.botSkill != null) room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
         if (msg.name || msg.color || msg.cls) room.setPlayerMeta(client.slot, msg);
+        if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
       }
       break;
     }
@@ -403,6 +404,7 @@ function handleMessage(client, msg) {
     case 'meta':
       if (client.entry && client.role === 'screen' && client.slot) {
         client.entry.room.setPlayerMeta(client.slot, msg);
+        if (msg.cos || msg.title) client.entry.room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
         if (msg.botSkill != null) client.entry.room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
       }
       break;
@@ -428,7 +430,17 @@ function handleMessage(client, msg) {
     }
 
     case 'start':
-      if (client.entry && client.role === 'screen') client.entry.room.start();
+      if (client.entry && client.role === 'screen') { client.entry.rematch && client.entry.rematch.clear(); client.entry.room.start(); }
+      break;
+
+    // v59 rematch voting: when every connected screen votes, reuse the room
+    case 'rematch':
+      if (client.entry && client.role === 'screen') {
+        const en = client.entry;
+        en.rematch.add(client.ws);
+        en.room.events.push({ type: 'rematch', n: en.rematch.size, total: en.screens.size });
+        if (en.rematch.size >= Math.max(1, en.screens.size)) { en.rematch.clear(); en.room.start(); }
+      }
       break;
 
     case 'mode':
@@ -573,7 +585,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v58', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v59', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

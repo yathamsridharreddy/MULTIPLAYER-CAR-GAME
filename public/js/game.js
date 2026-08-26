@@ -158,6 +158,7 @@ const sunSprite = (() => {
 
 // world geometry lives in a group we rebuild per map
 const worldGroup = new THREE.Group();
+const puMeshes = []; // v59 pickup visuals
 scene.add(worldGroup);
 
 function makeEnvTexture(night) {
@@ -364,6 +365,17 @@ function buildWorld(map) {
 
   // clear previous world
   while (worldGroup.children.length) worldGroup.remove(worldGroup.children[0]);
+  puMeshes.length = 0;
+  if (CORE.pickupSpots) { // v59: visible power-ups at the SAME deterministic spots as the server
+    CORE.pickupSpots(map).forEach((sp) => {
+      let m;
+      if (sp.type === 0) m = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.1, 4), new THREE.MeshStandardMaterial({ color: 0x35e0ff, emissive: 0x35e0ff, emissiveIntensity: 1.4 }));
+      else if (sp.type === 1) m = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 10), new THREE.MeshStandardMaterial({ color: 0x3ddc84, emissive: 0x3ddc84, emissiveIntensity: 1.0, transparent: true, opacity: 0.85 }));
+      else m = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.16, 8, 18), new THREE.MeshStandardMaterial({ color: 0xff20c8, emissive: 0xff20c8, emissiveIntensity: 1.2 }));
+      m.position.set(sp.x, 0.8, sp.z);
+      worldGroup.add(m); puMeshes.push(m);
+    });
+  }
 
   // apply theme to sky/lights/fog
   scene.background = new THREE.Color(T.bg);
@@ -730,7 +742,7 @@ function createCar(paintColor, num, accent) {
     wheels.push({ pivot, spin, front: i < 2 });
   });
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  return { group: g, body, wheels, paint };
+  return { group: g, body, wheels, paint, hubMat, calMat };
 }
 const carVisuals = {
   1: Object.assign(createCar(0xe10600, 1, 0xffd400), { spinAngle: 0 }),
@@ -923,7 +935,8 @@ function identityPayload() {
     pid = 'sb:' + SRAccount.uid();
     name = SRAccount.name() || prefs.name;
   }
-  return { name, pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap };
+  const cos = prefs.cos || { decal: 0, wheels: 0, trail: 0 };
+  return { name, pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, cos, title: playerTitle().title };
 }
 
 function applyQuality(q) {
@@ -1075,6 +1088,17 @@ function wireLobbyV2() {
   const paintBsk = () => { if (bskBtns[0]) bskBtns[0].classList.toggle('active', !prefs.botSkill); if (bskBtns[1]) bskBtns[1].classList.toggle('active', !!prefs.botSkill); };
   bskBtns.forEach((b, i) => { if (b) b.addEventListener('click', () => { prefs.botSkill = i; savePrefs(); paintBsk(); sendMeta(); }); });
   paintBsk();
+  // v59 garage — cosmetic-only customization
+  if (!prefs.cos) { prefs.cos = { decal: 0, wheels: 0, trail: 0 }; savePrefs(); }
+  document.querySelectorAll('.cos-btn').forEach((b) => {
+    const k = b.dataset.cos; const v = parseInt(b.dataset.v, 10);
+    b.classList.toggle('active', (prefs.cos[k] || 0) === v);
+    b.addEventListener('click', () => {
+      prefs.cos[k] = v; savePrefs();
+      document.querySelectorAll('.cos-btn[data-cos="' + k + '"]').forEach((x) => x.classList.toggle('active', x === b));
+      sendMeta();
+    });
+  });
   const muteEl = $('set-mute'); if (muteEl) { muteEl.checked = !!prefs.mute; muteEl.addEventListener('change', () => { prefs.mute = muteEl.checked; savePrefs(); setAudio(); }); }
   const musicEl = $('set-music'); if (musicEl) { musicEl.checked = !!prefs.music; musicEl.addEventListener('change', () => { prefs.music = musicEl.checked; savePrefs(); ensureAudio(); setAudio(); }); }
   const fpsEl = $('set-fps'); if (fpsEl) { fpsEl.checked = !!prefs.fpsmeter; fpsEl.addEventListener('change', () => { prefs.fpsmeter = fpsEl.checked; savePrefs(); }); }
@@ -1123,33 +1147,32 @@ function wireLobbyV2() {
   const shareEl = $('share-btn');
   if (shareEl) shareEl.addEventListener('click', () => {
     if (!lastResults) return;
-    const mapName = (CORE.MAPS[latest.map] || {}).name || '';
+    const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+    const mapName = (CORE.MAPS[mapId] || {}).name || '';
+    const myRow = lastResults.find((c) => c.s === mySlot);
+    const pos = lastResults.findIndex((c) => c.s === mySlot) + 1;
     const lines = lastResults.map((r, i) => `${i + 1}. ${r.name || ('P' + r.slot)} — ${r.t != null ? fmtTime(r.t) : 'DNF'}`).join('\n');
-    copyText(`🏁 SRIDHAR RUSH — ${mapName}\n${lines}`);
-    toast('Result copied — share it!');
+    const msg = `🏎️ SRIDHAR RUSH — ${mapName}\n🏁 I finished P${pos} in ${myRow && myRow.t != null ? fmtTime(myRow.t) : 'DNF'}\n${lines}\nRace me: ${location.origin}/?room=${latest ? latest.code : ''}`;
+    if (navigator.share) navigator.share({ text: msg }).catch(() => {});
+    else { copyText(msg); toast('Result copied — paste it anywhere!'); }
   });
-
-  // ---- v41 growth: WhatsApp / Telegram invites + share-my-ghost link --------
-  const roomUrl = () => location.origin + '/?room=' + (($('room-code') || {}).textContent || '');
-  const waEl = $('wa-share');
-  if (waEl) waEl.addEventListener('click', () => {
-    window.open('https://wa.me/?text=' + encodeURIComponent('🏎️ Sridhar Rush — your phone is the joystick! Join my room: ' + roomUrl()), '_blank');
-  });
-  const tgEl = $('tg-share');
-  if (tgEl) tgEl.addEventListener('click', () => {
-    window.open('https://t.me/share/url?url=' + encodeURIComponent(roomUrl()) + '&text=' + encodeURIComponent('🏎️ Your phone is the joystick — join my Sridhar Rush room!'), '_blank');
-  });
-  const gsBtn = $('ghost-share-btn');
-  if (gsBtn) gsBtn.addEventListener('click', () => {
+  // v59 BEAT MY TIME challenge (ghost link + target time)
+  const btBtn = $('beat-btn');
+  if (btBtn) btBtn.addEventListener('click', () => {
     const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
     let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
-    if (!g || !g.length) { toast('Set a best lap first (enable 👻 Ghost in settings)'); return; }
-    gsBtn.disabled = true;
+    if (!g || !g.length) { toast('Enable 👻 Ghost & set a best lap first'); return; }
+    btBtn.disabled = true;
     fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, data: g }) })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('unavailable'))))
-      .then((j) => { copyText(location.origin + '/?g=' + j.id); toast('👻 Ghost link copied — send it to a friend!'); })
-      .catch(() => toast('Ghost sharing needs the Supabase setup'))
-      .finally(() => { gsBtn.disabled = false; });
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('x'))))
+      .then((j) => {
+        let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
+        const msg = `⏱️ BEAT MY TIME on ${(CORE.MAPS[mapId] || {}).name || 'track'}: ${best != null ? fmtTime(best) : '—'}\n👻 Race my ghost: ${location.origin}/?g=${j.id}`;
+        if (navigator.share) navigator.share({ text: msg }).catch(() => {});
+        else { copyText(msg); toast('Challenge copied — send it!'); }
+      })
+      .catch(() => toast('Needs the Supabase setup'))
+      .finally(() => { btBtn.disabled = false; });
   });
   // v46: watchable replay link (same ghost upload, spectator page)
   const rpBtn = $('replay-btn');
@@ -1325,7 +1348,29 @@ function showResults(order) {
     rows.appendChild(div);
   });
   $('results-title').textContent = winner ? `🏁 ${escapeHtml(winner.name || ('PLAYER ' + winner.slot))} WINS!` : '🏁 RACE RESULTS';
-  $('results').classList.remove('hidden'); { const gb = $('ghost-share-btn'); if (gb) gb.hidden = false; const pb = $('photo-btn'); if (pb) pb.hidden = false; }
+  // v59 progression + personal-best celebration
+  try {
+    const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+    statBump('races');
+    if (winner && winner.s === mySlot) statBump('wins');
+    const myRow = order.find((c) => c.s === mySlot);
+    if (myRow && myRow.finished && myRow.t != null) {
+      let pb = null; try { pb = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
+      if (pb == null || myRow.t < pb) {
+        try { localStorage.setItem('sr_best_' + mapId, JSON.stringify(myRow.t)); } catch (e) {}
+        const d = document.createElement('div'); d.className = 'pb-note';
+        d.textContent = '🎉 PERSONAL BEST on ' + ((CORE.MAPS[mapId] || {}).name || 'track') + '!';
+        rows.appendChild(d);
+      }
+      if (dailyInfoCache && dailyInfoCache.map === mapId) {
+        const top = (dailyRowsCache || [])[0];
+        if (!top || myRow.t <= top.t) toast('✅ Daily challenge complete!');
+      }
+    }
+    const ti = playerTitle();
+    $('results-title').textContent += `  ·  Lv${ti.lv} ${ti.title}`;
+  } catch (e) {}
+  $('results').classList.remove('hidden'); { const gb = $('ghost-share-btn'); if (gb) gb.hidden = false; const pb = $('photo-btn'); if (pb) pb.hidden = false; const bb = $('beat-btn'); if (bb) bb.hidden = false; }
 }
 
 function updateLobby(snap) {
@@ -1404,13 +1449,25 @@ function paintDailyHeader() {
   box.hidden = false;
   $('daily-title').textContent = (tI18n('daily') || '📅 DAILY CHALLENGE') + ' — ' + (M ? M.name : 'CIRCUIT');
   const b = $('daily-play'); if (b) b.onclick = () => net.send({ type: 'map', map: dailyInfoCache.map });
+  const ds = $('daily-share'); if (ds) ds.onclick = () => { const top = (dailyRowsCache || [])[0]; const msg = `📅 DAILY CHALLENGE — ${(CORE.MAPS[dailyInfoCache.map] || {}).name || ''}\n🎯 ${top ? 'Target ' + fmtTime(top.t) : 'No time yet'}\nBeat it: ${location.origin}/`; if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Daily challenge copied!'); } };
 }
+let dailyRowsCache = [];
 function renderDailyBoard(rows) {
+  dailyRowsCache = rows || [];
   const el = $('daily-lb'); if (!el) return;
-  if (!rows || !rows.length) { el.innerHTML = '<div class="lb-empty">No times today yet — set the first!</div>'; return; }
+  if (!rows || !rows.length) { el.innerHTML = '<div class="lb-empty">No times today yet — set the first!</div>'; const m0 = $('daily-meta'); if (m0) m0.textContent = '🎯 No target yet — set the first time!'; return; }
   el.innerHTML = rows.map((r, i) =>
     '<div class="lb-row"><span class="lb-pos">' + (i + 1) + '</span><span class="lb-name">' +
     escapeHtml(r.name) + '</span><span class="lb-time">' + fmtTime(r.t) + '</span></div>').join('');
+  const meta = $('daily-meta'); // v59 target / your time / rank / % behind
+  if (meta) {
+    const me = rows.find((r) => r.pid && prefs.pid && r.pid === prefs.pid) || rows.find((r) => r.name === prefs.name);
+    if (!me) meta.textContent = '🎯 Target ' + fmtTime(rows[0].t) + ' · No time yet — race now!';
+    else {
+      const gap = ((me.t - rows[0].t) / Math.max(0.001, rows[0].t)) * 100;
+      meta.textContent = '🎯 Target ' + fmtTime(rows[0].t) + ' · You #' + (rows.indexOf(me) + 1) + ' ' + fmtTime(me.t) + (rows.indexOf(me) === 0 ? ' 👑' : ' (+' + gap.toFixed(1) + '%)');
+    }
+  }
 }
 setInterval(pollLobbyExtras, 8000);
 setTimeout(pollLobbyExtras, 1200);
@@ -1449,6 +1506,16 @@ function evalAchievements(facts, have) {
   return out;
 }
 function achLoad() { try { return JSON.parse(localStorage.getItem('sr_ach') || '{}'); } catch (e) { return {}; } }
+// v59 lightweight progression: device-local stats -> level + title (cosmetic only)
+function statLoad() { try { return JSON.parse(localStorage.getItem('sr_stats') || '{}'); } catch (e) { return {}; } }
+function statBump(k) { const st = statLoad(); st[k] = (st[k] || 0) + 1; try { localStorage.setItem('sr_stats', JSON.stringify(st)); } catch (e) {} return st; }
+function playerTitle() {
+  const st = statLoad();
+  const pts = (st.races || 0) * 10 + (st.wins || 0) * 25 + Object.keys(achLoad()).length * 50;
+  const lv = Math.floor(Math.sqrt(Math.max(0, pts) / 25)) + 1;
+  const T = ['ROOKIE', 'RACER', 'PRO', 'ELITE', 'LEGEND'];
+  return { lv, title: T[Math.min(T.length - 1, Math.floor((lv - 1) / 2))] };
+}
 function paintAchievements() {
   const row = $('ach-row'); if (!row) return;
   const have = achLoad();
@@ -1664,6 +1731,9 @@ function processEvents(snap) {
       case 'win':
         if (e.slot === mySlot) achCheck({ win: true, map: snap.map });
         setBanner(e.multi ? `🏁 PLAYER ${e.slot} WINS!` : `🏁 FINISH — ${fmtTime(e.t)}`); confetti(); winJingle(); break;
+      case 'pu': { const nm = ['⚡ BOOST', '🛡️ SHIELD', '🌀 SLOW'][e.ptype] || 'PU'; toast(`P${e.slot} grabbed ${nm}!`); beep(980, 0.12, 'square', 0.2); break; }
+      case 'respawn': if (e.slot === mySlot) { toast('🔄 Back on track'); beep(220, 0.2, 'sawtooth', 0.18); } break;
+      case 'rematch': toast(`🔁 Rematch vote ${e.n}/${e.total}`); break;
       case 'finished':
         if (e.slot === mySlot) {
           let gb = false;
@@ -1683,7 +1753,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v58';
+const BUILD = 'v59';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -1767,6 +1837,13 @@ if (qpBtn) qpBtn.addEventListener('click', () => {
   if (!net.isOpen()) return;
   qpBtn.disabled = true; qpBtn.textContent = '🔎 Searching…';
   net.send({ type: 'matchmake' });
+  setTimeout(() => { // v59: never leave players stuck searching
+    if (qpBtn.disabled && latest && latest.state === 'waiting') {
+      toast('No rival found — racing AI 🤖');
+      net.send({ type: 'start' });
+      qpBtn.disabled = false; qpBtn.textContent = '⚡ QUICK PLAY — find a rival';
+    }
+  }, 8000);
 });
 
 function showRoomError(text) {
@@ -2104,10 +2181,31 @@ function updateAudio(mine, rival) {
 // ---------------------------------------------------------------------------
 // Car placement (unchanged)
 // ---------------------------------------------------------------------------
+// v59 cosmetic-only customization (no physics fields touched, ever)
+const DECAL_COLORS = [0, 0xffffff, 0xff6a00, 0x111111];
+const WHEEL_HUBS = [0xb9bec7, 0xe8f4ff, 0xd4af37];
+const TRAIL_COLS = [0x35e0ff, 0xff20c8, 0xffd400];
+function applyCos(v, dc, wh, tr) {
+  const key = dc + '|' + wh + '|' + tr;
+  if (v.cosKey === key) return;
+  v.cosKey = key;
+  if (v.decalGroup) { v.body.remove(v.decalGroup); v.decalGroup = null; }
+  if (dc > 0) {
+    const dg = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: DECAL_COLORS[dc] || 0xffffff, roughness: 0.35, metalness: 0.2 });
+    if (dc === 1) { for (const sx of [-0.35, 0.35]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.02, 3.2), mat); b.position.set(sx, 1.02, 0.2); dg.add(b); } }
+    else if (dc === 2) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.02, 1.1), new THREE.MeshStandardMaterial({ color: 0xff6a00, emissive: 0xff3300, emissiveIntensity: 0.7 })); b.position.set(0, 1.0, 1.5); dg.add(b); }
+    else { for (let i = 0; i < 6; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.02, 0.18), i % 2 ? mat : new THREE.MeshStandardMaterial({ color: 0xffffff })); b.position.set(-0.5 + (i % 3) * 0.5, 1.36, -2.25); dg.add(b); } }
+    v.body.add(dg); v.decalGroup = dg;
+  }
+  if (v.hubMat) v.hubMat.color.setHex(WHEEL_HUBS[wh] || WHEEL_HUBS[0]);
+  if (v.calMat) v.calMat.color.setHex(TRAIL_COLS[tr] || TRAIL_COLS[0]);
+}
 function placeCar(slot, cs, dt) {
   const v = carVisuals[slot];
   if (!cs) return;
   if (cs.col != null && v.paint && v.paint.color.getHex() !== cs.col) v.paint.color.setHex(cs.col);
+  applyCos(v, cs.dc || 0, cs.wh || 0, cs.tr || 0); // v59 cosmetics
   v.group.visible = cs.p === 1;
   if (!v.group.visible) { v.netInit = false; return; }
   // ---- network smoothing: exponentially follow the interpolated snapshot
@@ -2255,6 +2353,7 @@ function updateHUD(mine, rival) {
   }
   hText(hEl('speed-val'), String(Math.round(Math.abs(mine.v) * 3.6)));
   hText(hEl('gear'), mine.v < -0.5 ? 'R' : (Math.abs(mine.v) < 0.4 ? 'N' : 'D'));
+  hText(hEl('pu-chip'), (mine.pb ? '⚡' : '') + (mine.ps ? '🛡️' : '') + (mine.pl ? '🌀' : '')); // v59
   const nf = hEl('nitro-fill');
   hStyle(nf, 'width', (mine.m || 0) + '%');
   const burn = mine.n === 1;
@@ -2288,7 +2387,15 @@ function updateCountdownVisual() {
 // Lobby buttons (+ map selection)
 // ---------------------------------------------------------------------------
 $('start-btn').addEventListener('click', () => { ensureAudio(); net.send({ type: 'start' }); track('race', selectedMap); });
-$('rematch-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'start' }); track('race', selectedMap); });
+$('rematch-btn').addEventListener('click', () => {
+  $('results').classList.add('hidden');
+  const humanRival = latest && latest.cars && latest.cars[1] && latest.cars[1].p === 1 && !latest.bot;
+  if (humanRival) { net.send({ type: 'rematch' }); toast('🔁 Rematch requested — waiting for rival…'); }
+  else net.send({ type: 'start' });
+  track('race', selectedMap);
+});
+const trkBtn = $('track-btn');
+if (trkBtn) trkBtn.addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'reset' }); const nb = $('next-btn'); if (nb) setTimeout(() => nb.click(), 150); });
 $('menu-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'reset' }); });
 document.querySelectorAll('.map-card').forEach((b) => b.addEventListener('click', () => {
   selectedMap = parseInt(b.dataset.map, 10);
@@ -2371,6 +2478,7 @@ function frame() {
     ghostUpdate(latest.raceTime);
   } else if (ghostGroup) ghostGroup.visible = false;
   updateParticles(dt);
+  for (let i = 0; i < puMeshes.length; i++) { puMeshes[i].rotation.y += dt * 2.2; puMeshes[i].position.y = 0.8 + Math.sin(performance.now() / 300 + i * 2) * 0.12; if (latest && latest.pu) puMeshes[i].visible = latest.pu[i] === '1'; }
   updateClouds(dt);
   updateArrow(rival);
   updateAudio(mine, rival);

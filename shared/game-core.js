@@ -45,6 +45,26 @@
   // capsule-vs-circle collision against every world collider (tires, trees,
   // buildings). Contact matches the visible car body from every angle, so
   // nothing invisible stops the car and the nose can never punch through.
+  // v59 power-up helpers (server-authoritative; sync-safe)
+  function puTick(car, dt) { car.puB = Math.max(0, car.puB - dt); car.puS = Math.max(0, car.puS - dt); }
+  function puCollect(car, room, ev) {
+    if (!room || room.state !== 'racing' || car.finished) return;
+    for (const pk of room.pickups) {
+      if (!pk.on) continue;
+      const dx = car.x - pk.x, dz = car.z - pk.z;
+      if (dx * dx + dz * dz < 4.84) {
+        pk.on = false; pk.t = 12;
+        if (pk.type === 0) car.puB = 3;                    // BOOST
+        else if (pk.type === 1) car.puSh = true;           // SHIELD
+        else {                                             // SLOW -> opponent
+          const opp = room.cars[room.cars[0] === car ? 1 : 0];
+          if (opp && opp.puSh) opp.puSh = false; else if (opp) opp.puS = 3;
+        }
+        ev.pu = { x: pk.x, z: pk.z, type: pk.type, slot: car.slot };
+      }
+    }
+  }
+
   function resolveCarColliders(car, colliders, ev) {
     const dirX = Math.sin(car.heading), dirY = Math.cos(car.heading);
     for (const o of colliders) {
@@ -232,6 +252,7 @@
       if (color != null) this.color = color;
       if (pid) this.pid = String(pid).slice(0, 24); // stable account-lite id
     }
+    setCos(cos, title) { if (cos) this.cos = { decal: cos.decal | 0, wheels: cos.wheels | 0, trail: cos.trail | 0 }; if (title) this.title = String(title).slice(0, 10); } // v59 cosmetic-only
 
     resetState(raceTime) {
       const st = trackStart(this.track, this.slot);
@@ -245,6 +266,7 @@
       this.finished = false; this.finishTime = null;
       this._lb = false;
       this.driftScore = 0; this.eliminated = false; this.steerS = 0;
+      this.puB = 0; this.puS = 0; this.puSh = false; // v59 power-up state
     }
 
     resetGrid(time) {
@@ -270,7 +292,7 @@
 
     totalProgress() { return this.lap * PI2 + this.progress; }
 
-    update(dt, time, raceState, colliders) {
+    update(dt, time, raceState, colliders, room) {
       const ev = { crash: null, lap: null, finish: null };
       const A = this.track.a, B = this.track.b;
       const raw = this.input;
@@ -294,6 +316,7 @@
       let acc = 0;
       if (inp.throttle > 0.02) acc += inp.throttle * CFG.engineAccel * this.cls.acc;
       if (this.nitroActive) acc += CFG.nitroAccel;
+      puTick(this, dt); if (this.puB > 0) acc += 12; // v59 boost
       if (inp.brake > 0.02) acc += speed > 0.6 ? -inp.brake * CFG.brakeDecel : -inp.brake * CFG.reverseAccel;
       acc -= speed * 0.36;
       acc -= Math.sign(speed) * Math.min(Math.abs(speed), 1.7);
@@ -305,6 +328,7 @@
 
       speed = this.vx * dirX + this.vy * dirY;
       let cap = speed >= 0 ? (offroad ? CFG.maxSpeedOffroad : CFG.maxSpeed * this.cls.top) : -CFG.reverseMax;
+      if (this.puB > 0) cap += 10; if (this.puS > 0) cap = Math.min(cap, 12); // v59 boost/slow
       if (speed >= 0 && this.nitroActive) cap += CFG.nitroCapBonus;
       if ((speed > 0 && speed > cap) || (speed < 0 && speed < cap)) {
         this.vx -= dirX * (speed - cap);
@@ -334,6 +358,7 @@
       }
 
       resolveCarColliders(this, colliders, ev);
+      puCollect(this, room, ev); // v59
 
       // barrier walls keep the WHOLE car body on the circuit (props live
       // outside them) — nose, center and tail are all clamped
@@ -391,6 +416,7 @@
       this.track = MAPS[this.mapId];
       this.state = 'waiting';
       this.botSkill = 1; // v45: PRO by default = byte-identical historic bot unless a client opts to ROOKIE
+      this.pickups = pickupSpots(this.track).map((p) => ({ x: p.x, z: p.z, type: p.type, on: true, t: 0 })); // v59
       this.raceTime = 0;
       this.countVal = 0;
       this.countTimer = 0;
@@ -442,6 +468,7 @@
       if (!MAPS[mapId]) return false;
       this.mapId = mapId;
       this.track = MAPS[mapId];
+      this.pickups = pickupSpots(this.track).map((p) => ({ x: p.x, z: p.z, type: p.type, on: true, t: 0 })); // v59
       this.cars.forEach((c) => { c.setTrack(this.track); c.resetState(0); });
       return true;
     }
@@ -557,14 +584,17 @@
         }
       }
 
+      for (const pk of this.pickups) if (!pk.on) { pk.t -= dt; if (pk.t <= 0) pk.on = true; } // v59 pickup respawn
       if (this._botActive && this.state === 'racing') this.inputs[2] = this.botInput();
       this.applyInputs();
       const colliders = this.track.world.colliders;
 
       for (const car of this.cars) {
         if (this.mode === 'coop' && car.slot === 2) continue;
-        const ev = car.update(dt, this.raceTime, this.state, colliders);
+        const ev = car.update(dt, this.raceTime, this.state, colliders, this);
         if (ev.crash) this.events.push({ type: 'crash', slot: car.slot, x: r3(ev.crash.x), z: r3(ev.crash.z), s: r3(ev.crash.s) });
+        if (ev.pu) this.events.push({ type: 'pu', slot: ev.pu.slot, ptype: ev.pu.type }); // v59
+        if (ev.respawn) this.events.push({ type: 'respawn', slot: ev.respawn.slot }); // v59
         if (ev.lap && this.mode === 'elim') {
           const alive = this.cars.filter((c) => c.participating && !c.eliminated && c.slot !== car.slot);
           if (alive.length) {
@@ -691,8 +721,11 @@
           ft: c.finishTime != null ? r3(c.finishTime) : null,
           drift: Math.round(c.driftScore),
           elim: c.eliminated ? 1 : 0,
-          p: c.participating ? 1 : 0
+          p: c.participating ? 1 : 0,
+          pb: c.puB > 0 ? 1 : 0, ps: c.puSh ? 1 : 0, pl: c.puS > 0 ? 1 : 0,
+          dc: (c.cos && c.cos.decal) || 0, wh: (c.cos && c.cos.wheels) || 0, tr: (c.cos && c.cos.trail) || 0, ti: c.title || ''
         })),
+        pu: this.pickups.map((p) => (p.on ? 1 : 0)).join(''),
         events: this.events.splice(0, this.events.length)
       };
     }
@@ -796,7 +829,7 @@
     return { buildings, trees, mountains: [], colliders, billboard: { x: P[0].x, z: P[0].z, rot: 0 }, hazards };
   }
 
-  Car.prototype.updateSpline = function (dt, time, raceState, colliders) {
+  Car.prototype.updateSpline = function (dt, time, raceState, colliders, room) {
     const ev = { crash: null, lap: null, finish: null };
     const T = this.track, raw = this.input;
     const held = raceState === 'countdown';
@@ -814,6 +847,7 @@
     let acc = 0;
     if (inp.throttle > 0.02) acc += inp.throttle * CFG.engineAccel * this.cls.acc;
     if (this.nitroActive) acc += CFG.nitroAccel;
+    puTick(this, dt); if (this.puB > 0) acc += 12; // v59 boost
     if (inp.brake > 0.02) acc += speed > 0.6 ? -inp.brake * CFG.brakeDecel : -inp.brake * CFG.reverseAccel;
     acc -= speed * 0.36; acc -= Math.sign(speed) * Math.min(Math.abs(speed), 1.7);
     if (offroad) acc -= speed * 1.5;
@@ -821,6 +855,7 @@
     this.vx += dirX * acc * dt; this.vy += dirY * acc * dt;
     speed = this.vx * dirX + this.vy * dirY;
     let cap = speed >= 0 ? (offroad ? CFG.maxSpeedOffroad : CFG.maxSpeed * this.cls.top) : -CFG.reverseMax;
+    if (this.puB > 0) cap += 10; if (this.puS > 0) cap = Math.min(cap, 12); // v59 boost/slow
     if (speed >= 0 && this.nitroActive) cap += CFG.nitroCapBonus;
     if ((speed > 0 && speed > cap) || (speed < 0 && speed < cap)) { this.vx -= dirX * (speed - cap); this.vy -= dirY * (speed - cap); speed = cap; }
     const lat = this.vx * rightX + this.vy * rightY;
@@ -838,6 +873,7 @@
     this.heading -= yaw * dt;
     if (!held) { this.x += this.vx * dt; this.z += this.vy * dt; }
     resolveCarColliders(this, colliders, ev);
+    puCollect(this, room, ev); // v59
     // barrier — clamps the WHOLE car body (nose, center, tail) so no part of
     // the car can ever clip through the fence, at any angle
     const bc = clampCarToBarrier(this);
@@ -846,6 +882,17 @@
     const near3 = T.nearest ? T.nearest(this.x, this.z) : splineNearest(T, this.x, this.z, this._nearIdx);
     if (!T.nearest) this._nearIdx = near3.idx;
     const along = near3.along;
+    // v59 safe respawn: stuck >3s or far outside -> last valid checkpoint, zero velocity
+    if (raceState === 'racing' && !this.finished) {
+      if (Math.abs(near3.lat) < 5) { this._safeT = (this._safeT || 0) + dt; if (this._safeT > 1.5) { this._safeT = 0; this._safe = { x: this.x, z: this.z, h: this.heading }; } }
+      const spdNow = Math.abs(this.forwardSpeed());
+      this._stuck = (spdNow < 1.2 && Math.abs(near3.lat) > 2) ? (this._stuck || 0) + dt : 0;
+      if ((this._stuck > 3 || Math.abs(near3.lat) > 12) && this._safe) {
+        this.x = this._safe.x; this.z = this._safe.z; this.heading = this._safe.h;
+        this.vx = 0; this.vy = 0; this._stuck = 0; this._nearIdx = null;
+        ev.respawn = { slot: this.slot };
+      }
+    }
     if (this._along != null && raceState === 'racing' && !this.finished) { let d = along - this._along; if (d > 0.5) d -= 1; if (d < -0.5) d += 1; this.progress += d; }
     this._along = along;
     if (!this.finished && this.progress >= 1 - 1e-4) {
@@ -857,8 +904,8 @@
     return ev;
   };
   const _carUpdate = Car.prototype.update;
-  Car.prototype.update = function (dt, time, raceState, colliders) {
-    if (this.track && this.track.type === 'spline') return this.updateSpline(dt, time, raceState, colliders);
+  Car.prototype.update = function (dt, time, raceState, colliders, room) {
+    if (this.track && this.track.type === 'spline') return this.updateSpline(dt, time, raceState, colliders, room);
     return _carUpdate.apply(this, arguments);
   };
   const _carReset = Car.prototype.resetState;
@@ -997,6 +1044,24 @@
     return crash;
   }
 
+  // v59: deterministic power-up spots (3 per map, on-road, alternating sides)
+  function pickupSpots(track) {
+    const spots = [];
+    [0.2, 0.5, 0.8].forEach((f, i) => {
+      const side = (i % 2 ? 3 : -3);
+      if (track.points) {
+        const P = track.points;
+        const idx = Math.floor(f * P.length); const p = P[idx], p2 = P[(idx + 1) % P.length];
+        let tx = p2.x - p.x, tz = p2.z - p.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+        spots.push({ x: p.x + (-tz) * side, z: p.z + tx * side, type: i % 3 });
+      } else {
+        const t = f * PI2;
+        spots.push({ x: track.a * Math.cos(t) + (-Math.sin(t)) * side, z: track.b * Math.sin(t) + Math.cos(t) * side, type: i % 3 });
+      }
+    });
+    return spots;
+  }
+
   function trackStart(track, slot) {
     if (track.type === 'spline' && track.points) {
       const P = track.points, p0 = P[0], p1 = P[1];
@@ -1019,11 +1084,11 @@
   // browser caches an old game-core, its drawn track won't match the server's
   // car positions; the client detects this via /version.geom and forces reload.
   const GEOM_ID = (function () {
-    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 3 }))); // k = barrier generation (v56 corridor)
+    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 3, p: 3 }))); // k = barrier gen (v56), p = powerups (v59)
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
     return (h >>> 0).toString(36);
   })();
 
-  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode, GEOM_ID };
+  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode, GEOM_ID, pickupSpots };
 });

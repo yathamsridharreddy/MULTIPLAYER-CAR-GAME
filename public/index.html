@@ -61,7 +61,7 @@
 
     <div id="speedo">
       <div id="speed-val">0</div>
-      <div id="speed-sub"><span>km/h</span><span id="gear">N</span></div>
+      <div id="speed-sub"><span>km/h</span><span id="gear">N</span><span id="pu-chip"></span></div>
       <div id="nitro-wrap"><div id="nitro-fill"></div><label>NITRO</label></div>
     </div>
 
@@ -100,8 +100,10 @@
         <button id="rematch-btn">🔁 REMATCH</button>
         <button id="share-btn" class="ghost">📤 SHARE</button>
         <button id="ghost-share-btn" class="ghost" hidden>👻 RACE MY GHOST</button>
+        <button id="beat-btn" class="ghost" hidden>⏱️ BEAT MY TIME</button>
         <button id="replay-btn" class="ghost" hidden>🎥 REPLAY LINK</button>
         <button id="photo-btn" class="ghost" hidden>📸 SAVE PHOTO</button>
+        <button id="track-btn" class="ghost">🗺️ CHANGE TRACK</button>
         <button id="menu-btn" class="ghost">LOBBY</button>
       </div>
     </div>
@@ -211,7 +213,9 @@
             <div class="lsec" id="daily-box" hidden>
               <div class="lsec-title" id="daily-title">📅 DAILY CHALLENGE</div>
               <div id="daily-lb" class="leaderboard"></div>
+              <div id="daily-meta" class="daily-meta"></div>
               <button id="daily-play" class="ghost sm" data-i18n="playToday">▶ PLAY TODAY'S MAP</button>
+              <button id="daily-share" class="ghost sm">📤 SHARE</button>
             </div>
             <div class="lsec" id="cup-box" hidden>
               <div class="lsec-title" id="cup-title" data-i18n="cup">🏆 FOUNDERS CUP — WEEK TOP 5</div>
@@ -223,7 +227,7 @@
 
         <button id="next-btn" class="big-cta" data-i18n="setup">SET UP RACE →</button>
         <div class="share-row" id="community-row" hidden><a id="comm-wa" class="ghost sm" target="_blank" rel="noopener">💬 WHATSAPP GROUP</a><a id="comm-dc" class="ghost sm" target="_blank" rel="noopener">🎮 DISCORD</a></div>
-        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v58</p>
+        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v59</p>
       </div>
     </div>
 
@@ -274,6 +278,25 @@
                 <span class="opt-label">AI LEVEL</span>
                 <button class="q-btn" id="bsk-rookie">ROOKIE</button>
                 <button class="q-btn" id="bsk-pro">PRO</button>
+              </div>
+              <div class="toggle-line" id="garage-line">
+                <span class="opt-label">GARAGE</span>
+              </div>
+              <div class="cos-row"><span class="opt-label">DECAL</span>
+                <button class="q-btn cos-btn" data-cos="decal" data-v="0">NONE</button>
+                <button class="q-btn cos-btn" data-cos="decal" data-v="1">STRIPES</button>
+                <button class="q-btn cos-btn" data-cos="decal" data-v="2">FLAME</button>
+                <button class="q-btn cos-btn" data-cos="decal" data-v="3">CHECK</button>
+              </div>
+              <div class="cos-row"><span class="opt-label">WHEELS</span>
+                <button class="q-btn cos-btn" data-cos="wheels" data-v="0">SPORT</button>
+                <button class="q-btn cos-btn" data-cos="wheels" data-v="1">CHROME</button>
+                <button class="q-btn cos-btn" data-cos="wheels" data-v="2">GOLD</button>
+              </div>
+              <div class="cos-row"><span class="opt-label">TRAIL</span>
+                <button class="q-btn cos-btn" data-cos="trail" data-v="0">CYAN</button>
+                <button class="q-btn cos-btn" data-cos="trail" data-v="1">PINK</button>
+                <button class="q-btn cos-btn" data-cos="trail" data-v="2">GOLD</button>
               </div>
             </div>
           </div>

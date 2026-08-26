@@ -139,12 +139,14 @@ const net = new RoomLink({
     return;
     }
     if (msg.type === 'disconnected') setStatus('Reconnecting…', 'err');
+    if (msg.type === 'pong' && typeof msg.t === 'number') { const rtt = performance.now() - msg.t; ctrlLat = ctrlLat < 0 ? rtt : ctrlLat * 0.7 + rtt * 0.3; const lb = $('lat-badge'); if (lb) { lb.hidden = false; lb.textContent = Math.round(ctrlLat) + ' ms'; lb.className = 'pill ' + (ctrlLat < 90 ? 'ok' : ctrlLat < 180 ? 'wait' : 'err'); } }
   },
   onStatus(s) {
     if (state.full) return;
     if (s === 'connected') setStatus('Connected' + (state.slot ? ' · Player ' + state.slot : ''), 'ok');
     else if (s === 'connecting') setStatus('Connecting…', 'wait');
-    else setStatus('Reconnecting…', 'err');
+    else { setStatus('Reconnecting…', 'err'); const rb = $('reconnect-btn'); if (rb) rb.hidden = false; }
+    const rb2 = $('reconnect-btn'); if (rb2 && s === 'connected') rb2.hidden = true;
   }
 });
 
@@ -196,6 +198,10 @@ function trackCtl(e, m) {
     fetch(cfg + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e, m }) }).catch(() => {});
   } catch (err) {}
 }
+let ctrlLat = -1;
+setInterval(() => { try { net.send({ type: 'ping', t: performance.now() }); } catch (e) {} }, 2000); // v59 latency badge
+const rcBtn = typeof document !== 'undefined' && document.getElementById('reconnect-btn');
+if (rcBtn) rcBtn.addEventListener('click', () => location.reload()); // v59 clear reconnect
 trackCtl('ctrl');
 // v43: crash reports from the phone pad too
 let lastErrCtl = '';
