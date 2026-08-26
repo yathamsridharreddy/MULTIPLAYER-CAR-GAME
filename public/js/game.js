@@ -791,13 +791,28 @@ function ttHudUpdate(mine) {
   let pb = null; try { pb = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
   let line2 = pb != null ? 'PB ' + fmtTime(pb) : (TT.practice ? 'PRACTICE — no records' : 'PB —');
   let line3 = el.dataset.cmp || '';
+  // v62 live current-lap vs best-lap
+  if (mine && latest) {
+    if (TT.lapNum !== mine.lap) { TT.lapNum = mine.lap; TT.lapStart = latest.raceTime; }
+    const mId2 = (latest.map != null) ? latest.map : builtMapId;
+    const bl2 = Pget().bestLap; const bestLapT = bl2 && bl2[mId2] != null ? bl2[mId2] : null;
+    if (bestLapT != null) {
+      const cur = (latest.raceTime || 0) - (TT.lapStart || 0);
+      const dLap = cur - bestLapT;
+      el.dataset.lap = 'LAP ' + Math.min((mine.lap || 0) + 1, CFG.totalLaps) + '/' + CFG.totalLaps + ' · ' + fmtTime(cur) + ' vs ⚡' + fmtTime(bestLapT) + ' (' + (dLap >= 0 ? '+' : '-') + Math.abs(dLap).toFixed(2) + ')';
+    } else el.dataset.lap = 'LAP ' + Math.min((mine.lap || 0) + 1, CFG.totalLaps) + '/' + CFG.totalLaps;
+  }
   if (!TT.practice && ghostCum && mine && performance.now() - TT.lastCmp > 1000) {
     TT.lastCmp = performance.now();
     const d = ghostDelta((mine.lap || 0) + (mine.pr || 0), latest.raceTime);
-    if (d != null) line3 = (d < 0 ? '-' : '+') + Math.abs(d).toFixed(2) + 's ' + (d < 0 ? 'AHEAD 🟢' : 'BEHIND 🔴');
+    if (d != null) {
+      const laps2 = (latest && latest.laps) || CFG.totalLaps;
+      const nearEnd = mine && ((mine.lap || 0) + (mine.pr || 0)) > (laps2 - 0.25);
+      line3 = (d < 0 ? (nearEnd ? 'NEW BEST PACE 🟢' : '-' + Math.abs(d).toFixed(2) + 's AHEAD 🟢') : '+' + d.toFixed(2) + 's BEHIND 🔴');
+    }
     el.dataset.cmp = line3;
   }
-  el.innerHTML = '<div class="tt-time">' + fmtTime(latest.raceTime || 0) + '</div><div class="tt-pb">' + line2 + '</div>' + (line3 ? '<div class="tt-cmp">' + line3 + '</div>' : '');
+  el.innerHTML = '<div class="tt-time">' + fmtTime(latest.raceTime || 0) + '</div><div class="tt-pb">' + line2 + '</div>' + (el.dataset.lap ? '<div class="tt-pb">' + el.dataset.lap + '</div>' : '') + (line3 ? '<div class="tt-cmp">' + line3 + '</div>' : '');
 }
 function showTTResults(order, finalT) {
   const ov = $('tt-overlay'); if (!ov || TT.done) return;
@@ -808,6 +823,7 @@ function showTTResults(order, finalT) {
   const isRecord = !TT.practice && finalT != null && (best == null || finalT < best);
   const oldBest = best;
   if (isRecord) { try { localStorage.setItem('sr_best_' + mapId, JSON.stringify(finalT)); } catch (e) {} }
+  if (finalT != null) { try { localStorage.setItem('sr_last_' + mapId, JSON.stringify(finalT)); } catch (e) {} } // v62 your-last
   const p = Pget();
   const bestLap = p.bestLap && p.bestLap[mapId] != null ? p.bestLap[mapId] : null;
   const box = $('tt-body');
@@ -834,9 +850,15 @@ let remoteGhost = null; // v41: a friend's ghost loaded from a ?g= link
 function ensureGhost() {
   if (ghostGroup) return ghostGroup;
   ghostGroup = new THREE.Group();
-  const m = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.9, 4.2),
-    new THREE.MeshBasicMaterial({ color: 0x8fd7ff, transparent: true, opacity: 0.32, depthWrite: false }));
-  m.position.y = 0.5; ghostGroup.add(m);
+  // v62: lightweight car-shaped silhouette (two boxes), still purely visual
+  const gm = new THREE.MeshBasicMaterial({ color: 0x8fd7ff, transparent: true, opacity: 0.3, depthWrite: false });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 4.2), gm);
+  body.position.y = 0.45;
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.45, 1.8), gm);
+  cab.position.set(0, 0.92, -0.3);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 0.5), gm);
+  wing.position.set(0, 1.15, -2.0);
+  ghostGroup.add(body, cab, wing);
   ghostGroup.visible = false; scene.add(ghostGroup);
   return ghostGroup;
 }
@@ -852,7 +874,7 @@ function ghostStart(mapId) {
   if (show) ensureGhost(); // lazy-create the ghost car (fix: it was never created before)
   if (ghostGroup) ghostGroup.visible = show;
   if (show) buildGhostCum(); // v61
-  TT.lastCmp = 0; TT.done = false; const th = $('tt-hud'); if (th) th.dataset.cmp = '';
+  TT.lastCmp = 0; TT.done = false; TT.lapNum = null; TT.lapStart = 0; const th = $('tt-hud'); if (th) { th.dataset.cmp = ''; th.dataset.lap = ''; }
 }
 function ghostRecord(t, x, z, h) {
   if (!ghostRecOn) return;
@@ -1699,7 +1721,8 @@ function fillMapMeta() {
     if (!el) { el = document.createElement('div'); el.className = 'map-meta'; b.appendChild(el); }
     const best = p.bestRace[m];
     const bl = p.bestLap && p.bestLap[m];
-    el.textContent = '⭐'.repeat(MAP_DIFF[m] || 1) + (best != null ? ' · 🏁 ' + fmtTime(best) : ' · no time yet') + (bl != null ? ' · ⚡ ' + fmtTime(bl) : '') + ' · ' + (p.maps[m] || 0) + ' races · ⏱️ TT';
+    let lastT = null; try { lastT = JSON.parse(localStorage.getItem('sr_last_' + m) || 'null'); } catch (e) {}
+    el.textContent = '⭐'.repeat(MAP_DIFF[m] || 1) + (best != null ? ' · 🏁 ' + fmtTime(best) : ' · no time yet') + (bl != null ? ' · ⚡ ' + fmtTime(bl) : '') + (lastT != null ? ' · LAST ' + fmtTime(lastT) : '') + ' · ' + (p.maps[m] || 0) + ' races · ⏱️ TT';
   });
 }
 function renderProfile() {
@@ -2015,7 +2038,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v61';
+const BUILD = 'v62';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
