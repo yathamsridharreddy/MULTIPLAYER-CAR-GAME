@@ -326,10 +326,11 @@ function buildSplineVisuals(map, T) {
   // visible guard-rail fence just OUTSIDE the barrier limit — the car stops
   // AT the barrier and its body kisses the rail (never clips through it)
   const fenceMat = new THREE.MeshStandardMaterial({ color: 0xcfd6dd, metalness: 0.6, roughness: 0.4 });
-  ribbon(cl, RH + 2.5, 0.12, 0.34, fenceMat);
-  ribbon(cl, -(RH + 2.5), 0.12, 0.34, fenceMat);
-  ribbon(cl, RH + 2.5, 0.1, 0.78, fenceMat);
-  ribbon(cl, -(RH + 2.5), 0.1, 0.78, fenceMat);
+  const FO = map.fenceOff != null ? map.fenceOff : RH + 2.5; // v67 fence drawn ON the physical boundary
+  ribbon(cl, FO, 0.12, 0.34, fenceMat);
+  ribbon(cl, -FO, 0.12, 0.34, fenceMat);
+  ribbon(cl, FO, 0.1, 0.78, fenceMat);
+  ribbon(cl, -FO, 0.1, 0.78, fenceMat);
   const p0 = cl[0], p1 = cl[1];
   const yaw = Math.atan2(p1.x - p0.x, p1.z - p0.z);
   const c = document.createElement('canvas'); c.width = 160; c.height = 32;
@@ -2096,7 +2097,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v66';
+const BUILD = 'v67';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
