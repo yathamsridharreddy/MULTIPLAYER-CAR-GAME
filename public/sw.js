@@ -13,13 +13,13 @@ const CACHE = 'sridhar-rush-v66';
 
 const CORE = [
   '/', '/controller',
-  '/css/style.css?v=50', '/css/controller.css?v=50',
-  '/js/game-core.js?v=50', '/js/net.js?v=50', '/js/game.js?v=50', '/js/controller.js?v=50', '/js/account.js?v=50', '/js/i18n.js?v=50',
+  '/css/style.css?v=66', '/css/controller.css?v=66',
+  '/js/game-core.js?v=66', '/js/net.js?v=66', '/js/game.js?v=66', '/js/controller.js?v=66', '/js/account.js?v=66', '/js/i18n.js?v=66',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
   '/js/vendor/post/RenderPass.js', '/js/vendor/post/UnrealBloomPass.js',
-  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=50',
+  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=66',
   '/icon.svg', '/img/icon-192.png', '/img/icon-512.png',
   '/img/map-highland.webp', '/img/map-neon.webp', '/img/map-island.webp',
   '/img/map-canyon.webp', '/img/map-snow.webp'
