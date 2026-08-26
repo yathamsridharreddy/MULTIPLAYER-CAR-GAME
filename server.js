@@ -35,6 +35,10 @@ app.disable('x-powered-by');
 // v40 lite analytics — aggregate counters only. No IPs, no cookies, no
 // personal data; a privacy-friendly pulse on how the game is used.
 // ---------------------------------------------------------------------------
+// v64 class balance telemetry (aggregate only, no personal data)
+const CLASS_TELE = { velocity: { pick: 0, win: 0, fin: 0, posSum: 0, tSum: 0 }, accelerator: { pick: 0, win: 0, fin: 0, posSum: 0, tSum: 0 }, grip: { pick: 0, win: 0, fin: 0, posSum: 0, tSum: 0 } };
+function classPick(cls) { const c = CLASS_TELE[cls]; if (c) c.pick++; }
+function classResult(cls, pos, t, won) { const c = CLASS_TELE[cls]; if (!c) return; c.fin++; c.posSum += pos; if (t != null) c.tSum += t; if (won) c.win++; }
 const AN = { visits: 0, controller: 0, races: 0, finishes: 0, installs: 0, errors: 0, lastErr: [], byMap: [0, 0, 0, 0, 0] };
 app.post('/a', (req, res) => {
   let b = '';
@@ -58,7 +62,7 @@ app.post('/a', (req, res) => {
 });
 app.get('/stats', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json(AN);
+  res.json(Object.assign({ classes: CLASS_TELE }, AN));
 });
 
 // Dynamic client config. For local runs the server URL is same-origin
@@ -284,7 +288,7 @@ app.get('/ghost', async (req, res) => {
 function newRoom(mode, mapId) {
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
-  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false };
+  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set() };
   rooms.set(code, entry);
   console.log(`[room ${code}] created (${entry.room.mode}, map ${entry.room.mapId})`);
   return entry;
@@ -299,6 +303,9 @@ function sendJSON(ws, obj) {
 function broadcastScreens(entry, obj, except) {
   const data = JSON.stringify(obj);
   for (const s of entry.screens) {
+    if (s !== except && s.readyState === 1) { try { s.send(data); } catch (e) {} }
+  }
+  for (const s of entry.specs) { // v64 spectators: read-only receivers
     if (s !== except && s.readyState === 1) { try { s.send(data); } catch (e) {} }
   }
 }
@@ -385,7 +392,12 @@ function handleMessage(client, msg) {
       } else {
         entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race', msg.map);
       }
-      joinRoom(client, entry, msg.role === 'controller' ? 'controller' : 'screen');
+      if (msg.role === 'spec') {
+        client.entry = entry; client.role = 'spec'; entry.specs.add(client.ws);
+        sendJSON(client.ws, { type: 'joined', role: 'spec', slot: 0 });
+      } else {
+        joinRoom(client, entry, msg.role === 'controller' ? 'controller' : 'screen');
+      }
       if (client.role === 'screen' && client.slot) {
         const room = entry.room;
         if (msg.laps != null) room.setLaps(msg.laps);
@@ -393,6 +405,7 @@ function handleMessage(client, msg) {
         if (msg.record === false) entry.noRecord = true; // v61 practice
         if (msg.botSkill != null) room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
         if (msg.name || msg.color || msg.cls) room.setPlayerMeta(client.slot, msg);
+        if (msg.cls) { classPick(msg.cls); room.cars[client.slot - 1].clsKey = msg.cls; } // v64 telemetry
         if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
       }
       break;
@@ -525,9 +538,11 @@ function handleLeave(client) {
     }
   } else if (client.role === 'screen') {
     entry.screens.delete(client.ws);
+  } else if (client.role === 'spec') {
+    entry.specs.delete(client.ws);
   }
 
-  const empty = entry.screens.size === 0 && entry.controllers.size === 0;
+  const empty = entry.screens.size === 0 && entry.controllers.size === 0 && entry.specs.size === 0;
   if (empty && Date.now() - entry.room.lastActivity > 60 * 1000) {
     rooms.delete(entry.room.code);
     console.log(`[room ${entry.room.code}] closed (empty)`);
@@ -551,6 +566,10 @@ setInterval(() => {
     for (const car of room.cars) {
       if (car.finished && car.finishTime != null && !car._lb) {
         car._lb = true;
+        { // v64 class result telemetry
+          const order = room.standings(); const pos = order.indexOf(car) + 1;
+          classResult(car.clsKey || 'velocity', pos || order.length, car.finishTime, pos === 1);
+        }
         if (!entry.noRecord) {
           lbAdd(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime, best: car.best, ts: now });
         sbUpsert(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime });
@@ -569,6 +588,9 @@ setInterval(() => {
         const snapObj = room.snapshot();
         if (tickCount % 30 === 0 || !entry.lbSent) { snapObj.lb = lbGet(room.mapId); entry.lbSent = true; }
         const snap = JSON.stringify(snapObj);
+        for (const s of entry.specs) { // v64 spectators receive snapshots too
+          if (s.readyState === 1) { try { s.send(snap); } catch (e) {} }
+        }
         for (const s of entry.screens) {
           if (s.readyState === 1) { try { s.send(snap); } catch (e) {} }
         }
@@ -596,7 +618,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v63', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v64', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

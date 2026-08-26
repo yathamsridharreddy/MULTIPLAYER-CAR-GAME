@@ -1504,8 +1504,9 @@ function showResults(order) {
 }
 
 function updateLobby(snap) {
+  if (SPEC_ROOM) { const ov = $('overlay'); if (ov && latest && latest.state !== 'waiting') ov.classList.add('hidden'); }
   $('room-code').textContent = snap.code;
-  const gameLink = location.origin + '/?room=' + snap.code;
+  const gameLink = location.origin + '/?room=' + snap.code + '&map=' + (snap.map != null ? snap.map : selectedMap); // v64 per-map OG
   const phoneLink = location.origin + '/controller?room=' + snap.code;
   $('game-link').textContent = gameLink;
   $('ctrl-url').textContent = phoneLink;
@@ -1524,6 +1525,19 @@ function updateLobby(snap) {
 let lobbyWired = false;
 let lastLb = null; // cached — server now sends the leaderboard at 1 Hz only
 function renderLeaderboard(snap) {
+  // v64 close-rank motivation from real board data
+  const lm = $('lb-motiv');
+  if (lm) {
+    const rows = (snap.lb) || window.__lbRows || [];
+    const myBest = (Pget().bestRace || {})[selectedMap];
+    if (rows.length && myBest != null) {
+      const above = rows.filter((r) => r.t < myBest);
+      const target = above.length ? above[above.length - 1] : null;
+      const myRank = rows.findIndex((r) => r.pid && r.pid === prefs.pid) + 1;
+      if (target) lm.textContent = 'YOU ' + (myRank > 0 ? '#' + myRank : '') + ' · BEAT ' + target.name + ' by ' + (myBest - target.t).toFixed(2) + 's';
+      else lm.textContent = myRank === 1 ? '👑 YOU LEAD THIS BOARD' : 'YOU ' + (myRank > 0 ? '#' + myRank : '#' + (rows.length + 1)) + ' — set a faster lap to climb!';
+    } else lm.textContent = '';
+  }
   if (snap.lb) window.__lbRows = snap.lb;
   const el = $('leaderboard');
   if (!el) return;
@@ -2053,9 +2067,10 @@ function processEvents(snap) {
 }
 
 const wantedRoom = urlParam('room');
+const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v63';
+const BUILD = 'v64';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2139,9 +2154,39 @@ const ttShare = $('tt-share'); if (ttShare) ttShare.addEventListener('click', ()
   if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Copied!'); }
 });
 function sendHello() {
+  if (SPEC_ROOM) { net.connect({ type: 'hello', role: 'spec', room: SPEC_ROOM }); document.body.classList.add('spec'); return; }
   net.connect(Object.assign({ type: 'hello', role: 'screen', room: wantedRoom || null }, identityPayload()));
 }
 function sendMeta() { if (net.isOpen()) net.send(Object.assign({ type: 'meta' }, identityPayload())); }
+// v64 first-run onboarding: 15-20 s, input-driven, skippable, remembered
+(function () {
+  if (SPEC_ROOM) return;
+  let done = false; try { done = !!localStorage.getItem('sr_onboard'); } catch (e) {}
+  if (done) return;
+  const steps = [
+    { t: '🕹️ STEER — press A / D (or ← →)', k: ['KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'] },
+    { t: '⛽ ACCELERATE — hold W', k: ['KeyW', 'ArrowUp'] },
+    { t: '🔥 NITRO — press SHIFT', k: ['ShiftLeft', 'ShiftRight'] },
+    { t: '🌀 DRIFT — press SPACE', k: ['Space'] },
+  ];
+  let i = 0, timer = null;
+  const ov = document.createElement('div');
+  ov.id = 'onboard';
+  ov.innerHTML = '<div class="ob-card"><div id="ob-text"></div><div class="ob-skip">tap or press the key · <button id="ob-skip">SKIP</button></div></div>';
+  document.body.appendChild(ov);
+  const finish = () => { try { localStorage.setItem('sr_onboard', '1'); } catch (e) {} window.removeEventListener('keydown', onKey); ov.remove(); if (timer) clearTimeout(timer); };
+  const show = () => {
+    if (i >= steps.length) { finish(); return; }
+    $('ob-text').textContent = (i + 1) + '/4 · ' + steps[i].t;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { i++; show(); }, 6000);
+  };
+  const onKey = (e) => { if (steps[i] && steps[i].k.includes(e.code)) { i++; show(); } };
+  $('ob-skip').addEventListener('click', finish);
+  ov.addEventListener('pointerdown', () => { i++; show(); });
+  window.addEventListener('keydown', onKey);
+  show();
+})();
 sendHello();
 
 // Quick-Play matchmaking (additive — existing create/join-by-code flows untouched)
@@ -2253,6 +2298,7 @@ function readGamepad() {
   return null;
 }
 function maybeSendKeyboard(dt) {
+  if (SPEC_ROOM) return; // v64 spectators never send input
   if (!latest || !net.isOpen()) return;
   if (latest.state !== 'racing' && latest.state !== 'countdown') return;
   if (latest.controllers[mySlot]) return;

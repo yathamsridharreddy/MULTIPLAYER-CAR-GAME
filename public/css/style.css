@@ -572,3 +572,11 @@ button:active { transform: scale(.96); }
 .gap-chip { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 6; font-size: 13px; font-weight: 900; letter-spacing: 1px; color: #ffd479; text-shadow: 0 0 12px rgba(255, 212, 73, .6); pointer-events: none; }
 #photo-finish { font-size: 12px; }
 #beat-rival { margin-top: 6px; }
+
+/* ---------- v64 onboarding + spectator ---------- */
+#onboard { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; background: rgba(3,5,10,.6); backdrop-filter: blur(3px); }
+.ob-card { text-align: center; background: rgba(8,12,22,.9); border: 1px solid rgba(53,224,255,.4); border-radius: 16px; padding: 22px 30px; max-width: 90vw; }
+#ob-text { font-size: 18px; font-weight: 900; letter-spacing: 1px; }
+.ob-skip { margin-top: 10px; font-size: 11px; opacity: .7; }
+.ob-skip button { background: none; border: 1px solid rgba(255,255,255,.3); color: #e8ecf2; border-radius: 8px; padding: 3px 10px; cursor: pointer; }
+body.spec #overlay, body.spec .share-row, body.spec #quickplay-btn { display: none; }
