@@ -787,6 +787,9 @@ function ttHudUpdate(mine) {
   const el = $('tt-hud'); if (!el) return;
   if (!TT.on || !latest || latest.state !== 'racing') { el.style.display = 'none'; return; }
   el.style.display = '';
+  const nowT = performance.now();
+  if (el._hz && nowT - el._hz < 100) return; // v66: 10 Hz, not per-frame
+  el._hz = nowT;
   const mapId = (latest.map != null) ? latest.map : builtMapId;
   let pb = null; try { pb = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
   let line2 = pb != null ? 'PB ' + fmtTime(pb) : (TT.practice ? 'PRACTICE — no records' : 'PB —');
@@ -866,6 +869,7 @@ function loadGhost(mapId) {
   ghostData = null;
   try { const g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); if (g && g.length) ghostData = g; } catch (e) {}
 }
+let ghostIdx = 0; // v66
 function ghostStart(mapId) {
   ghostRec = []; ghostRecT = 0; ghostRecOn = !!prefs.ghost || TT.on; // v61: TT always records
   loadGhost(mapId);
@@ -874,7 +878,7 @@ function ghostStart(mapId) {
   if (show) ensureGhost(); // lazy-create the ghost car (fix: it was never created before)
   if (ghostGroup) ghostGroup.visible = show;
   if (show) buildGhostCum(); // v61
-  TT.lastCmp = 0; TT.done = false; TT.lapNum = null; TT.lapStart = 0; const th = $('tt-hud'); if (th) { th.dataset.cmp = ''; th.dataset.lap = ''; }
+  TT.lastCmp = 0; TT.done = false; TT.lapNum = null; TT.lapStart = 0; ghostIdx = 0; // v66 const th = $('tt-hud'); if (th) { th.dataset.cmp = ''; th.dataset.lap = ''; }
 }
 function ghostRecord(t, x, z, h) {
   if (!ghostRecOn) return;
@@ -890,10 +894,10 @@ function ghostUpdate(raceTime) {
   if (!ghostGroup) return;
   if (!ghostData || (!prefs.ghost && !remoteGhost)) { ghostGroup.visible = false; return; }
   ghostGroup.visible = true;
-  // find sample at raceTime (linear scan from a moving index is fine at this size)
-  let s = null;
-  for (let i = 0; i < ghostData.length; i++) { if (ghostData[i][0] >= raceTime) { s = ghostData[i]; break; } }
-  if (!s) s = ghostData[ghostData.length - 1];
+  // v66 moving index: O(1) amortized instead of full scan per frame
+  if (ghostIdx >= ghostData.length || ghostData[ghostIdx][0] > raceTime) ghostIdx = 0;
+  while (ghostIdx < ghostData.length - 1 && ghostData[ghostIdx + 1][0] < raceTime) ghostIdx++;
+  const s = ghostData[ghostIdx][0] <= raceTime ? ghostData[ghostIdx] : ghostData[ghostData.length - 1];
   ghostGroup.position.set(s[1], 0, s[2]); ghostGroup.rotation.y = s[3];
 }
 
@@ -2092,7 +2096,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v65';
+const BUILD = 'v66';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2437,6 +2441,7 @@ const _av = new THREE.Vector3(), _cd = new THREE.Vector3();
 function updateArrow(rival) {
   const el = hEl('arrow');
   if (!rival || rival.p !== 1 || !latest || latest.state === 'waiting') { hStyle(el, 'display', 'none'); return; }
+  if (el.__sdisplay === 'none') return; // v66: skip math while hidden
   const vRi = carVisuals[rival.s];
   _av.set((vRi && vRi.netInit) ? vRi.netX : rival.x, 1.2, (vRi && vRi.netInit) ? vRi.netZ : rival.z);
   const toOther = _av.clone().sub(camera.position);
@@ -2711,6 +2716,7 @@ function drawMinimap(mine, rival) {
 // v49 smoothness pass: HUD refs cached once; DOM written ONLY when the value
 // changes (innerHTML rebuilds at 60 fps were the main jank source).
 const HUD = {};
+let frameFlip = false; // v66
 const hEl = (id) => HUD[id] || (HUD[id] = $(id));
 function hText(el, v) { if (el && el.__t !== v) { el.__t = v; el.textContent = v; } }
 function hHTML(el, v) { if (el && el.__h !== v) { el.__h = v; el.innerHTML = v; } }
@@ -2780,7 +2786,7 @@ function updateHUD(mine, rival) {
     hStyle(lp2, 'display', 'none');
   }
   hStyle(hEl('speedlines'), 'opacity', String(prefs.rm ? 0 : clamp((Math.abs(mine.v) - 26) / 34, 0, 0.6)));
-  drawMinimap(mine, rival);
+  frameFlip = !frameFlip; if (frameFlip) drawMinimap(mine, rival); // v66: half-rate minimap
 }
 function updateCountdownVisual() {
   if (!latest || latest.state !== 'countdown' || latest.count == null) return;
@@ -2854,6 +2860,7 @@ function adaptRes() {
   const dpr = window.devicePixelRatio || 1;
   const cur = renderer.getPixelRatio();
   if (fps < 48 && cur > 1) { renderer.setPixelRatio(Math.max(1, cur - 0.5)); arCooldown = 3; } // v55: adapt earlier
+  else if (fps >= 48 && fps <= 52 && cur > 1.25) { renderer.setPixelRatio(Math.max(1.25, cur - 0.25)); arCooldown = 6; } // v66 mid-band trim
   else if (fps > 57 && cur < Math.min(dpr, 2)) { renderer.setPixelRatio(Math.min(Math.min(dpr, 2), cur + 0.5)); arCooldown = 3; }
 }
 // v50 auto smoothness ladder (only when Adaptive resolution is ON):
