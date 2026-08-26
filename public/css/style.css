@@ -550,3 +550,20 @@ button:active { transform: scale(.96); }
 .prof-mis .mis.done { opacity: 1; color: #3ddc84; }
 .map-meta { font-size: 10px; opacity: .8; margin-top: 4px; letter-spacing: .3px; }
 #podium-line { text-align: center; font-size: 16px; }
+
+/* ---------- v61 time trial / practice ---------- */
+.mode3-row { display: flex; gap: 8px; margin: 6px 0; }
+.mode3-btn { flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 10px 6px; border-radius: 12px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: #e8ecf2; font-weight: 800; letter-spacing: .5px; cursor: pointer; font-size: 12px; }
+.mode3-btn span { font-size: 9px; font-weight: 500; opacity: .65; letter-spacing: .2px; }
+.mode3-btn.active { border-color: #35e0ff; background: rgba(53,224,255,.12); box-shadow: 0 0 14px rgba(53,224,255,.25); }
+#tt-hud { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 6; text-align: center; background: rgba(8,12,22,.72); border: 1px solid rgba(53,224,255,.3); border-radius: 12px; padding: 6px 16px; pointer-events: none; backdrop-filter: blur(6px); }
+#tt-hud .tt-time { font-size: 20px; font-weight: 900; letter-spacing: 1px; }
+#tt-hud .tt-pb { font-size: 11px; opacity: .8; }
+#tt-hud .tt-cmp { font-size: 12px; font-weight: 800; }
+.tt-card { min-width: min(92vw, 380px); }
+.tt-line { margin: 6px 0; font-size: 14px; }
+.tt-line b { color: #35e0ff; }
+.tt-dim { opacity: .6; font-size: 12px; margin-top: 8px; }
+#practice-bar { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 7; display: flex; gap: 8px; align-items: center; background: rgba(8,12,22,.75); border: 1px solid rgba(255,255,255,.2); border-radius: 12px; padding: 6px 10px; }
+#practice-bar[hidden] { display: none; }
+.pb-label { font-size: 11px; font-weight: 800; letter-spacing: 1px; }

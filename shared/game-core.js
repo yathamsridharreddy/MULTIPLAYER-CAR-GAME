@@ -490,6 +490,14 @@
 
     start() {
       if (this.state === 'countdown' || this.state === 'racing') return false;
+      return this._begin();
+    }
+    // v61 quick restart: full reset without reconnect (Time Trial / Practice)
+    restart() {
+      if (this.state === 'countdown') return false;
+      return this._begin();
+    }
+    _begin() {
       this.raceTime = 0;
       this.winner = null;
       this.banner = { text: '', seq: ++this.bannerSeq };

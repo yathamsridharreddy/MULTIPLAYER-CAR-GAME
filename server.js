@@ -284,7 +284,7 @@ app.get('/ghost', async (req, res) => {
 function newRoom(mode, mapId) {
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
-  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set() };
+  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false };
   rooms.set(code, entry);
   console.log(`[room ${code}] created (${entry.room.mode}, map ${entry.room.mapId})`);
   return entry;
@@ -390,6 +390,7 @@ function handleMessage(client, msg) {
         const room = entry.room;
         if (msg.laps != null) room.setLaps(msg.laps);
         if (msg.bot != null) room.setBot(msg.bot);
+        if (msg.record === false) entry.noRecord = true; // v61 practice
         if (msg.botSkill != null) room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
         if (msg.name || msg.color || msg.cls) room.setPlayerMeta(client.slot, msg);
         if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
@@ -415,6 +416,14 @@ function handleMessage(client, msg) {
 
     case 'bot':
       if (client.entry && client.role === 'screen') client.entry.room.setBot(msg.bot);
+      break;
+
+    // v61: practice flag + quick restart (screen-controlled, no reconnect)
+    case 'record':
+      if (client.entry && client.role === 'screen') client.entry.noRecord = msg.record === false;
+      break;
+    case 'restart':
+      if (client.entry && client.role === 'screen') client.entry.room.restart();
       break;
 
     case 'input': {
@@ -542,8 +551,10 @@ setInterval(() => {
     for (const car of room.cars) {
       if (car.finished && car.finishTime != null && !car._lb) {
         car._lb = true;
-        lbAdd(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime, best: car.best, ts: now });
+        if (!entry.noRecord) {
+          lbAdd(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime, best: car.best, ts: now });
         sbUpsert(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime });
+        }
         recentAdd({ name: car.name, map: room.mapId, t: car.finishTime, ts: now });
       }
     }
@@ -585,7 +596,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v60', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v61', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

@@ -44,6 +44,7 @@
   <div id="hitflash"></div>
 
   <!-- HUD -->
+  <div id="tt-hud" style="display:none"></div>
   <div id="hud">
     <div id="pills">
       <div class="pill" id="pill-p1"><i></i><span>PLAYER 1</span></div>
@@ -92,6 +93,22 @@
   <div id="net-banner" class="hidden">⚠ Connection to server lost — retrying…</div>
 
   <!-- race results -->
+  <div id="practice-bar" hidden>
+    <span class="pb-label">🎮 PRACTICE</span>
+    <button id="restart-btn" class="ghost sm">🔄 RESTART</button>
+    <button id="practice-exit" class="ghost sm">🚪 EXIT</button>
+  </div>
+  <div id="tt-overlay" class="dlg hidden">
+    <div class="dlg-card tt-card">
+      <div id="tt-body"></div>
+      <div class="results-btns">
+        <button id="tt-again" class="ghost">🔁 TRY AGAIN</button>
+        <button id="tt-lb" class="ghost">🏆 BOARD</button>
+        <button id="tt-share" class="ghost">📤 SHARE</button>
+        <button id="tt-exit" class="ghost">🚪 EXIT</button>
+      </div>
+    </div>
+  </div>
   <div id="results" class="hidden" role="dialog" aria-modal="true" aria-labelledby="results-title">
     <div id="results-card">
       <h2 id="results-title">🏁 RACE RESULTS</h2>
@@ -239,12 +256,20 @@
 
         <button id="next-btn" class="big-cta" data-i18n="setup">SET UP RACE →</button>
         <div class="share-row" id="community-row" hidden><a id="comm-wa" class="ghost sm" target="_blank" rel="noopener">💬 WHATSAPP GROUP</a><a id="comm-dc" class="ghost sm" target="_blank" rel="noopener">🎮 DISCORD</a></div>
-        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v60</p>
+        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v61</p>
       </div>
     </div>
 
     <!-- ============ PAGE 2 : RACE SETUP WIZARD ============ -->
     <div id="page2" class="page" style="display:none">
+      <div class="lsec">
+        <div class="lsec-title">SELECT MODE</div>
+        <div class="mode3-row">
+          <button class="mode3-btn active" data-m3="mp">🏎️ MULTIPLAYER<span>Race against players</span></button>
+          <button class="mode3-btn" data-m3="tt">⏱️ TIME TRIAL<span>Beat your fastest time</span></button>
+          <button class="mode3-btn" data-m3="practice">🎮 PRACTICE<span>Learn the track</span></button>
+        </div>
+      </div>
       <div class="overlay-card">
         <div class="wiz-head">
           <button id="back-btn" class="ghost sm" data-i18n="back">← BACK</button>

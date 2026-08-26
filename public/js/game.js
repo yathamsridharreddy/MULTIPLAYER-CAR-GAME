@@ -751,6 +751,81 @@ const carVisuals = {
 scene.add(carVisuals[1].group, carVisuals[2].group);
 
 // ---------------------------------------------------------------------------
+// ===========================================================================
+// v61 TIME TRIAL / PRACTICE + personal-best ghost delta (extends existing ghost)
+// ===========================================================================
+const TT = { on: false, practice: false, lastCmp: 0, done: false };
+function alongOf(x, z) {
+  if (curMap && curMap.type === 'spline' && curMap.nearest) return curMap.nearest(x, z).along;
+  if (curMap) return ((Math.atan2(z / curMap.b, x / curMap.a) / PI2) + 1) % 1;
+  return 0;
+}
+let ghostCum = null;
+function buildGhostCum() {
+  ghostCum = null;
+  if (!ghostData || !ghostData.length || !curMap) return;
+  const cum = []; let lap = 0, prev = 0;
+  for (const sm of ghostData) {
+    const al = alongOf(sm[1], sm[2]);
+    if (prev - al > 0.5) lap++;
+    prev = al;
+    cum.push({ d: lap + al, t: sm[0] });
+  }
+  ghostCum = cum;
+}
+function ghostDelta(myTotalAlong, raceT) {
+  if (!ghostCum || !ghostCum.length) return null;
+  let lo = 0, hi = ghostCum.length - 1;
+  if (myTotalAlong <= ghostCum[0].d) return ghostCum[0].t - raceT;
+  if (myTotalAlong >= ghostCum[hi].d) return ghostCum[hi].t - raceT;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (ghostCum[m].d < myTotalAlong) lo = m; else hi = m; }
+  const a = ghostCum[lo], b = ghostCum[hi];
+  const f = (myTotalAlong - a.d) / Math.max(1e-6, b.d - a.d);
+  return (a.t + (b.t - a.t) * f) - raceT;
+}
+function ttHudUpdate(mine) {
+  const el = $('tt-hud'); if (!el) return;
+  if (!TT.on || !latest || latest.state !== 'racing') { el.style.display = 'none'; return; }
+  el.style.display = '';
+  const mapId = (latest.map != null) ? latest.map : builtMapId;
+  let pb = null; try { pb = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
+  let line2 = pb != null ? 'PB ' + fmtTime(pb) : (TT.practice ? 'PRACTICE — no records' : 'PB —');
+  let line3 = el.dataset.cmp || '';
+  if (!TT.practice && ghostCum && mine && performance.now() - TT.lastCmp > 1000) {
+    TT.lastCmp = performance.now();
+    const d = ghostDelta((mine.lap || 0) + (mine.pr || 0), latest.raceTime);
+    if (d != null) line3 = (d < 0 ? '-' : '+') + Math.abs(d).toFixed(2) + 's ' + (d < 0 ? 'AHEAD 🟢' : 'BEHIND 🔴');
+    el.dataset.cmp = line3;
+  }
+  el.innerHTML = '<div class="tt-time">' + fmtTime(latest.raceTime || 0) + '</div><div class="tt-pb">' + line2 + '</div>' + (line3 ? '<div class="tt-cmp">' + line3 + '</div>' : '');
+}
+function showTTResults(order, finalT) {
+  const ov = $('tt-overlay'); if (!ov || TT.done) return;
+  TT.done = true;
+  const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+  const M = (CORE.MAPS[mapId] || {}).name || 'TRACK';
+  let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
+  const isRecord = !TT.practice && finalT != null && (best == null || finalT < best);
+  const oldBest = best;
+  if (isRecord) { try { localStorage.setItem('sr_best_' + mapId, JSON.stringify(finalT)); } catch (e) {} }
+  const p = Pget();
+  const bestLap = p.bestLap && p.bestLap[mapId] != null ? p.bestLap[mapId] : null;
+  const box = $('tt-body');
+  if (TT.practice) {
+    box.innerHTML = '<h2>🎮 PRACTICE COMPLETE</h2><div class="tt-line">TRACK: <b>' + M + '</b></div>' +
+      '<div class="tt-line">TIME: <b>' + (finalT != null ? fmtTime(finalT) : '—') + '</b></div>' +
+      '<div class="tt-dim">No records submitted — keep learning!</div>';
+  } else {
+    box.innerHTML = '<h2>⏱️ TIME TRIAL — ' + M + '</h2>' +
+      '<div class="tt-line">FINAL TIME: <b>' + (finalT != null ? fmtTime(finalT) : 'DNF') + '</b></div>' +
+      '<div class="tt-line">PERSONAL BEST: <b>' + (isRecord ? fmtTime(finalT) : (best != null ? fmtTime(best) : '—')) + '</b></div>' +
+      (bestLap != null ? '<div class="tt-line">BEST LAP: <b>' + fmtTime(bestLap) + '</b></div>' : '') +
+      (isRecord && oldBest != null ? '<div class="pb-note">🏆 NEW RECORD! OLD ' + fmtTime(oldBest) + ' → NEW ' + fmtTime(finalT) + ' · ' + (finalT - oldBest).toFixed(2) + 's</div>' :
+        (!isRecord && best != null && finalT != null ? '<div class="tt-cmp">+' + (finalT - best).toFixed(2) + 's off your best</div>' : ''));
+    if (isRecord) toast('🏆 NEW PERSONAL RECORD!');
+  }
+  ov.classList.remove('hidden');
+}
 // Ghost (race your best lap) — OFF by default, purely visual, no physics.
 // Records your lap positions from server snapshots; replays a translucent ghost.
 // ---------------------------------------------------------------------------
@@ -770,12 +845,14 @@ function loadGhost(mapId) {
   try { const g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); if (g && g.length) ghostData = g; } catch (e) {}
 }
 function ghostStart(mapId) {
-  ghostRec = []; ghostRecT = 0; ghostRecOn = !!prefs.ghost;
+  ghostRec = []; ghostRecT = 0; ghostRecOn = !!prefs.ghost || TT.on; // v61: TT always records
   loadGhost(mapId);
   if (remoteGhost && remoteGhost.map === mapId) ghostData = remoteGhost.data; // friend's ghost wins over local
-  const show = !!ghostData && (!!prefs.ghost || !!remoteGhost);
+  const show = !!ghostData && (!!prefs.ghost || !!remoteGhost || (TT.on && !TT.practice)); // v61 PB ghost in TT
   if (show) ensureGhost(); // lazy-create the ghost car (fix: it was never created before)
   if (ghostGroup) ghostGroup.visible = show;
+  if (show) buildGhostCum(); // v61
+  TT.lastCmp = 0; TT.done = false; const th = $('tt-hud'); if (th) th.dataset.cmp = '';
 }
 function ghostRecord(t, x, z, h) {
   if (!ghostRecOn) return;
@@ -1088,6 +1165,15 @@ function wireLobbyV2() {
   const paintBsk = () => { if (bskBtns[0]) bskBtns[0].classList.toggle('active', !prefs.botSkill); if (bskBtns[1]) bskBtns[1].classList.toggle('active', !!prefs.botSkill); };
   bskBtns.forEach((b, i) => { if (b) b.addEventListener('click', () => { prefs.botSkill = i; savePrefs(); paintBsk(); sendMeta(); }); });
   paintBsk();
+  // v61 mode selection
+  document.querySelectorAll('.mode3-btn').forEach((b) => {
+    b.classList.toggle('active', (prefs.mode3 || 'mp') === b.dataset.m3);
+    b.addEventListener('click', () => {
+      prefs.mode3 = b.dataset.m3; savePrefs();
+      document.querySelectorAll('.mode3-btn').forEach((x) => x.classList.toggle('active', x === b));
+      const bt = $('bot-toggle'); if (bt) bt.checked = prefs.mode3 === 'mp';
+    });
+  });
   // v59 garage — cosmetic-only customization
   if (!prefs.cos) { prefs.cos = { decal: 0, wheels: 0, trail: 0 }; savePrefs(); }
   document.querySelectorAll('.cos-btn').forEach((b) => {
@@ -1335,6 +1421,7 @@ function showCount(txt) {
   el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
 }
 function showResults(order) {
+  if (TT.on) return; // v61: TT/practice use their own overlay
   lastResults = order;
   const rows = $('results-rows'); rows.innerHTML = '';
   const medals = ['🥇', '🥈', ''];
@@ -1568,7 +1655,7 @@ function v60OnBestLap(mapId, t) {
 function v60OnResults(order, mapId) {
   const p = Pget();
   const mine = order.find((c) => c.s === mySlot);
-  if (!mine || v60Race.counted) return null;
+  if (!mine || v60Race.counted || TT.on) return null; // v61: TT/practice don't farm stats
   v60Race.counted = true;
   const won = order[0] && order[0].s === mySlot && mine.finished;
   const pod = mine.finished && order.slice(0, 3).some((c) => c.s === mySlot);
@@ -1611,7 +1698,8 @@ function fillMapMeta() {
     let el = b.querySelector('.map-meta');
     if (!el) { el = document.createElement('div'); el.className = 'map-meta'; b.appendChild(el); }
     const best = p.bestRace[m];
-    el.textContent = '⭐'.repeat(MAP_DIFF[m] || 1) + (best != null ? ' · 🏁 ' + fmtTime(best) : ' · no time yet') + ' · ' + (p.maps[m] || 0) + ' races';
+    const bl = p.bestLap && p.bestLap[m];
+    el.textContent = '⭐'.repeat(MAP_DIFF[m] || 1) + (best != null ? ' · 🏁 ' + fmtTime(best) : ' · no time yet') + (bl != null ? ' · ⚡ ' + fmtTime(bl) : '') + ' · ' + (p.maps[m] || 0) + ' races · ⏱️ TT';
   });
 }
 function renderProfile() {
@@ -1907,6 +1995,15 @@ function processEvents(snap) {
           }
           achCheck({ map: snap.map, finishT: e.t, ghostBeat: gb });
           if (gb) { const pp = Pget(); pp.ghostWin = 1; Psave(pp); }
+          if (TT.on) {
+            // v61: save PB ghost from this genuine server-timed run when it's a new best
+            const mId = snap.map != null ? snap.map : builtMapId;
+            let prevBest = null; try { prevBest = JSON.parse(localStorage.getItem('sr_best_' + mId) || 'null'); } catch (e2) {}
+            if (!TT.practice && e.t != null && (prevBest == null || e.t < prevBest) && ghostRec.length > 10) {
+              try { localStorage.setItem('sr_ghost_' + mId, JSON.stringify(ghostRec)); } catch (e2) {}
+            }
+            showTTResults(null, e.t);
+          }
         }
         toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
       case 'results': showResults(e.order); break;
@@ -1918,7 +2015,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v60';
+const BUILD = 'v61';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -1990,6 +2087,17 @@ const net = new RoomLink({
 });
 setInterval(() => { if (net.isOpen()) net.send({ type: 'ping', t: performance.now() }); }, 2000);
 
+// v61 TT overlay actions
+const ttAgain = $('tt-again'); if (ttAgain) ttAgain.addEventListener('click', () => { $('tt-overlay').classList.add('hidden'); TT.done = false; net.send({ type: 'restart' }); });
+const ttExit = $('tt-exit'); if (ttExit) ttExit.addEventListener('click', () => { $('tt-overlay').classList.add('hidden'); TT.on = false; TT.practice = false; net.send({ type: 'reset' }); const pb2 = $('practice-bar'); if (pb2) pb2.hidden = true; });
+const ttLb = $('tt-lb'); if (ttLb) ttLb.addEventListener('click', () => { $('tt-overlay').classList.add('hidden'); TT.on = false; net.send({ type: 'reset' }); });
+const prx = $('practice-exit'); if (prx) prx.addEventListener('click', () => { const te = $('tt-exit'); if (te) te.click(); });
+const ttShare = $('tt-share'); if (ttShare) ttShare.addEventListener('click', () => {
+  const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+  let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
+  const msg = '⏱️ TIME TRIAL — ' + ((CORE.MAPS[mapId] || {}).name || '') + '\n🏁 ' + (best != null ? fmtTime(best) : '—') + '\nBeat it: ' + location.origin + '/';
+  if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Copied!'); }
+});
 function sendHello() {
   net.connect(Object.assign({ type: 'hello', role: 'screen', room: wantedRoom || null }, identityPayload()));
 }
@@ -2551,13 +2659,28 @@ function updateCountdownVisual() {
 // ---------------------------------------------------------------------------
 // Lobby buttons (+ map selection)
 // ---------------------------------------------------------------------------
-$('start-btn').addEventListener('click', () => { ensureAudio(); net.send({ type: 'start' }); track('race', selectedMap); });
+$('start-btn').addEventListener('click', () => {
+  ensureAudio();
+  const mode3 = prefs.mode3 || 'mp';
+  TT.on = mode3 !== 'mp'; TT.practice = mode3 === 'practice'; TT.done = false;
+  if (TT.on) { net.send({ type: 'bot', bot: false }); net.send({ type: 'record', record: !TT.practice }); }
+  else net.send({ type: 'record', record: true });
+  net.send({ type: 'start' });
+  track('race', selectedMap);
+  const pb = $('practice-bar'); if (pb) pb.hidden = !TT.practice;
+});
 $('rematch-btn').addEventListener('click', () => {
   $('results').classList.add('hidden');
   const humanRival = latest && latest.cars && latest.cars[1] && latest.cars[1].p === 1 && !latest.bot;
   if (humanRival) { net.send({ type: 'rematch' }); toast('🔁 Rematch requested — waiting for rival…'); }
   else net.send({ type: 'start' });
   track('race', selectedMap);
+});
+const rstBtn = $('restart-btn');
+if (rstBtn) rstBtn.addEventListener('click', () => { // v61 quick restart (no reload/reconnect)
+  const ov = $('tt-overlay'); if (ov) ov.classList.add('hidden');
+  TT.done = false;
+  net.send({ type: 'restart' });
 });
 const trkBtn = $('track-btn');
 if (trkBtn) trkBtn.addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'reset' }); const nb = $('next-btn'); if (nb) setTimeout(() => nb.click(), 150); });
@@ -2648,6 +2771,7 @@ function frame() {
   updateArrow(rival);
   updateAudio(mine, rival);
   updateHUD(mine, rival);
+  ttHudUpdate(mine); // v61
   maybeSendKeyboard(dt);
   if (splitScreen) { renderSplit(dt); } else { updateCamera(dt, mine, rival); renderMain(); }
   if (!bootHidden) {
