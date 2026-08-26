@@ -538,3 +538,15 @@ button:active { transform: scale(.96); }
 .rrow { animation: rrow .4s ease both; }
 .rrow:nth-child(2) { animation-delay: .08s; } .rrow:nth-child(3) { animation-delay: .16s; }
 @keyframes rrow { from { transform: translateX(-14px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------- v60 retention UI ---------- */
+.prof-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 12px; margin: 6px 0; }
+.prof-grid b { float: right; color: #35e0ff; }
+.xp-bar { position: relative; height: 16px; border-radius: 8px; background: rgba(255,255,255,.08); overflow: hidden; margin: 6px 0; }
+.xp-bar i { position: absolute; inset: 0 auto 0 0; width: 0%; background: linear-gradient(90deg, #35e0ff, #7b2ff7); transition: width .6s ease; }
+.xp-bar span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
+.prof-ach { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.prof-mis .mis { font-size: 11px; opacity: .75; margin: 2px 0; }
+.prof-mis .mis.done { opacity: 1; color: #3ddc84; }
+.map-meta { font-size: 10px; opacity: .8; margin-top: 4px; letter-spacing: .3px; }
+#podium-line { text-align: center; font-size: 16px; }

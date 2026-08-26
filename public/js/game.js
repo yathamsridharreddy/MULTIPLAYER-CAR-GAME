@@ -1093,7 +1093,9 @@ function wireLobbyV2() {
   document.querySelectorAll('.cos-btn').forEach((b) => {
     const k = b.dataset.cos; const v = parseInt(b.dataset.v, 10);
     b.classList.toggle('active', (prefs.cos[k] || 0) === v);
+    b.textContent = b.dataset.label || b.textContent; if (!cosUnlocked(k, v)) b.textContent = '🔒' + b.textContent.replace('🔒', '');
     b.addEventListener('click', () => {
+      if (!cosUnlocked(k, v)) { toast('🔒 Unlocks at level ' + UNLOCK_LVL[k][v]); return; }
       prefs.cos[k] = v; savePrefs();
       document.querySelectorAll('.cos-btn[data-cos="' + k + '"]').forEach((x) => x.classList.toggle('active', x === b));
       sendMeta();
@@ -1365,10 +1367,20 @@ function showResults(order) {
       if (dailyInfoCache && dailyInfoCache.map === mapId) {
         const top = (dailyRowsCache || [])[0];
         if (!top || myRow.t <= top.t) toast('✅ Daily challenge complete!');
+        { const pp = Pget(); pp.daily++; pp.xp += 30; Psave(pp); }
       }
     }
     const ti = playerTitle();
     $('results-title').textContent += `  ·  Lv${ti.lv} ${ti.title}`;
+    const v60 = v60OnResults(order, mapId);
+    const podEl = $('podium-line');
+    if (podEl) {
+      if (v60 && v60.won) { podEl.hidden = false; podEl.textContent = '🏆 YOU WIN! · 1ST PLACE' + (v60.streak >= 2 ? ' · 🔥 streak ' + v60.streak : ''); }
+      else podEl.hidden = true;
+    }
+    const moEl = $('motiv-line');
+    if (moEl) moEl.textContent = v60 && v60.motiv ? v60.motiv : '';
+    renderProfile();
   } catch (e) {}
   $('results').classList.remove('hidden'); { const gb = $('ghost-share-btn'); if (gb) gb.hidden = false; const pb = $('photo-btn'); if (pb) pb.hidden = false; const bb = $('beat-btn'); if (bb) bb.hidden = false; }
 }
@@ -1394,6 +1406,7 @@ function updateLobby(snap) {
 let lobbyWired = false;
 let lastLb = null; // cached — server now sends the leaderboard at 1 Hz only
 function renderLeaderboard(snap) {
+  if (snap.lb) window.__lbRows = snap.lb;
   const el = $('leaderboard');
   if (!el) return;
   if (snap.lb) lastLb = snap.lb;
@@ -1506,6 +1519,154 @@ function evalAchievements(facts, have) {
   return out;
 }
 function achLoad() { try { return JSON.parse(localStorage.getItem('sr_ach') || '{}'); } catch (e) { return {}; } }
+// ===========================================================================
+// v60 RETENTION ENGINE — device-local profile built ONLY from server race
+// events (results/lap/crash). No frontend-claimed results; no pay-to-win.
+// ===========================================================================
+function Pget() {
+  let p = null; try { p = JSON.parse(localStorage.getItem('sr_prof') || 'null'); } catch (e) {}
+  if (!p) p = { races: 0, wins: 0, loss: 0, pod: 0, xp: 0, ach: {}, mis: {}, streak: 0, streakMax: 0, play: 0, maps: {}, bestRace: {}, bestLap: {}, daily: 0, cleanWin: 0, ghostWin: 0, misDone: 0, week: null, last: null, rival: null };
+  return p;
+}
+function Psave(p) { try { localStorage.setItem('sr_prof', JSON.stringify(p)); } catch (e) {} }
+function levelOf(xp) { return Math.floor(Math.sqrt(Math.max(0, xp) / 100)) + 1; }
+const TITLES = ['ROOKIE', 'RACER', 'PRO', 'ELITE', 'LEGEND'];
+function titleOf(p) { return TITLES[Math.min(TITLES.length - 1, Math.floor((levelOf(p.xp) - 1) / 2))]; }
+const ACHV = [
+  ['race1', '🏁', 'First Race', 'complete a race', (p) => p.races >= 1],
+  ['win1', '🏆', 'First Win', 'win a race', (p) => p.wins >= 1],
+  ['pod10', '🥇', 'Podium Hunter', '10 podiums', (p) => p.pod >= 10],
+  ['streak5', '🔥', 'Hot Driver', '5 win streak', (p) => p.streakMax >= 5],
+  ['lap30', '⚡', 'Speed Demon', 'lap under 0:30', (p) => Object.values(p.bestLap).some((t) => t < 30)],
+  ['race25', '🏎️', 'Road Warrior', '25 races', (p) => p.races >= 25],
+  ['win50', '👑', 'Champion', '50 wins', (p) => p.wins >= 50],
+  ['clean', '🎯', 'Perfect Run', 'win without crashing', (p) => p.cleanWin],
+  ['maps5', '🌍', 'World Tour', 'race all 5 maps', (p) => Object.keys(p.maps).length >= 5],
+  ['ghost1', '👻', 'Ghost Buster', 'beat a shared ghost', (p) => p.ghostWin],
+  ['daily1', '📅', 'Daily Driver', 'complete a daily', (p) => p.daily >= 1],
+  ['mission3', '🎯', 'Mission Pro', '3 missions done', (p) => p.misDone >= 3],
+  ['lvl5', '⭐', 'Rising Star', 'reach level 5', (p) => levelOf(p.xp) >= 5],
+  ['lvl10', '🌟', 'Veteran', 'reach level 10', (p) => levelOf(p.xp) >= 10],
+];
+const MISSIONS = [
+  ['m_r3', '🏁 Complete 3 races', (p) => p.races, 3],
+  ['m_w2', '🏆 Win 2 races', (p) => p.wins, 2],
+  ['m_l40', '⚡ Lap under 0:40', (p) => (Object.values(p.bestLap).some((t) => t < 40) ? 1 : 0), 1],
+  ['m_p3', '🥇 3 podiums', (p) => p.pod, 3],
+  ['m_one5', '🛣️ 5 races on one map', (p) => Math.max(0, ...Object.values(p.maps).concat([0])), 5],
+];
+const UNLOCK_LVL = { trail: [1, 2, 4], decal: [1, 3, 6], wheels: [1, 5, 8] }; // value -> required level
+function cosUnlocked(k, v) { const arr = UNLOCK_LVL[k]; return v < arr.length && levelOf(Pget().xp) >= arr[v]; }
+function weekKey() { const d = new Date(); const onejan = new Date(d.getFullYear(), 0, 1); const w = Math.ceil((((d - onejan) / 86400000) + onejan.getDay() + 1) / 7); return d.getFullYear() + '-W' + w; }
+let v60Race = { crashed: false, start: 0, counted: false };
+function v60OnGo() { v60Race = { crashed: false, start: performance.now(), counted: false }; }
+function v60OnCrashMine() { v60Race.crashed = true; }
+function v60OnBestLap(mapId, t) {
+  const p = Pget();
+  if (p.bestLap[mapId] == null || t < p.bestLap[mapId]) { p.bestLap[mapId] = t; p.xp += 10; Psave(p); }
+}
+function v60OnResults(order, mapId) {
+  const p = Pget();
+  const mine = order.find((c) => c.s === mySlot);
+  if (!mine || v60Race.counted) return null;
+  v60Race.counted = true;
+  const won = order[0] && order[0].s === mySlot && mine.finished;
+  const pod = mine.finished && order.slice(0, 3).some((c) => c.s === mySlot);
+  p.races++; p.maps[mapId] = (p.maps[mapId] || 0) + 1;
+  p.play += Math.round((performance.now() - v60Race.start) / 1000);
+  if (won) { p.wins++; p.streak++; p.streakMax = Math.max(p.streakMax, p.streak); if (!v60Race.crashed) p.cleanWin = 1; }
+  else { p.loss++; p.streak = 0; }
+  if (pod) p.pod++;
+  if (mine.finished && mine.t != null && (p.bestRace[mapId] == null || mine.t < p.bestRace[mapId])) { p.bestRace[mapId] = mine.t; p.xp += 40; }
+  p.xp += 20 + (won ? 50 : 0) + (pod ? 30 : 0);
+  const wk = weekKey();
+  if (!p.week || p.week.k !== wk) p.week = { k: wk, races: 0, wins: 0, best: null };
+  p.week.races++; if (won) p.week.wins++;
+  if (mine.finished && mine.t != null && (p.week.best == null || mine.t < p.week.best)) p.week.best = mine.t;
+  // missions
+  MISSIONS.forEach(([id]) => { if (!p.mis[id]) p.mis[id] = 0; });
+  let newMis = 0;
+  MISSIONS.forEach(([id, , fn, goal]) => { if (!p.mis[id] && fn(p) >= goal) { p.mis[id] = 1; newMis++; } });
+  if (newMis) { p.misDone += newMis; p.xp += 75 * newMis; }
+  // achievements
+  const news = [];
+  ACHV.forEach(([id]) => { if (!p.ach[id]) { const d = ACHV.find((a) => a[0] === id); if (d[4](p)) { p.ach[id] = 1; p.xp += 100; news.push(d); } } });
+  p.last = Date.now();
+  Psave(p);
+  // motivation (one line, real data only)
+  let motiv = '';
+  if (won && p.streak >= 2) motiv = '🔥 ' + p.streak + ' WIN STREAK!';
+  else if (!won && mine.finished && mine.t != null) {
+    const pb = p.bestRace[mapId];
+    if (pb != null && mine.t - pb < 1.5 && mine.t > pb) motiv = '⏱️ Only ' + (mine.t - pb).toFixed(2) + 's from your personal best!';
+  }
+  news.forEach((d) => toast('🏅 ' + d[2] + ' unlocked!'));
+  return { won, pod, motiv, news, streak: p.streak };
+}
+const MAP_DIFF = [1, 2, 2, 3, 3]; // v60 map selector info
+function fillMapMeta() {
+  const p = Pget();
+  document.querySelectorAll('.map-btn').forEach((b) => {
+    const m = parseInt(b.dataset.map, 10);
+    let el = b.querySelector('.map-meta');
+    if (!el) { el = document.createElement('div'); el.className = 'map-meta'; b.appendChild(el); }
+    const best = p.bestRace[m];
+    el.textContent = '⭐'.repeat(MAP_DIFF[m] || 1) + (best != null ? ' · 🏁 ' + fmtTime(best) : ' · no time yet') + ' · ' + (p.maps[m] || 0) + ' races';
+  });
+}
+function renderProfile() {
+  const box = $('profile-box'); if (!box) return;
+  const p = Pget();
+  const lv = levelOf(p.xp);
+  $('prof-title').textContent = 'Lv' + lv + ' ' + titleOf(p);
+  const wr = p.races ? Math.round((p.wins / p.races) * 100) : 0;
+  const favMap = Object.entries(p.maps).sort((a, b) => b[1] - a[1])[0];
+  $('prof-grid').innerHTML =
+    '<span>🏎️ RACES <b>' + p.races + '</b></span><span>🏆 WINS <b>' + p.wins + '</b></span>' +
+    '<span>🥇 PODIUMS <b>' + p.pod + '</b></span><span>📈 WIN RATE <b>' + wr + '%</b></span>' +
+    '<span>🔥 STREAK <b>' + p.streak + '</b></span><span>🕹️ TIME <b>' + Math.round(p.play / 60) + 'm</b></span>' +
+    (favMap ? '<span>❤️ FAV <b>' + ((CORE.MAPS[favMap[0]] || {}).name || '').split(' ')[0] + '</b></span>' : '') +
+    '<span>📅 DAILIES <b>' + p.daily + '</b></span>';
+  const need = 100 * lv * lv, base = 100 * (lv - 1) * (lv - 1);
+  const pct = Math.min(100, Math.round(((p.xp - base) / (need - base)) * 100));
+  const xb = $('prof-xp'); xb.querySelector('i').style.width = pct + '%';
+  $('prof-xp-txt').textContent = 'LEVEL ' + lv + ' · ' + p.xp + ' / ' + need + ' XP';
+  $('prof-ach').innerHTML = ACHV.map(([id, ic, nm, ds]) => '<span class="ach' + (p.ach[id] ? ' on' : '') + '" title="' + nm + ' — ' + ds + '">' + ic + '</span>').join('');
+  $('prof-mis').innerHTML = MISSIONS.map(([id, nm, fn, goal]) => {
+    const cur = Math.min(goal, fn(p));
+    return '<div class="mis' + (p.mis[id] ? ' done' : '') + '">' + nm + ' <b>' + cur + '/' + goal + '</b>' + (p.mis[id] ? ' ✅' : '') + '</div>';
+  }).join('');
+  // weekly summary
+  const wk = $('weekly-box');
+  if (wk) {
+    if (p.week && p.week.races > 0) {
+      wk.hidden = false;
+      $('weekly-txt').innerHTML = '🏁 ' + p.week.races + ' races · 🏆 ' + p.week.wins + ' wins' + (p.week.best != null ? ' · ⚡ best ' + fmtTime(p.week.best) : '') + ' · 🏅 ' + Object.keys(p.ach).length + '/' + ACHV.length;
+    } else wk.hidden = true;
+  }
+  // rival (from cached leaderboard rows when available)
+  renderRival(p);
+  if (typeof document !== 'undefined' && document.querySelectorAll) fillMapMeta();
+  // welcome back (once per session, >12h away, non-annoying single line)
+  const wb = $('welcome-back');
+  if (wb && p.last && Date.now() - p.last > 12 * 3600 * 1000 && !window.__wbShown) {
+    window.__wbShown = true;
+    wb.hidden = false;
+    wb.textContent = '👋 WELCOME BACK! ' + (p.rival ? 'Rival ' + p.rival.name + ' is ' + (p.rival.t != null ? fmtTime(p.rival.t) : '') + ' · ' : '') + 'Streak ' + p.streak + ' · Daily challenge available!';
+  }
+}
+function renderRival(p) {
+  const el = $('prof-rival'); if (!el) return;
+  const rows = dailyRowsCache && dailyRowsCache.length ? dailyRowsCache : (window.__lbRows || []);
+  const mapId = (dailyInfoCache && dailyInfoCache.map) || selectedMap || 0;
+  const myBest = p.bestRace[mapId];
+  const above = rows.filter((r) => !(r.pid && r.pid === prefs.pid)).filter((r) => myBest == null || r.t < myBest);
+  const rival = above.length ? above[above.length - 1] : (rows[0] && !(rows[0].pid === prefs.pid) ? rows[0] : null);
+  if (rival) {
+    p.rival = { name: rival.name, t: rival.t, map: mapId }; Psave(p);
+    el.innerHTML = '️ RIVAL: <b>' + escapeHtml(rival.name) + '</b> ' + fmtTime(rival.t) + (myBest != null ? ' · you ' + (myBest - rival.t >= 0 ? '+' : '') + (myBest - rival.t).toFixed(2) + 's' : ' · set a time to challenge!');
+  } else el.innerHTML = '⚔️ Rival appears when the board has times.';
+}
 // v59 lightweight progression: device-local stats -> level + title (cosmetic only)
 function statLoad() { try { return JSON.parse(localStorage.getItem('sr_stats') || '{}'); } catch (e) { return {}; } }
 function statBump(k) { const st = statLoad(); st[k] = (st[k] || 0) + 1; try { localStorage.setItem('sr_stats', JSON.stringify(st)); } catch (e) {} return st; }
@@ -1639,6 +1800,8 @@ function renderCup(rows) {
   updateStreak();
   paintAchievements();
   applyHD();
+  renderProfile();
+  fillMapMeta();
 })();
 
 // v48 photo-finish: render results + logo into a downloadable PNG
@@ -1721,10 +1884,11 @@ function processEvents(snap) {
   for (const e of snap.events || []) {
     switch (e.type) {
       case 'count': showCount(String(e.n)); beep(392, 0.14, 'square', 0.24); break;
-      case 'go': showCount('GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); break;
-      case 'crash': onCrashFX(e.x, e.z, e.s); break;
+      case 'go': showCount('GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); v60OnGo(); break;
+      case 'crash': onCrashFX(e.x, e.z, e.s); if (e.s === mySlot) v60OnCrashMine(); break;
       case 'lap':
         if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); track('fin'); recordPlayDay(); achCheck({ map: snap.map, lapT: e.t }); }
+        if (e.slot === mySlot && e.best) v60OnBestLap(snap.map != null ? snap.map : builtMapId, e.t);
         toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
       case 'finallap': toast(`🔥 P${e.slot}: FINAL LAP!`); beep(660, 0.14, 'square', 0.2); break;
       case 'elim': setBanner(`❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
@@ -1742,6 +1906,7 @@ function processEvents(snap) {
             gb = e.t != null && e.t < gt;
           }
           achCheck({ map: snap.map, finishT: e.t, ghostBeat: gb });
+          if (gb) { const pp = Pget(); pp.ghostWin = 1; Psave(pp); }
         }
         toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
       case 'results': showResults(e.order); break;
@@ -1753,7 +1918,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v59';
+const BUILD = 'v60';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
