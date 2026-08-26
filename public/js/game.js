@@ -1459,6 +1459,25 @@ function showResults(order) {
     rows.appendChild(div);
   });
   $('results-title').textContent = winner ? `🏁 ${escapeHtml(winner.name || ('PLAYER ' + winner.slot))} WINS!` : '🏁 RACE RESULTS';
+  // v65 full result summary: position/time/best lap/PB/rival gap/streak/board rank
+  const rs = $('res-summary');
+  if (rs && !TT.on) {
+    const my = order.find((c) => c.s === mySlot);
+    if (my) {
+      const p = Pget();
+      const pos = order.indexOf(my) + 1;
+      const mId3 = (latest && latest.map != null) ? latest.map : builtMapId;
+      const pb3 = p.bestRace && p.bestRace[mId3];
+      const rows3 = window.__lbRows || [];
+      const boardRank = rows3.findIndex((r) => r.pid && r.pid === prefs.pid) + 1;
+      const riv = p.rival;
+      rs.innerHTML = '🏁 P' + pos + ' · ' + (my.finished ? fmtTime(my.t) : 'DNF') +
+        (my.best != null ? ' · ⚡ lap ' + fmtTime(my.best) : '') +
+        (pb3 != null ? ' · PB ' + fmtTime(pb3) : '') +
+        (riv && riv.t != null && my.t != null ? ' · rival ' + (my.t - riv.t >= 0 ? '+' : '') + (my.t - riv.t).toFixed(2) + 's' : '') +
+        ' · 🔥 streak ' + p.streak + (boardRank > 0 ? ' · board #' + boardRank : '');
+    } else rs.innerHTML = '';
+  }
   // v63 photo finish: genuine margin from server results
   const pf = $('photo-finish');
   if (pf) {
@@ -1534,7 +1553,9 @@ function renderLeaderboard(snap) {
       const above = rows.filter((r) => r.t < myBest);
       const target = above.length ? above[above.length - 1] : null;
       const myRank = rows.findIndex((r) => r.pid && r.pid === prefs.pid) + 1;
-      if (target) lm.textContent = 'YOU ' + (myRank > 0 ? '#' + myRank : '') + ' · BEAT ' + target.name + ' by ' + (myBest - target.t).toFixed(2) + 's';
+      const below = rows.filter((r) => r.t > myBest);
+      const chaser = below.length ? below[0] : null;
+      if (target) lm.textContent = 'YOU ' + (myRank > 0 ? '#' + myRank : '') + ' · BEAT ' + target.name + ' by ' + (myBest - target.t).toFixed(2) + 's' + (chaser ? ' · ' + chaser.name + ' is ' + (chaser.t - myBest).toFixed(2) + 's behind YOU' : '');
       else lm.textContent = myRank === 1 ? '👑 YOU LEAD THIS BOARD' : 'YOU ' + (myRank > 0 ? '#' + myRank : '#' + (rows.length + 1)) + ' — set a faster lap to climb!';
     } else lm.textContent = '';
   }
@@ -1566,6 +1587,7 @@ function httpBase() {
 let dailyInfoCache = null;
 async function pollLobbyExtras() {
   if (document.hidden) return;
+  const ovL = $('overlay'); if (ovL && ovL.classList.contains('hidden')) return; // v65: no lobby polling mid-race
   const base = httpBase();
   try { const r = await fetch(base + '/recent'); if (r.ok) renderRecent(await r.json()); } catch (e) {}
   try { const c = await fetch(base + '/cup'); if (c.ok) renderCup(await c.json()); } catch (e) {}
@@ -2070,7 +2092,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v64';
+const BUILD = 'v65';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2154,7 +2176,15 @@ const ttShare = $('tt-share'); if (ttShare) ttShare.addEventListener('click', ()
   if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Copied!'); }
 });
 function sendHello() {
-  if (SPEC_ROOM) { net.connect({ type: 'hello', role: 'spec', room: SPEC_ROOM }); document.body.classList.add('spec'); return; }
+  if (SPEC_ROOM) {
+    net.connect({ type: 'hello', role: 'spec', room: SPEC_ROOM });
+    document.body.classList.add('spec');
+    const chip = document.createElement('div'); chip.id = 'spec-chip';
+    chip.innerHTML = '👁️ SPECTATING · <button id="spec-leave">LEAVE</button>';
+    document.body.appendChild(chip);
+    setTimeout(() => { const b = $('spec-leave'); if (b) b.addEventListener('click', () => { location.href = '/'; }); }, 0);
+    return;
+  }
   net.connect(Object.assign({ type: 'hello', role: 'screen', room: wantedRoom || null }, identityPayload()));
 }
 function sendMeta() { if (net.isOpen()) net.send(Object.assign({ type: 'meta' }, identityPayload())); }
@@ -2164,6 +2194,8 @@ function sendMeta() { if (net.isOpen()) net.send(Object.assign({ type: 'meta' },
   let done = false; try { done = !!localStorage.getItem('sr_onboard'); } catch (e) {}
   if (done) return;
   const steps = [
+    { t: '💻 This browser is your console', k: [] },
+    { t: '📱 Scan the QR — your phone becomes the controller (or use keys)', k: [] },
     { t: '🕹️ STEER — press A / D (or ← →)', k: ['KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'] },
     { t: '⛽ ACCELERATE — hold W', k: ['KeyW', 'ArrowUp'] },
     { t: '🔥 NITRO — press SHIFT', k: ['ShiftLeft', 'ShiftRight'] },

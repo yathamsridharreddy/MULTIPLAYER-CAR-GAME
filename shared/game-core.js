@@ -249,7 +249,7 @@
     setClass(key) { if (CAR_CLASSES[key]) this.cls = CAR_CLASSES[key]; }
     setMeta(name, color, pid) {
       if (name) this.name = String(name).slice(0, 14);
-      if (color != null) this.color = color;
+      if (typeof color === 'number' && isFinite(color)) this.color = Math.floor(color) & 0xffffff; // v65 sanitize
       if (pid) this.pid = String(pid).slice(0, 24); // stable account-lite id
     }
     setCos(cos, title) { if (cos) this.cos = { decal: cos.decal | 0, wheels: cos.wheels | 0, trail: cos.trail | 0 }; if (title) this.title = String(title).slice(0, 10); } // v59 cosmetic-only

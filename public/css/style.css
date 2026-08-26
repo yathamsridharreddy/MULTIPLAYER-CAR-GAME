@@ -580,3 +580,7 @@ button:active { transform: scale(.96); }
 .ob-skip { margin-top: 10px; font-size: 11px; opacity: .7; }
 .ob-skip button { background: none; border: 1px solid rgba(255,255,255,.3); color: #e8ecf2; border-radius: 8px; padding: 3px 10px; cursor: pointer; }
 body.spec #overlay, body.spec .share-row, body.spec #quickplay-btn { display: none; }
+
+#spec-chip { position: fixed; top: 12px; left: 12px; z-index: 9; background: rgba(8,12,22,.8); border: 1px solid rgba(53,224,255,.4); border-radius: 10px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+#spec-chip button { background: none; border: 1px solid rgba(255,255,255,.3); color: #e8ecf2; border-radius: 8px; padding: 2px 8px; cursor: pointer; margin-left: 6px; }
+#res-summary { margin-top: 8px; font-size: 12px; }

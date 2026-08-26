@@ -62,7 +62,9 @@ app.post('/a', (req, res) => {
 });
 app.get('/stats', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json(Object.assign({ classes: CLASS_TELE }, AN));
+  const clsOut = {};
+  for (const k of Object.keys(CLASS_TELE)) { const c = CLASS_TELE[k]; clsOut[k] = { pick: c.pick, win: c.win, fin: c.fin, avgPos: c.fin ? +(c.posSum / c.fin).toFixed(2) : null, avgTime: c.fin ? +(c.tSum / c.fin).toFixed(2) : null }; }
+  res.json(Object.assign({ classes: clsOut }, AN));
 });
 
 // Dynamic client config. For local runs the server URL is same-origin
@@ -618,7 +620,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v64', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v65', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
