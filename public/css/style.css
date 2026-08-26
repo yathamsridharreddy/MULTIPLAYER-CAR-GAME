@@ -567,3 +567,8 @@ button:active { transform: scale(.96); }
 #practice-bar { position: fixed; bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 7; display: flex; gap: 8px; align-items: center; background: rgba(8,12,22,.75); border: 1px solid rgba(255,255,255,.2); border-radius: 12px; padding: 6px 10px; }
 #practice-bar[hidden] { display: none; }
 .pb-label { font-size: 11px; font-weight: 800; letter-spacing: 1px; }
+
+/* ---------- v63 polish ---------- */
+.gap-chip { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 6; font-size: 13px; font-weight: 900; letter-spacing: 1px; color: #ffd479; text-shadow: 0 0 12px rgba(255, 212, 73, .6); pointer-events: none; }
+#photo-finish { font-size: 12px; }
+#beat-rival { margin-top: 6px; }

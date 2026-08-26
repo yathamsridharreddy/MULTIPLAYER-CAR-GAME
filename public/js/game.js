@@ -1459,6 +1459,15 @@ function showResults(order) {
     rows.appendChild(div);
   });
   $('results-title').textContent = winner ? `🏁 ${escapeHtml(winner.name || ('PLAYER ' + winner.slot))} WINS!` : '🏁 RACE RESULTS';
+  // v63 photo finish: genuine margin from server results
+  const pf = $('photo-finish');
+  if (pf) {
+    const f = order.filter((c) => c.finished);
+    if (f.length >= 2 && (f[1].t - f[0].t) <= 0.5) {
+      pf.hidden = false;
+      pf.innerHTML = '📸 PHOTO FINISH — ' + escapeHtml(f[0].name || 'P' + f[0].slot) + ' ' + fmtTime(f[0].t) + ' vs ' + escapeHtml(f[1].name || 'P' + f[1].slot) + ' ' + fmtTime(f[1].t) + ' · margin <b>' + (f[1].t - f[0].t).toFixed(3) + 's</b>';
+    } else pf.hidden = true;
+  }
   // v59 progression + personal-best celebration
   try {
     const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
@@ -1722,7 +1731,7 @@ function fillMapMeta() {
     const best = p.bestRace[m];
     const bl = p.bestLap && p.bestLap[m];
     let lastT = null; try { lastT = JSON.parse(localStorage.getItem('sr_last_' + m) || 'null'); } catch (e) {}
-    el.textContent = '⭐'.repeat(MAP_DIFF[m] || 1) + (best != null ? ' · 🏁 ' + fmtTime(best) : ' · no time yet') + (bl != null ? ' · ⚡ ' + fmtTime(bl) : '') + (lastT != null ? ' · LAST ' + fmtTime(lastT) : '') + ' · ' + (p.maps[m] || 0) + ' races · ⏱️ TT';
+    el.textContent = '⭐'.repeat(MAP_DIFF[m] || 1) + (best != null ? ' · 🏁 ' + fmtTime(best) : ' · no time yet') + (bl != null ? ' · ⚡ ' + fmtTime(bl) : '') + (lastT != null ? ' · LAST ' + fmtTime(lastT) : '') + ' · ' + (p.maps[m] || 0) + ' races · ⏱️ TT · 🎮 ALL MODES';
   });
 }
 function renderProfile() {
@@ -1757,6 +1766,14 @@ function renderProfile() {
   }
   // rival (from cached leaderboard rows when available)
   renderRival(p);
+  const br = $('beat-rival');
+  if (br) br.onclick = () => {
+    if (p.rival && p.rival.map != null) {
+      net.send({ type: 'map', map: p.rival.map });
+      selectedMap = p.rival.map;
+      toast('⚔️ Rival\'s track loaded — START when ready!');
+    }
+  };
   if (typeof document !== 'undefined' && document.querySelectorAll) fillMapMeta();
   // welcome back (once per session, >12h away, non-annoying single line)
   const wb = $('welcome-back');
@@ -2038,7 +2055,7 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v62';
+const BUILD = 'v63';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2650,6 +2667,20 @@ function updateHUD(mine, rival) {
   hText(hEl('speed-val'), String(Math.round(Math.abs(mine.v) * 3.6)));
   hText(hEl('gear'), mine.v < -0.5 ? 'R' : (Math.abs(mine.v) < 0.4 ? 'N' : 'D'));
   hText(hEl('pu-chip'), (mine.pb ? '⚡' : '') + (mine.ps ? '🛡️' : '') + (mine.pl ? '🌀' : '')); // v59
+  // v63 close-race intensity chip
+  const gc = hEl('gap-chip');
+  if (gc) {
+    if (latest && latest.state === 'racing' && mine && rival && mine.p === 1 && rival.p === 1) {
+      if (!gc._t || performance.now() - gc._t > 500) {
+        gc._t = performance.now();
+        const dP = ((mine.lap || 0) + (mine.pr || 0)) - ((rival.lap || 0) + (rival.pr || 0));
+        const lapEst = Math.max(18, (Pget().bestLap || {})[(latest.map != null) ? latest.map : builtMapId] || 25);
+        const gap = Math.abs(dP) * lapEst;
+        if (gap > 0.05 && gap < 2.5) hText(gc, Math.abs(gap).toFixed(2) + 's ' + (dP > 0 ? 'AHEAD' : 'BEHIND'));
+        else hText(gc, '');
+      }
+    } else hText(gc, '');
+  }
   const nf = hEl('nitro-fill');
   hStyle(nf, 'width', (mine.m || 0) + '%');
   const burn = mine.n === 1;

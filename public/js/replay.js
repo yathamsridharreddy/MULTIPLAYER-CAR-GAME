@@ -22,7 +22,9 @@
     .catch(() => err('Replay not found (the link may be old).'));
 
   function start(g) {
-    const data = g.data;
+    // v63: invalid replay data can never crash the client
+    const data = (Array.isArray(g.data) ? g.data : []).filter((s) => Array.isArray(s) && s.length >= 3 && s.every((v) => typeof v === 'number' && isFinite(v))).slice(0, 4000);
+    if (data.length < 2) { const e = $('who'); if (e) e.textContent = 'Invalid replay data'; return; }
     const map = CORE.MAPS[g.map] || CORE.MAPS[0];
     $('who').textContent = (g.name || 'RACER') + ' · ' + map.name;
     $('open-game').href = '/?g=' + id;
