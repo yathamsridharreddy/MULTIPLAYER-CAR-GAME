@@ -671,6 +671,11 @@
         }
       }
 
+      // v68 final barrier audit (maps 1-4): no matter what moved a car this
+      // tick, nothing may sit outside the exact boundary when the snapshot is
+      // emitted. One cheap exact-field pass per car (instant no-op when inside).
+      if (this.track.type === 'spline') for (const car of this.cars) clampCarToBarrier(car);
+
       if (this.state === 'racing' && this.mode === 'elim') {
         const alive = this.cars.filter((c) => c.participating);
         if (alive.length <= 1) {
@@ -895,7 +900,10 @@
       if (Math.abs(near3.lat) < 5) { this._safeT = (this._safeT || 0) + dt; if (this._safeT > 1.5) { this._safeT = 0; this._safe = { x: this.x, z: this.z, h: this.heading }; } }
       const spdNow = Math.abs(this.forwardSpeed());
       this._stuck = (spdNow < 1.2 && Math.abs(near3.lat) > 2) ? (this._stuck || 0) + dt : 0;
-      if ((this._stuck > 3 || Math.abs(near3.lat) > 12) && this._safe) {
+      // v68: a driver actively giving throttle at the fence is NOT stuck —
+      // quick 3 s rescue only when coasting/parked; throttle-pinned gets 8 s.
+      const stuckLimit = raw.throttle > 0.15 ? 8 : 3;
+      if ((this._stuck > stuckLimit || Math.abs(near3.lat) > 12) && this._safe && this.participating) {
         this.x = this._safe.x; this.z = this._safe.z; this.heading = this._safe.h;
         this.vx = 0; this.vy = 0; this._stuck = 0; this._nearIdx = null;
         ev.respawn = { slot: this.slot };
@@ -956,24 +964,97 @@
 
 
   // ==================================================================
-  // RADIAL TRACKS — robust distinct shapes (no nearest-point latch)
+  // v68 RADIAL-X — maps 1-4 rebuilt from scratch. EXACT analytic track
+  // field: r(θ) is a trig polynomial with closed-form r, r′, r″, so the
+  // nearest point / true distance / exact normal for ANY query point are
+  // solved analytically (coarse scan + safeguarded Newton). No polyline,
+  // no vertex ambiguity, no sagitta error — physics and visuals consume
+  // the SAME field, so the drawn fence IS the physical barrier to
+  // machine precision. Escape is impossible by construction (see
+  // clampCarToBarrier hard guarantee).
   // ==================================================================
   function makeRadialTrack(R0, harms, samples) {
-    const centerR = (th) => { let r = R0; for (const h of harms) r += R0 * h.amp * Math.cos(h.k * th + (h.ph || 0)); return r; };
+    const rOf   = (th) => { let r = R0; for (const h of harms) r += R0 * h.amp * Math.cos(h.k * th + (h.ph || 0)); return r; };
+    const drOf  = (th) => { let r = 0;  for (const h of harms) r -= R0 * h.amp * h.k * Math.sin(h.k * th + (h.ph || 0)); return r; };
+    const d2rOf = (th) => { let r = 0;  for (const h of harms) r -= R0 * h.amp * h.k * h.k * Math.cos(h.k * th + (h.ph || 0)); return r; };
+    const ptAt  = (th) => { const r = rOf(th), c = Math.cos(th), s = Math.sin(th); return { x: c * r, z: s * r }; };
+    const tanAt = (th) => { const r = rOf(th), dr = drOf(th), c = Math.cos(th), s = Math.sin(th); return { x: dr * c - r * s, z: dr * s + r * c }; };
+    // outward unit normal (curve is star-shaped around the origin: n̂·P > 0)
+    const normAt = (th) => {
+      const t = tanAt(th), L = Math.hypot(t.x, t.z) || 1;
+      let nx = t.z / L, nz = -t.x / L;
+      const p = ptAt(th);
+      if (nx * p.x + nz * p.z < 0) { nx = -nx; nz = -nz; }
+      return { x: nx, z: nz };
+    };
+    // precomputed coarse table (512 exact samples) — nearest queries scan
+    // these with pure arithmetic, then refine analytically
+    const COARSE = 512, coarse = [];
+    for (let i = 0; i < COARSE; i++) coarse.push(ptAt(i / COARSE * PI2));
+
+    const refine = (th0, x, z) => {
+      // safeguarded Newton on f(θ) = |P(θ)−X|²  →  f′ = 2(P−X)·P′
+      let th = th0;
+      for (let it = 0; it < 16; it++) {
+        const c = Math.cos(th), s = Math.sin(th);
+        const r = rOf(th), dr = drOf(th), d2r = d2rOf(th);
+        const px = c * r, pz = s * r;
+        const tx = dr * c - r * s, tz = dr * s + r * c;           // P′(θ)
+        const ax = d2r * c - 2 * dr * s - r * c, az = d2r * s + 2 * dr * c - r * s; // P″(θ)
+        const dx = px - x, dz = pz - z;
+        const f1 = 2 * (dx * tx + dz * tz);
+        const f2 = 2 * (tx * tx + tz * tz + dx * ax + dz * az);
+        if (Math.abs(f2) < 1e-9) break;
+        const step = Math.max(-0.25, Math.min(0.25, f1 / f2));
+        th -= step;
+        if (Math.abs(step) < 1e-11) break;
+      }
+      return th;
+    };
+
+    // EXACT field query: true nearest point, true distance, exact outward
+    // normal, signed lateral (outward > 0), θ, sample idx and lap-along.
+    const field = (x, z) => {
+      let best = 1e18, bi = 0, second = 1e18, si = 0, third = 1e18, ti = 0;
+      for (let i = 0; i < COARSE; i++) {
+        const dx = x - coarse[i].x, dz = z - coarse[i].z, d2 = dx * dx + dz * dz;
+        if (d2 < best) { third = second; ti = si; second = best; si = bi; best = d2; bi = i; }
+        else if (d2 < second) { third = second; ti = si; second = d2; si = i; }
+        else if (d2 < third) { third = d2; ti = i; }
+      }
+      let bth = 0, bd2 = 1e18;
+      for (const ci of [bi, si, ti]) {
+        const th = refine(ci / COARSE * PI2, x, z);
+        const p = ptAt(th), dx = p.x - x, dz = p.z - z, d2 = dx * dx + dz * dz;
+        if (d2 < bd2) { bd2 = d2; bth = th; }
+      }
+      let th = bth % PI2; if (th < 0) th += PI2;
+      const p = ptAt(th), n = normAt(th);
+      const dx = x - p.x, dz = z - p.z;
+      const d = Math.sqrt(bd2);
+      const lat = dx * n.x + dz * n.z; // |lat| === d exactly at the true nearest point
+      return { th, d, lat, cx: p.x, cz: p.z, nx: n.x, nz: n.z, idx: Math.round(th / PI2 * samples) % samples, along: th / PI2 };
+    };
+
     const points = [];
-    for (let i = 0; i < samples; i++) { const th = i / samples * PI2; const r = centerR(th); points.push({ x: Math.cos(th) * r, z: Math.sin(th) * r }); }
+    for (let i = 0; i < samples; i++) { const th = i / samples * PI2; const r = rOf(th); points.push({ x: Math.cos(th) * r, z: Math.sin(th) * r }); }
     let mx = 0, mz = 0; points.forEach((p) => { mx = Math.max(mx, Math.abs(p.x)); mz = Math.max(mz, Math.abs(p.z)); });
-    const track = { type: 'spline', points, a: mx, b: mz, centerR, radial: true };
-    // v67 AUTHORITATIVE BOUNDARY SPEC — one source of truth on the track object.
+    const track = { type: 'spline', points, a: mx, b: mz, centerR: rOf, ptAt, normAt, radial: true };
+    // v68 AUTHORITATIVE BOUNDARY SPEC — one source of truth on the track object.
     // roadHalf = asphalt half-width; limC = max car-center lateral;
     // limP = max nose/tail reach; fenceOff = visible fence inner face == limP.
     track.roadHalf = RH;   // 8.0 asphalt half-width (visual road)
     track.limC = 8.4;      // max car-CENTER lateral: 0.4 m onto shoulder, NO wall inside road
     track.limP = 10.0;     // max nose/tail reach
-    track.fenceOff = 10.0; // visible fence inner face === physical nose limit
-    // physics uses the SAME perpendicular-to-centerline metric the visuals are
-    // drawn with (no more ray-vs-normal drift = no invisible walls on curves)
-    track.nearest = (x, z) => splineNearest(track, x, z, null);
+    track.fenceOff = 10.0; // visible fence inner face === physical nose limit (MUST equal limP)
+    track.nearest = field;
+    // exact offset curves for visuals — road edges, lines and fences are drawn
+    // from the SAME formula physics uses (zero divergence by construction)
+    track.offsetPts = (off, nPts) => {
+      const out = [];
+      for (let i = 0; i < nPts; i++) { const th = i / nPts * PI2; const p = ptAt(th), n = normAt(th); out.push({ x: p.x + n.x * off, z: p.z + n.z * off }); }
+      return out;
+    };
     return track;
   }
 
@@ -1001,46 +1082,20 @@
   function clampCarToBarrier(car) {
     const T = car.track;
     if (!T) return null;
-    const spline = T.type === 'spline';
-    const limC = spline ? T.limC : RH + 2.4; // v67 track-owned spec  // v56: center limit = white-line corridor (7.3) minus half body (0.95)
-    const limP = spline ? T.limP : RH + 3.35;  // v56: nose/tail stop exactly at the white curb line
     const dirX = Math.sin(car.heading), dirY = Math.cos(car.heading);
-    const latOf = (px, pz) => {
-      if (spline) {
-        const n = T.nearest ? T.nearest(px, pz) : splineNearest(T, px, pz, null);
-        return n.d; // v67: TRUE perpendicular distance = same metric as road/fence draw
-      }
-      return ellipseProj(px, pz, T.a, T.b).lat;
-    };
-    // iterate: pushing along the center radial only approximately reduces an
-    // angled probe's lat — 3 passes converge it fully
-    let crash = null;
-    for (let iter = 0; iter < 3; iter++) {
-      let maxOver = 0, sign = 1;
-      const probes = [[0, limC], [PROBE_NOSE, limP], [PROBE_TAIL, limP]];
-      for (const pr of probes) {
-        const lat = latOf(car.x + dirX * pr[0], car.z + dirY * pr[0]);
-        const over = Math.abs(lat) - pr[1];
-        if (over > maxOver) { maxOver = over; sign = lat > 0 ? 1 : -1; }
-      }
-      if (maxOver <= 0) break;
-      if (spline) {
-        // n points FROM the centerline TO the car -> pushing along -n moves
-        // the car back toward the centerline (works on both sides)
-        const c0 = T.nearest ? T.nearest(car.x, car.z) : splineNearest(T, car.x, car.z, car._nearIdx);
-        if (!T.nearest) car._nearIdx = c0.idx;
-        let nx = car.x - c0.cx, nz = car.z - c0.cz;
-        const cd = Math.hypot(nx, nz) || 1; nx /= cd; nz /= cd;
-        car.x -= nx * maxOver; car.z -= nz * maxOver;
-        if (iter === 0) {
-          const vAway = car.vx * nx + car.vy * nz; // outward speed (n = centerline->car)
-          if (vAway > 0) {
-            if (vAway > 9) crash = { x: car.x, z: car.z, s: Math.min(1, vAway / 26) };
-            car.vx -= nx * vAway * 1.5; car.vy -= nz * vAway * 1.5;
-            car.vx *= 0.9; car.vy *= 0.9;
-          }
+    if (T.type !== 'spline') {
+      // ===== MAP 0 — historic ellipse barrier, numerically UNTOUCHED =====
+      const limC = RH + 2.4, limP = RH + 3.35; // v56: white-line corridor / curb line
+      let crash = null;
+      for (let iter = 0; iter < 3; iter++) {
+        let maxOver = 0, sign = 1;
+        const probes = [[0, limC], [PROBE_NOSE, limP], [PROBE_TAIL, limP]];
+        for (const pr of probes) {
+          const lat = ellipseProj(car.x + dirX * pr[0], car.z + dirY * pr[0], T.a, T.b).lat;
+          const over = Math.abs(lat) - pr[1];
+          if (over > maxOver) { maxOver = over; sign = lat > 0 ? 1 : -1; }
         }
-      } else {
+        if (maxOver <= 0) break;
         // ellipse: n points FROM the centerline TO the car (exact parametric)
         const c0 = ellipseProj(car.x, car.z, T.a, T.b);
         let nx = car.x - c0.cx, nz = car.z - c0.cz;
@@ -1055,28 +1110,65 @@
           }
         }
       }
+      return crash;
     }
-    // v67 exact final projection (spline maps only; Map 0 keeps its exact
-    // historical 3-pass behavior): removes residual overshoot for center AND
-    // nose/tail probes so the authoritative position is provably inside limits
-    if (spline) {
-      // iterate per-probe exact corrections until converged (each push moves
-      // the other probes); residual < 0.1 mm, no tolerance needed downstream
-      for (let it = 0; it < 6; it++) {
-        let worst = 0;
-        for (const pr of [[0, limC], [PROBE_NOSE, limP], [PROBE_TAIL, limP]]) {
-          const px = car.x + dirX * pr[0], pz = car.z + dirY * pr[0];
-          const n = T.nearest(px, pz);
-          const over = n.d - pr[1];
-          if (over > worst) worst = over;
-          if (over > 0) {
-            const nx = px - n.cx, nz = pz - n.cz;
-            const cd = Math.hypot(nx, nz) || 1;
-            car.x -= (nx / cd) * over; car.z -= (nz / cd) * over;
-          }
-        }
-        if (worst <= 1e-5) break;
+
+    // ===== MAPS 1-4 — v68 RADIAL-X exact engine =====
+    // The field is analytic (true distance + exact outward normal), so pushing
+    // the center along a probe's normal by `over` zeroes that probe's
+    // violation to ~1e-7 in one step. Sweeps + converge remove cross-probe
+    // coupling, and the final HARD GUARANTEE makes escape impossible by
+    // construction: worst case snaps the center onto the exact centerline,
+    // where every probe is at most its own length (2.6 m) from the line —
+    // far inside limP (10 m).
+    const limC = T.limC, limP = T.limP;
+    const probes = [[0, limC], [PROBE_NOSE, limP], [PROBE_TAIL, limP]];
+    let crash = null;
+    // 1) exact-normal sweeps on the worst probe
+    for (let iter = 0; iter < 3; iter++) {
+      let maxOver = 0, pnx = 0, pnz = 0;
+      for (const pr of probes) {
+        const n = T.nearest(car.x + dirX * pr[0], car.z + dirY * pr[0]);
+        const over = n.d - pr[1];
+        if (over > maxOver) { maxOver = over; pnx = n.nx; pnz = n.nz; }
       }
+      if (maxOver <= 1e-7) break;
+      car.x -= pnx * maxOver; car.z -= pnz * maxOver;
+      if (iter === 0) {
+        const vAway = car.vx * pnx + car.vy * pnz; // outward speed (n = outward normal)
+        if (vAway > 0) {
+          if (vAway > 9) crash = { x: car.x + pnx, z: car.z + pnz, s: Math.min(1, vAway / 26) };
+          car.vx -= pnx * vAway * 1.5; car.vy -= pnz * vAway * 1.5;
+          car.vx *= 0.9; car.vy *= 0.9;
+        }
+      }
+    }
+    // 2) per-probe exact corrections until converged (probe normals differ
+    //    along the car body on curves)
+    for (let it = 0; it < 6; it++) {
+      let worst = 0;
+      for (const pr of probes) {
+        const n = T.nearest(car.x + dirX * pr[0], car.z + dirY * pr[0]);
+        const over = n.d - pr[1];
+        if (over > worst) worst = over;
+        if (over > 1e-7) { car.x -= n.nx * over; car.z -= n.nz * over; }
+      }
+      if (worst <= 1e-7) break;
+    }
+    // 3) HARD GUARANTEE — re-measure with the same exact field; if anything
+    //    is still out of spec (numerical cataclysm only), snap the center to
+    //    the exact centerline. Escape-proof regardless of inputs or bugs.
+    let worst = 0;
+    for (const pr of probes) {
+      const n = T.nearest(car.x + dirX * pr[0], car.z + dirY * pr[0]);
+      if (n.d - pr[1] > worst) worst = n.d - pr[1];
+    }
+    if (worst > 1e-4) {
+      const nc = T.nearest(car.x, car.z);
+      car.x = nc.cx; car.z = nc.cz;
+      const vAway = car.vx * nc.nx + car.vy * nc.nz;
+      if (vAway > 0) { car.vx -= nc.nx * vAway; car.vy -= nc.nz * vAway; }
+      if (!crash && Math.hypot(car.vx, car.vy) > 9) crash = { x: car.x, z: car.z, s: 0.6 };
     }
     return crash;
   }
@@ -1121,7 +1213,7 @@
   // browser caches an old game-core, its drawn track won't match the server's
   // car positions; the client detects this via /version.geom and forces reload.
   const GEOM_ID = (function () {
-    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 4, p: 3, L: m.limC || 0 }))); // k=barrier gen, p=powerups, L=boundary spec (v67)
+    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 5, p: 3, L: m.limC || 0 }))); // k=barrier gen (v68 RADIAL-X), p=powerups, L=boundary spec
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
     return (h >>> 0).toString(36);

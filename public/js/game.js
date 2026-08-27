@@ -319,18 +319,29 @@ function ribbon(pts, offset, halfW, y, mat) {
 }
 function buildSplineVisuals(map, T) {
   const cl = map.points;
-  ribbon(cl, 0, RH, 0.02, new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
   const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8 });
-  ribbon(cl, RH - 0.7, 0.18, 0.045, lineMat);
-  ribbon(cl, -(RH - 0.7), 0.18, 0.045, lineMat);
-  // visible guard-rail fence just OUTSIDE the barrier limit — the car stops
-  // AT the barrier and its body kisses the rail (never clips through it)
   const fenceMat = new THREE.MeshStandardMaterial({ color: 0xcfd6dd, metalness: 0.6, roughness: 0.4 });
-  const FO = map.fenceOff != null ? map.fenceOff : RH + 2.5; // v67 fence drawn ON the physical boundary
-  ribbon(cl, FO, 0.12, 0.34, fenceMat);
-  ribbon(cl, -FO, 0.12, 0.34, fenceMat);
-  ribbon(cl, FO, 0.1, 0.78, fenceMat);
-  ribbon(cl, -FO, 0.1, 0.78, fenceMat);
+  const FO = map.fenceOff != null ? map.fenceOff : RH + 2.5; // fence drawn ON the physical boundary
+  if (map.offsetPts) {
+    // v68 RADIAL-X: road, lines and fence come from the track's EXACT offset
+    // curves — the very formula the physics barrier uses. Pixels and physics
+    // can never diverge, so the car can never appear past the fence.
+    ribbon(map.offsetPts(0, 512), 0, RH, 0.02, new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
+    ribbon(map.offsetPts(RH - 0.7, 512), 0, 0.18, 0.045, lineMat);
+    ribbon(map.offsetPts(-(RH - 0.7), 512), 0, 0.18, 0.045, lineMat);
+    ribbon(map.offsetPts(FO, 512), 0, 0.12, 0.34, fenceMat);
+    ribbon(map.offsetPts(-FO, 512), 0, 0.12, 0.34, fenceMat);
+    ribbon(map.offsetPts(FO, 512), 0, 0.1, 0.78, fenceMat);
+    ribbon(map.offsetPts(-FO, 512), 0, 0.1, 0.78, fenceMat);
+  } else {
+    ribbon(cl, 0, RH, 0.02, new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
+    ribbon(cl, RH - 0.7, 0.18, 0.045, lineMat);
+    ribbon(cl, -(RH - 0.7), 0.18, 0.045, lineMat);
+    ribbon(cl, FO, 0.12, 0.34, fenceMat);
+    ribbon(cl, -FO, 0.12, 0.34, fenceMat);
+    ribbon(cl, FO, 0.1, 0.78, fenceMat);
+    ribbon(cl, -FO, 0.1, 0.78, fenceMat);
+  }
   const p0 = cl[0], p1 = cl[1];
   const yaw = Math.atan2(p1.x - p0.x, p1.z - p0.z);
   const c = document.createElement('canvas'); c.width = 160; c.height = 32;
@@ -2097,7 +2108,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v67';
+const BUILD = 'v68';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2626,25 +2637,56 @@ function placeCar(slot, cs, dt) {
   {
     const T = curMap;
     if (T && T.world) {
-      const limC = T.type === 'spline' ? 6.3 : RH + 2.4; // v56 match sim corridor
-      const limP = T.type === 'spline' ? 7.3 : RH + 3.35; // v56 nose/tail parity
+      // v68: track-owned spec — identical to the server's barrier limits
+      const spline = T.type === 'spline';
+      const limC = spline ? (T.limC != null ? T.limC : RH + 2.4) : RH + 2.4;
+      const limP = spline ? (T.limP != null ? T.limP : RH + 3.35) : RH + 3.35;
       const dirX = Math.sin(v.netH), dirZ = Math.cos(v.netH);
-      const proj = (px, pz) => (T.type === 'spline' ? T.nearest(px, pz) : CORE.ellipseProj(px, pz, T.a, T.b));
-      // v53: clamp center+nose+tail exactly like the sim (2-pass converge), so
-      // no part of the rendered car can ever appear beyond the asphalt edge.
-      for (let iter = 0; iter < 2; iter++) {
-        let maxOver = 0, sx = 0, sz = 0;
-        for (const pr of [[0, limC], [2.6, limP], [-2.4, limP]]) {
-          const n = proj(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0]);
-          const over = Math.abs(n.lat) - pr[1];
-          if (over > maxOver) {
-            maxOver = over;
-            const cd = Math.hypot(v.netX - n.cx, v.netZ - n.cz) || 1;
-            sx = (v.netX - n.cx) / cd; sz = (v.netZ - n.cz) / cd;
+      if (spline && T.nearest) {
+        // v68 RADIAL-X: same exact engine as the server (true distance +
+        // exact normals + converge + hard guarantee) — the displayed car can
+        // never sit past the drawn fence, at any angle or smoothing lag.
+        const probes = [[0, limC], [2.6, limP], [-2.4, limP]];
+        for (let iter = 0; iter < 3; iter++) {
+          let maxOver = 0, pnx = 0, pnz = 0;
+          for (const pr of probes) {
+            const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0]);
+            const over = n.d - pr[1];
+            if (over > maxOver) { maxOver = over; pnx = n.nx; pnz = n.nz; }
           }
+          if (maxOver <= 1e-7) break;
+          v.netX -= pnx * maxOver; v.netZ -= pnz * maxOver;
         }
-        if (maxOver <= 0) break;
-        v.netX -= sx * maxOver; v.netZ -= sz * maxOver;
+        for (let it = 0; it < 6; it++) {
+          let worst = 0;
+          for (const pr of probes) {
+            const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0]);
+            const over = n.d - pr[1];
+            if (over > worst) worst = over;
+            if (over > 1e-7) { v.netX -= n.nx * over; v.netZ -= n.nz * over; }
+          }
+          if (worst <= 1e-7) break;
+        }
+        let worst = 0;
+        for (const pr of probes) { const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0]); if (n.d - pr[1] > worst) worst = n.d - pr[1]; }
+        if (worst > 1e-4) { const nc = T.nearest(v.netX, v.netZ); v.netX = nc.cx; v.netZ = nc.cz; } // hard guarantee
+      } else {
+        const proj = (px, pz) => CORE.ellipseProj(px, pz, T.a, T.b);
+        // Map 0: v53 2-pass converge (historic behavior, untouched)
+        for (let iter = 0; iter < 2; iter++) {
+          let maxOver = 0, sx = 0, sz = 0;
+          for (const pr of [[0, limC], [2.6, limP], [-2.4, limP]]) {
+            const n = proj(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0]);
+            const over = Math.abs(n.lat) - pr[1];
+            if (over > maxOver) {
+              maxOver = over;
+              const cd = Math.hypot(v.netX - n.cx, v.netZ - n.cz) || 1;
+              sx = (v.netX - n.cx) / cd; sz = (v.netZ - n.cz) / cd;
+            }
+          }
+          if (maxOver <= 0) break;
+          v.netX -= sx * maxOver; v.netZ -= sz * maxOver;
+        }
       }
       const rr = 0.95 + 0.75; // capsule side + tire
       for (const hz of T.world.hazards) {
