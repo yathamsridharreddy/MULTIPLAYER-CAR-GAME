@@ -832,10 +832,12 @@
     // stacks in game.js) AND solid (collider at the same x,z), exactly like
     // map 0. Placed on the racing line so they read as intentional obstacles.
     const hazards = [];
-    [0.12, 0.38, 0.62, 0.88].forEach((f, i) => {
+    const hzf = track.hazardFracs || [0.12, 0.38, 0.62, 0.88]; // v69 per-map layouts
+    const side0 = track.hazardSide0 || 0;
+    hzf.forEach((f, i) => {
       const idx = Math.floor(f * P.length); const p = P[idx], p2 = P[(idx + 1) % P.length];
       let tx = p2.x - p.x, tz = p2.z - p.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
-      const nx = -tz, nz = tx; const side = (i % 2 ? 1 : -1) * (RH - 2.5);
+      const nx = -tz, nz = tx; const side = ((i + side0) % 2 ? 1 : -1) * (RH - 2.5);
       const x = p.x + nx * side, z = p.z + nz * side;
       hazards.push({ x, z }); colliders.push({ x, z, r: 0.75 });
     });
@@ -850,7 +852,7 @@
     const dirX = Math.sin(this.heading), dirY = Math.cos(this.heading);
     const rightX = dirY, rightY = -dirX;
     let speed = this.vx * dirX + this.vy * dirY;
-    const near = T.nearest ? T.nearest(this.x, this.z) : splineNearest(T, this.x, this.z, this._nearIdx);
+    const near = T.nearest ? T.nearest(this.x, this.z, this._th) : splineNearest(T, this.x, this.z, this._nearIdx); // v69 warm start
     if (!T.nearest) this._nearIdx = near.idx;
     const offroad = (T.type === 'spline' ? near.d : Math.abs(near.lat)) > 6.35 ? true : (T.type !== 'spline' && Math.abs(near.lat) > RH + 0.7); // v56: drag begins when wheels cross the white line
     if (held) { this.vx = 0; this.vy = 0; this.slip = 0; }
@@ -892,8 +894,9 @@
     const bc = clampCarToBarrier(this);
     if (bc && !ev.crash) ev.crash = bc;
     const dc = Math.hypot(this.x, this.z); if (dc > 900) { this.x *= 900 / dc; this.z *= 900 / dc; this.vx *= 0.5; this.vy *= 0.5; }
-    const near3 = T.nearest ? T.nearest(this.x, this.z) : splineNearest(T, this.x, this.z, this._nearIdx);
+    const near3 = T.nearest ? T.nearest(this.x, this.z, this._th) : splineNearest(T, this.x, this.z, this._nearIdx);
     if (!T.nearest) this._nearIdx = near3.idx;
+    if (T.nearest) this._th = near3.th; // v69 warm start
     const along = near3.along;
     // v59 safe respawn: stuck >3s or far outside -> last valid checkpoint, zero velocity
     if (raceState === 'racing' && !this.finished) {
@@ -905,7 +908,7 @@
       const stuckLimit = raw.throttle > 0.15 ? 8 : 3;
       if ((this._stuck > stuckLimit || Math.abs(near3.lat) > 12) && this._safe && this.participating) {
         this.x = this._safe.x; this.z = this._safe.z; this.heading = this._safe.h;
-        this.vx = 0; this.vy = 0; this._stuck = 0; this._nearIdx = null;
+        this.vx = 0; this.vy = 0; this._stuck = 0; this._nearIdx = null; this._th = null;
         ev.respawn = { slot: this.slot };
       }
     }
@@ -925,13 +928,13 @@
     return _carUpdate.apply(this, arguments);
   };
   const _carReset = Car.prototype.resetState;
-  Car.prototype.resetState = function (t) { this._along = null; this._nearIdx = null; return _carReset.apply(this, arguments); };
+  Car.prototype.resetState = function (t) { this._along = null; this._nearIdx = null; this._th = null; return _carReset.apply(this, arguments); };
   const _bot = RaceRoom.prototype.botInput;
   RaceRoom.prototype.botInput = function () {
     if (this.track && this.track.type === 'spline') {
       const car = this.cars[1];
       const P = this.track.points;
-      const n = this.track.nearest ? this.track.nearest(car.x, car.z) : splineNearest(this.track, car.x, car.z, car._nearIdx); if (!this.track.nearest) car._nearIdx = n.idx;
+      const n = this.track.nearest ? this.track.nearest(car.x, car.z, car._th) : splineNearest(this.track, car.x, car.z, car._nearIdx); if (!this.track.nearest) car._nearIdx = n.idx; else car._th = n.th; // v69 warm
       const la = P[(n.idx + 10) % P.length];
       const desired = Math.atan2(la.x - car.x, la.z - car.z);
       let diff = desired - car.heading;
@@ -1014,14 +1017,30 @@
 
     // EXACT field query: true nearest point, true distance, exact outward
     // normal, signed lateral (outward > 0), θ, sample idx and lap-along.
-    const field = (x, z) => {
+    // v69 perf: windowed coarse scan. Cars move ~2 m/tick (≈0.02 rad), so a
+    // ±40-sample window (≈1 rad of track) around the previous θ finds the
+    // nearest point with 81 distance checks instead of 512. Falls back to the
+    // full scan for teleports / far points (respawn, injections, stray cars).
+    const scanWin = (x, z, i0, i1) => {
       let best = 1e18, bi = 0, second = 1e18, si = 0, third = 1e18, ti = 0;
-      for (let i = 0; i < COARSE; i++) {
-        const dx = x - coarse[i].x, dz = z - coarse[i].z, d2 = dx * dx + dz * dz;
-        if (d2 < best) { third = second; ti = si; second = best; si = bi; best = d2; bi = i; }
-        else if (d2 < second) { third = second; ti = si; second = d2; si = i; }
-        else if (d2 < third) { third = d2; ti = i; }
+      for (let i = i0; i <= i1; i++) {
+        const j = (i + COARSE * 4) % COARSE;
+        const dx = x - coarse[j].x, dz = z - coarse[j].z, d2 = dx * dx + dz * dz;
+        if (d2 < best) { third = second; ti = si; second = best; si = bi; best = d2; bi = j; }
+        else if (d2 < second) { third = second; ti = si; second = d2; si = j; }
+        else if (d2 < third) { third = d2; ti = j; }
       }
+      return [best, bi, si, ti];
+    };
+    const field = (x, z, hint) => {
+      let w = null;
+      if (hint != null) {
+        const hc = Math.round(hint / PI2 * COARSE);
+        w = scanWin(x, z, hc - 40, hc + 40);
+        if (w[0] > 2500) w = null; // >50 m from the window -> full scan
+      }
+      if (!w) w = scanWin(x, z, 0, COARSE - 1);
+      const best = w[0], bi = w[1], si = w[2], ti = w[3];
       let bth = 0, bd2 = 1e18;
       for (const ci of [bi, si, ti]) {
         const th = refine(ci / COARSE * PI2, x, z);
@@ -1059,16 +1078,19 @@
   }
 
   (function buildRadialMaps() {
+    // v69: maps 1-4 are FULLY NEW circuits — new shapes (harmonic signatures),
+    // new obstacle/pickup layouts, new scenery seeds. Map 0 untouched.
     const defs = [
-      { R0: 112, harms: [{ k: 4, amp: 0.10 }], theme: 'neon',  name: 'NEON CITY' },
-      { R0: 118, harms: [{ k: 3, amp: 0.14 }], theme: 'island', name: 'ISLAND MOTORFEST' },
-      { R0: 122, harms: [{ k: 2, amp: 0.22 }], theme: 'desert', name: 'CANYON CHICANE' },
-      { R0: 106, harms: [{ k: 3, amp: 0.16 }, { k: 5, amp: 0.05 }], theme: 'snow', name: 'HAIRPIN GP' }
+      { R0: 110, harms: [{ k: 3, amp: 0.09, ph: 0.8 }, { k: 5, amp: 0.045, ph: 2.1 }], theme: 'neon',   name: 'NEON CITY',        hz: [0.16, 0.41, 0.63, 0.87], pk: [0.27, 0.52, 0.79] },
+      { R0: 117, harms: [{ k: 2, amp: 0.13, ph: 0.5 }, { k: 4, amp: 0.05,  ph: 1.2 }], theme: 'island', name: 'ISLAND MOTORFEST', hz: [0.10, 0.35, 0.60, 0.85], pk: [0.22, 0.50, 0.80] },
+      { R0: 121, harms: [{ k: 2, amp: 0.16, ph: 1.9 }, { k: 3, amp: 0.09,  ph: 0.4 }], theme: 'desert', name: 'CANYON CHICANE',   hz: [0.14, 0.39, 0.64, 0.89], pk: [0.25, 0.55, 0.82] },
+      { R0: 105, harms: [{ k: 3, amp: 0.15, ph: 2.6 }, { k: 6, amp: 0.04,  ph: 0.9 }], theme: 'snow',   name: 'HAIRPIN GP',       hz: [0.18, 0.43, 0.68, 0.93], pk: [0.30, 0.57, 0.84] }
     ];
     defs.forEach((d, i) => {
       const t = makeRadialTrack(d.R0, d.harms, 256);
       t.id = 1 + i; t.theme = d.theme; t.name = d.name;
-      t.world = makeSplineWorld(1000 + i * 77, t, d.theme);
+      t.hazardFracs = d.hz; t.pickupFracs = d.pk; t.hazardSide0 = i % 2; // v69 fresh layouts
+      t.world = makeSplineWorld(3000 + i * 131, t, d.theme); // v69 new scenery seed
       MAPS[1 + i] = t;
     });
   })();
@@ -1128,7 +1150,8 @@
     for (let iter = 0; iter < 3; iter++) {
       let maxOver = 0, pnx = 0, pnz = 0;
       for (const pr of probes) {
-        const n = T.nearest(car.x + dirX * pr[0], car.z + dirY * pr[0]);
+        const n = T.nearest(car.x + dirX * pr[0], car.z + dirY * pr[0], car._th); // v69 warm
+        if (pr[0] === 0) car._th = n.th;
         const over = n.d - pr[1];
         if (over > maxOver) { maxOver = over; pnx = n.nx; pnz = n.nz; }
       }
@@ -1148,7 +1171,7 @@
     for (let it = 0; it < 6; it++) {
       let worst = 0;
       for (const pr of probes) {
-        const n = T.nearest(car.x + dirX * pr[0], car.z + dirY * pr[0]);
+        const n = T.nearest(car.x + dirX * pr[0], car.z + dirY * pr[0], car._th);
         const over = n.d - pr[1];
         if (over > worst) worst = over;
         if (over > 1e-7) { car.x -= n.nx * over; car.z -= n.nz * over; }
@@ -1160,11 +1183,11 @@
     //    the exact centerline. Escape-proof regardless of inputs or bugs.
     let worst = 0;
     for (const pr of probes) {
-      const n = T.nearest(car.x + dirX * pr[0], car.z + dirY * pr[0]);
+      const n = T.nearest(car.x + dirX * pr[0], car.z + dirY * pr[0], car._th);
       if (n.d - pr[1] > worst) worst = n.d - pr[1];
     }
     if (worst > 1e-4) {
-      const nc = T.nearest(car.x, car.z);
+      const nc = T.nearest(car.x, car.z, car._th); car._th = nc.th;
       car.x = nc.cx; car.z = nc.cz;
       const vAway = car.vx * nc.nx + car.vy * nc.nz;
       if (vAway > 0) { car.vx -= nc.nx * vAway; car.vy -= nc.nz * vAway; }
@@ -1176,7 +1199,8 @@
   // v59: deterministic power-up spots (3 per map, on-road, alternating sides)
   function pickupSpots(track) {
     const spots = [];
-    [0.2, 0.5, 0.8].forEach((f, i) => {
+    const pkf = track.pickupFracs || [0.2, 0.5, 0.8]; // v69 per-map layouts
+    pkf.forEach((f, i) => {
       const side = (i % 2 ? 3 : -3);
       if (track.points) {
         const P = track.points;
@@ -1213,7 +1237,7 @@
   // browser caches an old game-core, its drawn track won't match the server's
   // car positions; the client detects this via /version.geom and forces reload.
   const GEOM_ID = (function () {
-    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 5, p: 3, L: m.limC || 0 }))); // k=barrier gen (v68 RADIAL-X), p=powerups, L=boundary spec
+    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 6, p: 3, L: m.limC || 0 }))); // k=barrier gen (v69 new circuits), p=powerups, L=boundary spec
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
     return (h >>> 0).toString(36);

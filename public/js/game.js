@@ -2108,7 +2108,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v68';
+const BUILD = 'v69';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2646,30 +2646,35 @@ function placeCar(slot, cs, dt) {
         // v68 RADIAL-X: same exact engine as the server (true distance +
         // exact normals + converge + hard guarantee) — the displayed car can
         // never sit past the drawn fence, at any angle or smoothing lag.
+        // v69 perf: warm-started windowed queries + fast reject when the car
+        // is mid-road (nose can reach at most center-distance + 2.6).
         const probes = [[0, limC], [2.6, limP], [-2.4, limP]];
-        for (let iter = 0; iter < 3; iter++) {
-          let maxOver = 0, pnx = 0, pnz = 0;
-          for (const pr of probes) {
-            const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0]);
-            const over = n.d - pr[1];
-            if (over > maxOver) { maxOver = over; pnx = n.nx; pnz = n.nz; }
+        const nC = T.nearest(v.netX, v.netZ, v._th); v._th = nC.th;
+        if (!(nC.d <= limC && nC.d + 2.6 <= limP)) {
+          for (let iter = 0; iter < 3; iter++) {
+            let maxOver = 0, pnx = 0, pnz = 0;
+            for (const pr of probes) {
+              const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0], v._th);
+              const over = n.d - pr[1];
+              if (over > maxOver) { maxOver = over; pnx = n.nx; pnz = n.nz; }
+            }
+            if (maxOver <= 1e-7) break;
+            v.netX -= pnx * maxOver; v.netZ -= pnz * maxOver;
           }
-          if (maxOver <= 1e-7) break;
-          v.netX -= pnx * maxOver; v.netZ -= pnz * maxOver;
-        }
-        for (let it = 0; it < 6; it++) {
+          for (let it = 0; it < 6; it++) {
+            let worst = 0;
+            for (const pr of probes) {
+              const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0], v._th);
+              const over = n.d - pr[1];
+              if (over > worst) worst = over;
+              if (over > 1e-7) { v.netX -= n.nx * over; v.netZ -= n.nz * over; }
+            }
+            if (worst <= 1e-7) break;
+          }
           let worst = 0;
-          for (const pr of probes) {
-            const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0]);
-            const over = n.d - pr[1];
-            if (over > worst) worst = over;
-            if (over > 1e-7) { v.netX -= n.nx * over; v.netZ -= n.nz * over; }
-          }
-          if (worst <= 1e-7) break;
+          for (const pr of probes) { const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0], v._th); if (n.d - pr[1] > worst) worst = n.d - pr[1]; }
+          if (worst > 1e-4) { const nc = T.nearest(v.netX, v.netZ, v._th); v.netX = nc.cx; v.netZ = nc.cz; v._th = nc.th; } // hard guarantee
         }
-        let worst = 0;
-        for (const pr of probes) { const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0]); if (n.d - pr[1] > worst) worst = n.d - pr[1]; }
-        if (worst > 1e-4) { const nc = T.nearest(v.netX, v.netZ); v.netX = nc.cx; v.netZ = nc.cz; } // hard guarantee
       } else {
         const proj = (px, pz) => CORE.ellipseProj(px, pz, T.a, T.b);
         // Map 0: v53 2-pass converge (historic behavior, untouched)
