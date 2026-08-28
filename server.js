@@ -585,7 +585,7 @@ setInterval(() => {
       // full 30 Hz so gameplay quality is unchanged. Leaderboard piggybacks
       // at 1 Hz instead of every snapshot (clients cache the last one).
       const inRace = room.state !== 'waiting';
-      const sendNow = inRace ? (!LOW_BW || tickCount % 3 !== 0) : tickCount % 6 === 0;
+      const sendNow = inRace ? (!LOW_BW || tickCount % 2 !== 0) : tickCount % 6 === 0; // v71: 15 Hz snapshots in lean mode (was 10)
       if (sendNow) {
         const snapObj = room.snapshot();
         if (tickCount % 30 === 0 || !entry.lbSent) { snapObj.lb = lbGet(room.mapId); entry.lbSent = true; }
@@ -620,7 +620,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v70', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v71', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

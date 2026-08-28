@@ -329,10 +329,33 @@ function buildSplineVisuals(map, T) {
     ribbon(map.offsetPts(0, 512), 0, RH, 0.02, new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
     ribbon(map.offsetPts(RH - 0.7, 512), 0, 0.18, 0.045, lineMat);
     ribbon(map.offsetPts(-(RH - 0.7), 512), 0, 0.18, 0.045, lineMat);
-    ribbon(map.offsetPts(FO, 512), 0, 0.12, 0.34, fenceMat);
-    ribbon(map.offsetPts(-FO, 512), 0, 0.12, 0.34, fenceMat);
-    ribbon(map.offsetPts(FO, 512), 0, 0.1, 0.78, fenceMat);
-    ribbon(map.offsetPts(-FO, 512), 0, 0.1, 0.78, fenceMat);
+    // v71: MAP-0-STYLE SOLID WALLS + RAILS along the exact curves — same
+    // geometry/heights/colors as Highland's proven barrier (no thin rails).
+    const wallGeo = new THREE.BoxGeometry(0.5, 0.95, 2.7);
+    const wallMat = new THREE.MeshStandardMaterial({ color: T.night ? 0x3a4050 : 0xb9bec4, roughness: 0.85 });
+    const railGeo = new THREE.BoxGeometry(0.54, 0.14, 2.7);
+    const railMat = new THREE.MeshStandardMaterial({ color: T.night ? 0x39d5ff : 0xc9302c, roughness: 0.6 });
+    const wallLine = (side) => {
+      const pts = map.offsetPts((RH + 3.65) * side, 1024);
+      const items = [];
+      let acc = 0, lx = pts[0].x, lz = pts[0].z;
+      for (let i = 1; i <= 1024; i++) {
+        const p = pts[i % 1024];
+        acc += Math.hypot(p.x - lx, p.z - lz); lx = p.x; lz = p.z;
+        if (acc >= 2.6) { acc = 0; const q = pts[(i + 1) % 1024]; items.push({ x: p.x, z: p.z, yaw: Math.atan2(q.x - p.x, q.z - p.z) }); }
+      }
+      const walls = new THREE.InstancedMesh(wallGeo, wallMat, items.length);
+      const rails = new THREE.InstancedMesh(railGeo, railMat, items.length);
+      const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), SC = new THREE.Vector3(1, 1, 1), V = new THREE.Vector3();
+      items.forEach((it2, ix) => {
+        Q.setFromAxisAngle(UP, it2.yaw);
+        M.compose(V.set(it2.x, 0.475, it2.z), Q, SC); walls.setMatrixAt(ix, M);
+        M.compose(V.set(it2.x, 1.02, it2.z), Q, SC); rails.setMatrixAt(ix, M);
+      });
+      walls.receiveShadow = rails.receiveShadow = true;
+      worldGroup.add(walls, rails);
+    };
+    wallLine(1); wallLine(-1);
   } else {
     ribbon(cl, 0, RH, 0.02, new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
     ribbon(cl, RH - 0.7, 0.18, 0.045, lineMat);
@@ -2108,7 +2131,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v70';
+const BUILD = 'v71';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2127,7 +2150,7 @@ const BUILD = 'v70';
         }
         const d = document.createElement('div');
         d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99;background:#b26a00;color:#fff;text-align:center;padding:7px;font:600 13px system-ui,sans-serif;letter-spacing:.4px;';
-        d.textContent = '⚠ TRACK DATA MISMATCH — reload or update game files (frontend + backend).';
+        d.textContent = '⚠ UPDATE STUCK — press ⌘⇧R (hard refresh) once to load the newest tracks';
         document.body.appendChild(d);
       }
     }).catch(() => {});
@@ -2626,7 +2649,7 @@ function placeCar(slot, cs, dt) {
   if (dist > expMove * 6 + 2.5 || !isFinite(dist)) {       // reset/teleport: snap
     v.netX = cs.x; v.netZ = cs.z; v.netH = cs.h;
   } else {
-    const k = 1 - Math.exp(-dt / 0.04);
+    const k = 1 - Math.exp(-dt / (typeof pingMs !== 'undefined' && pingMs > 220 ? 0.09 : 0.04)); // v71: calmer follow on high ping
     v.netX += dx * k; v.netZ += dz * k;
     let dh = cs.h - v.netH; while (dh > Math.PI) dh -= PI2; while (dh < -Math.PI) dh += PI2;
     v.netH += dh * k;
@@ -2789,6 +2812,8 @@ function updateHUD(mine, rival) {
       hText(pingEl, p + ' ms');
       const cls = 'ping ' + (p < 90 ? 'good' : p < 180 ? 'ok' : 'bad');
       if (pingEl.__c !== cls) { pingEl.__c = cls; pingEl.className = cls; }
+      // v71 honest diagnostics: tell the player what high ping means
+      pingEl.title = p < 180 ? 'Round-trip time to the race server' : 'HIGH PING = your network route to the server (distance/Wi-Fi), not a game bug. Try 5 GHz Wi-Fi or a closer network.';
     }
   }
   const fpsEl = hEl('fps-meter');

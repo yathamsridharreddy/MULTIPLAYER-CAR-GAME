@@ -1076,10 +1076,12 @@
     // v68 AUTHORITATIVE BOUNDARY SPEC — one source of truth on the track object.
     // roadHalf = asphalt half-width; limC = max car-center lateral;
     // limP = max nose/tail reach; fenceOff = visible fence inner face == limP.
-    track.roadHalf = RH;   // 8.0 asphalt half-width (visual road)
-    track.limC = 8.4;      // max car-CENTER lateral: 0.4 m onto shoulder, NO wall inside road
-    track.limP = 10.0;     // max nose/tail reach
-    track.fenceOff = 10.0; // visible fence inner face === physical nose limit (MUST equal limP)
+    track.roadHalf = RH;          // 8.0 asphalt half-width (visual road)
+    // v71: maps 1-4 use MAP 0's exact barrier numbers & wall system —
+    // the proven, trusted collider behavior, on the exact analytic field.
+    track.limC = RH + 2.4;        // 10.4 = Map 0 center limit (identical)
+    track.limP = RH + 3.35;       // 11.35 = Map 0 nose/tail limit (identical)
+    track.fenceOff = track.limP;  // visible wall inner face === physical nose limit (MUST equal limP)
     track.nearest = field;
     // exact offset curves for visuals — road edges, lines and fences are drawn
     // from the SAME formula physics uses (zero divergence by construction)
@@ -1251,7 +1253,7 @@
   // browser caches an old game-core, its drawn track won't match the server's
   // car positions; the client detects this via /version.geom and forces reload.
   const GEOM_ID = (function () {
-    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 7, p: 3, L: m.limC || 0 }))); // k=barrier gen (v69 new circuits), p=powerups, L=boundary spec
+    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 8, p: 3, L: m.limC || 0 }))); // k=barrier gen (v69 new circuits), p=powerups, L=boundary spec
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
     return (h >>> 0).toString(36);
