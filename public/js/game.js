@@ -2108,7 +2108,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v69';
+const BUILD = 'v70';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

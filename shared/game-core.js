@@ -841,7 +841,21 @@
       const x = p.x + nx * side, z = p.z + nz * side;
       hazards.push({ x, z }); colliders.push({ x, z, r: 0.75 });
     });
-    return { buildings, trees, mountains: [], colliders, billboard: { x: P[0].x, z: P[0].z, rot: 0 }, hazards };
+    // v70: themed horizon for maps 1-4 (was empty) — same language as Map 0:
+    // island = volcano + hills, desert = mesas, neon/snow = peak ring
+    const mountains = [];
+    const mCount = theme === 'island' ? 4 : (theme === 'desert' ? 10 : 14);
+    for (let i = 0; i < mCount; i++) {
+      mountains.push({
+        t: (i / mCount) * PI2 + rnd() * 0.3,
+        dist: 680 + rnd() * 280,
+        h: (theme === 'island' && i === 0 ? 320 : 120 + rnd() * 190),
+        r: 90 + rnd() * 110,
+        rot: rnd() * Math.PI,
+        volcano: theme === 'island' && i === 0
+      });
+    }
+    return { buildings, trees, mountains, colliders, billboard: { x: P[0].x, z: P[0].z, rot: 0 }, hazards };
   }
 
   Car.prototype.updateSpline = function (dt, time, raceState, colliders, room) {
@@ -1237,7 +1251,7 @@
   // browser caches an old game-core, its drawn track won't match the server's
   // car positions; the client detects this via /version.geom and forces reload.
   const GEOM_ID = (function () {
-    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 6, p: 3, L: m.limC || 0 }))); // k=barrier gen (v69 new circuits), p=powerups, L=boundary spec
+    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 7, p: 3, L: m.limC || 0 }))); // k=barrier gen (v69 new circuits), p=powerups, L=boundary spec
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
     return (h >>> 0).toString(36);
