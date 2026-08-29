@@ -356,6 +356,32 @@ function buildSplineVisuals(map, T) {
       worldGroup.add(walls, rails);
     };
     wallLine(1); wallLine(-1);
+    // v72: Map-0-style red/white curbs at the road edges, along exact curves
+    const curbGeo = new THREE.BoxGeometry(1.0, 0.07, 2.6);
+    const curbR = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.9 });
+    const curbW = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.9 });
+    const curbLine = (side) => {
+      const pts = map.offsetPts((RH + 0.6) * side, 1024);
+      const items = [];
+      let acc = 0, lx = pts[0].x, lz = pts[0].z;
+      for (let i = 1; i <= 1024; i++) {
+        const p = pts[i % 1024];
+        acc += Math.hypot(p.x - lx, p.z - lz); lx = p.x; lz = p.z;
+        if (acc >= 2.6) { acc = 0; const q = pts[(i + 1) % 1024]; items.push({ x: p.x, z: p.z, yaw: Math.atan2(q.x - p.x, q.z - p.z) }); }
+      }
+      const ir = new THREE.InstancedMesh(curbGeo, curbR, Math.ceil(items.length / 2));
+      const iw = new THREE.InstancedMesh(curbGeo, curbW, Math.floor(items.length / 2));
+      const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), SC = new THREE.Vector3(1, 1, 1), V = new THREE.Vector3();
+      let ri = 0, wi = 0;
+      items.forEach((it2, ix) => {
+        Q.setFromAxisAngle(UP, it2.yaw);
+        M.compose(V.set(it2.x, 0.045, it2.z), Q, SC);
+        if (ix % 2 === 0) ir.setMatrixAt(ri++, M); else iw.setMatrixAt(wi++, M);
+      });
+      ir.receiveShadow = iw.receiveShadow = true;
+      worldGroup.add(ir, iw);
+    };
+    curbLine(1); curbLine(-1);
   } else {
     ribbon(cl, 0, RH, 0.02, new THREE.MeshStandardMaterial({ map: asphaltTexture(T.night ? '#16181e' : '#2a2d32'), roughness: 0.92, metalness: 0.05 }));
     ribbon(cl, RH - 0.7, 0.18, 0.045, lineMat);
@@ -606,6 +632,7 @@ function buildWorld(map) {
 
   // curbs + barriers
   {
+  if (map.type !== 'spline') { // v72: ellipse-only decor must never leak onto spline maps
     const curbGeo = new THREE.BoxGeometry(1.0, 0.07, 2.6);
     const curbR = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.55 });
     const curbW = new THREE.MeshStandardMaterial({ color: 0xefefea, roughness: 0.55 });
@@ -636,6 +663,7 @@ function buildWorld(map) {
       instancedAlong(railGeo, railMat, off, 2.6, 1.02);
     }
   }
+  }
 
   // sponsor ad boards (neon at night)
   {
@@ -649,7 +677,9 @@ function buildWorld(map) {
       const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
       const t = (i / brands.length) * PI2 + 0.35;
       const off = RH + 6.8;
-      const x = (A + off) * Math.cos(t), z = (B + off) * Math.sin(t);
+      let x, z; // v72: spline maps place boards along the exact curve, not the bounding ellipse
+      if (map.ptAt) { const p = map.ptAt(t), n = map.normAt(t); x = p.x + n.x * off; z = p.z + n.z * off; }
+      else { x = (A + off) * Math.cos(t); z = (B + off) * Math.sin(t); }
       const m = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.7 });
       if (T.night) { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = tex; m.emissiveIntensity = 0.7; }
       const board = new THREE.Mesh(new THREE.PlaneGeometry(11, 2.7), m);
@@ -666,7 +696,9 @@ function buildWorld(map) {
     for (let i = 0; i < 10; i++) {
       const t = (i / 10) * PI2;
       const off = RH + 10;
-      const x = (A + off) * Math.cos(t), z = (B + off) * Math.sin(t);
+      let x, z; // v72 spline-aware
+      if (map.ptAt) { const p = map.ptAt(t), n = map.normAt(t); x = p.x + n.x * off; z = p.z + n.z * off; }
+      else { x = (A + off) * Math.cos(t); z = (B + off) * Math.sin(t); }
       const grp = new THREE.Group();
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, 8, 8), poleMat);
       pole.position.y = 4; pole.castShadow = true;
@@ -2131,7 +2163,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v71';
+const BUILD = 'v72';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
