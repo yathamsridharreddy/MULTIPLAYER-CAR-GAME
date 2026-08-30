@@ -177,3 +177,35 @@ create table if not exists public.player_seasons (
 );
 alter table public.player_seasons enable row level security;
 create policy "pseasons read" on public.player_seasons for select using (true);
+
+-- v75: garage economy (wallet, inventory, equipped). Clients READ equipped
+-- (showcase) + own wallet/inventory; ALL writes via relay service role.
+create table if not exists public.player_wallet (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  coins   bigint not null default 0 check (coins >= 0),
+  updated_at timestamptz not null default now()
+);
+alter table public.player_wallet enable row level security;
+create policy "wallet own read" on public.player_wallet for select using (auth.uid() = user_id);
+
+create table if not exists public.player_inventory (
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  item_id     text not null,
+  acquired_at timestamptz not null default now(),
+  primary key (user_id, item_id)
+);
+alter table public.player_inventory enable row level security;
+create policy "inv own read" on public.player_inventory for select using (auth.uid() = user_id);
+
+create table if not exists public.player_equipped (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  car     text not null default 'street_runner',
+  paint   int not null default 0,
+  wheels  int not null default 0,
+  trail   int not null default 0,
+  decal   int not null default 0,
+  neon    int not null default 0,
+  title   text not null default ''
+);
+alter table public.player_equipped enable row level security;
+create policy "equipped read" on public.player_equipped for select using (true);

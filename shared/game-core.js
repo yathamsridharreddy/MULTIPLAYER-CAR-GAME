@@ -736,7 +736,7 @@
           elim: c.eliminated ? 1 : 0,
           p: c.participating ? 1 : 0,
           pb: c.puB > 0 ? 1 : 0, ps: c.puSh ? 1 : 0, pl: c.puS > 0 ? 1 : 0,
-          dc: (c.cos && c.cos.decal) || 0, wh: (c.cos && c.cos.wheels) || 0, tr: (c.cos && c.cos.trail) || 0, ti: c.title || ''
+          dc: (c.cos && c.cos.decal) || 0, wh: (c.cos && c.cos.wheels) || 0, tr: (c.cos && c.cos.trail) || 0, ne: (c.cos && c.cos.neon) || 0, sp: (c.cos && c.cos.sp) || 0, ti: c.title || ''
         })),
         pu: this.pickups.map((p) => (p.on ? 1 : 0)).join(''),
         events: this.events.splice(0, this.events.length)

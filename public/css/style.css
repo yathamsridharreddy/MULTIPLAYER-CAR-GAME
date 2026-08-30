@@ -622,3 +622,22 @@ body.spec #overlay, body.spec .share-row, body.spec #quickplay-btn { display: no
 .f-row{display:flex;gap:6px;margin:6px 0}
 .f-in{flex:1;background:#0e1322;border:1px solid #232c47;border-radius:8px;color:#fff;padding:8px 10px;font:600 13px system-ui}
 .f-item{display:flex;justify-content:space-between;align-items:center;padding:7px 8px;border-bottom:1px solid #1c2440;font:600 13px system-ui;color:#cfd6dd}
+
+/* v75 garage */
+.g-head{font:800 14px Orbitron,system-ui;color:#ffd479;margin:4px 0 8px}
+.g-head b{font-size:18px}
+.g-hint{color:#8b93a8;font:600 11px system-ui;margin-left:8px}
+.g-cars{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.g-car{border:2px solid #232c47;border-radius:12px;padding:8px;background:#121828;text-align:center}
+.g-car.sel{background:#1a2138;box-shadow:0 0 12px #ffd47933}
+.g-cn{font:900 13px Orbitron,system-ui}
+.g-cr{font:700 9px system-ui;letter-spacing:1.5px;color:#8b93a8;margin:2px 0 6px}
+.g-bars i{display:block;height:4px;background:linear-gradient(90deg,#39d5ff,#7ee78a);border-radius:3px;margin:3px auto;max-width:110px}
+.g-st{color:#ffd479;font:800 11px Orbitron,system-ui;margin-top:6px}
+.g-lock{color:#8b93a8;font:700 10px system-ui;margin-top:6px}
+.g-items{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.g-it{display:flex;align-items:center;gap:6px;background:#121828;border:1px solid #232c47;border-radius:10px;color:#cfd6dd;padding:7px 10px;font:700 11px system-ui;cursor:pointer}
+.g-it.sel{border-color:#7ee78a;color:#7ee78a}
+.g-it .sw{width:14px;height:14px;border-radius:4px;display:inline-block}
+.g-it .lk{color:#8b93a8;font-style:normal;font-size:10px}
+.p-car{font:800 12px Orbitron,system-ui}

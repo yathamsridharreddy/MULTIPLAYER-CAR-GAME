@@ -20,6 +20,7 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const core = require('./shared/game-core.js');
 const prog = require('./shared/progression.js'); // v73 XP/Elo/tier math
+const cos = require('./shared/cosmetics.js'); // v75 garage catalog
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 // Opt-in lean mode for tight free tiers (set LOW_BANDWIDTH=1): race snapshots
@@ -236,6 +237,10 @@ async function settleRace(entry) {
   let stats = {}, recs = {}, achHave = {}, mapCount = {}, seasXp = {}, season = null;
   try { const r = await fetch(SB_URL + '/rest/v1/seasons?order=id.desc&limit=1&select=id,name,end_at', { headers: sbHdr() }); if (r.ok) { const j = await r.json(); season = j[0] || null; } } catch (e) {}
   try { const r = await fetch(SB_URL + '/rest/v1/player_stats?' + uq + '&select=user_id,rating,peak_rating,xp,streak,best_streak,races,wins,podiums,daily_days,last_daily,challenges_done', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { stats[x.user_id] = x; }); } catch (e) {}
+  let wallet = {};
+  try { const r = await fetch(SB_URL + '/rest/v1/player_wallet?' + uq + '&select=user_id,coins', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { wallet[x.user_id] = Number(x.coins) || 0; }); } catch (e) {}
+  let invRows = {};
+  try { const r = await fetch(SB_URL + '/rest/v1/player_inventory?' + uq + '&select=user_id,item_id', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { (invRows[x.user_id] = invRows[x.user_id] || []).push(x.item_id); }); } catch (e) {}
   try { const r = await fetch(SB_URL + '/rest/v1/player_map_records?' + uq + '&select=user_id,map', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { mapCount[x.user_id] = (mapCount[x.user_id] || 0) + 1; }); } catch (e) {}
   try { const r = await fetch(SB_URL + '/rest/v1/player_achievements?' + uq + '&select=user_id,ach', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { (achHave[x.user_id] = achHave[x.user_id] || {})[x.ach] = true; }); } catch (e) {}
   try { const r = await fetch(SB_URL + '/rest/v1/player_seasons?' + uq + (season ? '&season_id=eq.' + season.id : '') + '&select=user_id,xp', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { seasXp[x.user_id] = Number(x.xp) || 0; }); } catch (e) {}
@@ -276,12 +281,18 @@ async function settleRace(entry) {
     const newAch = [];
     for (const a of prog.ACHIEVEMENTS) { if (!(achHave[h.uid] && achHave[h.uid][a.id]) && a.test(d)) newAch.push(a); }
     let achXp = 0; for (const a of newAch) achXp += a.xp;
+    // v75 Rush Coins (server-awarded; never client-submitted)
+    let coins = 0;
+    if (h.c.finished) coins += cos.COINS.finish;
+    if (win) coins += cos.COINS.win; else if (podium) coins += cos.COINS.podium;
+    if (dailyXp) coins += cos.COINS.daily;
+    const coinsNew = (wallet[h.uid] || 0) + coins;
     const xpTotal = xpBase + dailyXp + chXp + achXp;
     const xpOld = Number(st.xp || 0), xpNew = xpOld + xpTotal;
     const lvlOld = prog.levelFromXp(xpOld).level, lvlNew = prog.levelFromXp(xpNew).level;
     const ratingNew = (st.rating || 1000) + rd;
     const streakNew = win ? (st.streak || 0) + 1 : 0;
-    rowsOut.push({ slot: h.c.slot, pos, xp: xpTotal, rd, ratingNew, levelNew: lvlNew, levelUp: lvlNew > lvlOld, pr, dailyXp, chDone, ach: newAch.map((a) => ({ id: a.id, name: a.name, icon: a.icon, xp: a.xp })), seasonId: season ? season.id : null });
+    rowsOut.push({ slot: h.c.slot, pos, xp: xpTotal, rd, ratingNew, levelNew: lvlNew, levelUp: lvlNew > lvlOld, pr, dailyXp, chDone, coins, coinsNew, ach: newAch.map((a) => ({ id: a.id, name: a.name, icon: a.icon, xp: a.xp })), seasonId: season ? season.id : null });
     const key = room.code + '-' + (entry.raceSeq || 0) + '-' + h.c.slot; // idempotent
     try {
       await fetch(SB_URL + '/rest/v1/race_history', { method: 'POST',
@@ -293,6 +304,9 @@ async function settleRace(entry) {
       await fetch(SB_URL + '/rest/v1/player_map_records', { method: 'POST',
         headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
         body: JSON.stringify([{ user_id: h.uid, map: room.mapId, races: (prev ? (prev.races || 0) : 0) + 1, wins: (prev ? (prev.wins || 0) : 0) + (win ? 1 : 0), best_lap_ms: (prev && prev.best_lap_ms != null && (lapMs == null || prev.best_lap_ms < lapMs)) ? prev.best_lap_ms : lapMs, best_race_ms: (prev && prev.best_race_ms != null && (raceMs == null || prev.best_race_ms < raceMs)) ? prev.best_race_ms : raceMs }]) });
+      await fetch(SB_URL + '/rest/v1/player_wallet', { method: 'POST',
+        headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+        body: JSON.stringify([{ user_id: h.uid, coins: coinsNew, updated_at: new Date().toISOString() }]) });
       if (newAch.length) await fetch(SB_URL + '/rest/v1/player_achievements', { method: 'POST',
         headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
         body: JSON.stringify(newAch.map((a) => ({ user_id: h.uid, ach: a.id }))) });
@@ -563,6 +577,72 @@ function handleMessage(client, msg) {
       break;
     }
 
+    case 'equip': { // v75: server validates every unlock before writing equipped
+      if (client.role !== 'screen' || !client.uid) break;
+      (async () => {
+        try {
+          const uid = client.uid, eq = msg.eq || {};
+          const [stR, invR] = await Promise.all([
+            fetch(SB_URL + '/rest/v1/player_stats?user_id=eq.' + uid + '&select=xp,wins,rating', { headers: sbHdr() }),
+            fetch(SB_URL + '/rest/v1/player_inventory?user_id=eq.' + uid + '&select=item_id', { headers: sbHdr() }),
+          ]);
+          const st = stR.ok ? ((await stR.json())[0] || {}) : {};
+          const owned = invR.ok ? (await invR.json()).map((x) => x.item_id) : [];
+          const d = { level: prog.levelFromXp(Number(st.xp) || 0).level, wins: st.wins || 0, rating: st.rating || 1000, owned };
+          const car = cos.findCar(String(eq.car || 'street_runner'));
+          if (!cos.itemUnlocked(car.unlock, d, 'car:' + car.id)) return sendJSON(client.ws, { type: 'equip-err', msg: 'locked car' });
+          const pick = (list, kind, cur) => {
+            const it = list.find((x) => x.id === (parseInt(cur, 10) || 0));
+            if (!it) return 0;
+            return cos.itemUnlocked(it.unlock, d, kind + ':' + it.id) ? it.id : 0;
+          };
+          const out = {
+            user_id: uid, car: car.id,
+            paint: pick(cos.PAINTS, 'paint', eq.paint),
+            wheels: pick(cos.WHEELS, 'wheels', eq.wheels),
+            trail: pick(cos.TRAILS, 'trail', eq.trail),
+            decal: pick(cos.DECALS, 'decal', eq.decal),
+            neon: pick(cos.NEONS, 'neon', eq.neon),
+            title: String(eq.title || '').slice(0, 24)
+          };
+          await fetch(SB_URL + '/rest/v1/player_equipped', { method: 'POST',
+            headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+            body: JSON.stringify([out]) });
+          sendJSON(client.ws, { type: 'equipped', eq: out });
+        } catch (e) {}
+      })();
+      break;
+    }
+    case 'buy': { // v75: coin purchases; wallet check happens server-side only
+      if (client.role !== 'screen' || !client.uid) break;
+      (async () => {
+        try {
+          const uid = client.uid;
+          const m = String(msg.item || '').match(/^(paint|wheels|trail|decal|neon):(\d+)$/);
+          if (!m) return;
+          const kind = m[1], id = parseInt(m[2], 10);
+          const list = kind === 'paint' ? cos.PAINTS : kind === 'wheels' ? cos.WHEELS : kind === 'trail' ? cos.TRAILS : kind === 'decal' ? cos.DECALS : cos.NEONS;
+          const it = list.find((x) => x.id === id);
+          if (!it || !cos.isCoinItem(it.unlock)) return;
+          const [wR, iR] = await Promise.all([
+            fetch(SB_URL + '/rest/v1/player_wallet?user_id=eq.' + uid + '&select=coins', { headers: sbHdr() }),
+            fetch(SB_URL + '/rest/v1/player_inventory?user_id=eq.' + uid + '&item_id=eq.' + kind + ':' + id + '&select=item_id', { headers: sbHdr() }),
+          ]);
+          const have = iR.ok ? (await iR.json()).length : 0;
+          if (have) return sendJSON(client.ws, { type: 'buy-err', msg: 'owned' });
+          const coins = wR.ok ? (((await wR.json())[0] || {}).coins || 0) : 0;
+          if (coins < it.unlock.v) return sendJSON(client.ws, { type: 'buy-err', msg: 'need ' + it.unlock.v + ' coins' });
+          await fetch(SB_URL + '/rest/v1/player_wallet', { method: 'POST',
+            headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+            body: JSON.stringify([{ user_id: uid, coins: coins - it.unlock.v, updated_at: new Date().toISOString() }]) });
+          await fetch(SB_URL + '/rest/v1/player_inventory', { method: 'POST',
+            headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
+            body: JSON.stringify([{ user_id: uid, item_id: kind + ':' + id }]) });
+          sendJSON(client.ws, { type: 'bought', item: kind + ':' + id, coins: coins - it.unlock.v });
+        } catch (e) {}
+      })();
+      break;
+    }
     case 'start':
       if (client.entry && client.role === 'screen') { client.entry.rematch && client.entry.rematch.clear(); client.entry.room.start(); }
       break;
@@ -735,7 +815,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v74', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v75', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

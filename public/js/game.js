@@ -1098,6 +1098,13 @@ if (prefs.botSkill == null) prefs.botSkill = 1;
 // players update one leaderboard entry instead of creating duplicates.
 if (!prefs.pid) { prefs.pid = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
 if (!prefs.name) { prefs.name = 'RACER-' + prefs.pid.slice(1, 5).toUpperCase(); savePrefs(); }
+let myEq = null; // v75 server-validated equipped loadout (null = guest/local prefs)
+async function loadEquipped() {
+  const acc = window.SRAccount;
+  if (!(acc && acc.loggedIn && acc.loggedIn())) { myEq = null; return; }
+  const r = await sbGet('/rest/v1/player_equipped?id=eq.' + acc.uid() + '&select=car,paint,wheels,trail,decal,neon,title');
+  myEq = (r && r[0]) || null;
+}
 function identityPayload() {
   // v37: a signed-in racer uses their Supabase id, so times follow them across devices
   let name = prefs.name, pid = prefs.pid;
@@ -1105,8 +1112,16 @@ function identityPayload() {
     pid = 'sb:' + SRAccount.uid();
     name = SRAccount.name() || prefs.name;
   }
-  const cos = prefs.cos || { decal: 0, wheels: 0, trail: 0 };
-  return { name, pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, cos, title: playerTitle().title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined, chid: window.__chId || undefined }; // v73/v74
+  // v75: signed-in racers race with their server-validated garage loadout
+  let color = prefs.color, cos = prefs.cos || { decal: 0, wheels: 0, trail: 0 }, title = playerTitle().title;
+  if (myEq && window.SRCos) {
+    const car = SRCos.findCar(myEq.car);
+    const paint = SRCos.PAINTS[myEq.paint || 0] || SRCos.PAINTS[0];
+    color = paint.hex;
+    cos = { decal: myEq.decal || 0, wheels: myEq.wheels || 0, trail: myEq.trail || 0, neon: myEq.neon || 0, sp: car.sp };
+    title = myEq.title || title;
+  }
+  return { name, pid, color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, cos, title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined, chid: window.__chId || undefined }; // v73/v74
 }
 
 function applyQuality(q) {
@@ -1230,6 +1245,7 @@ function wireLobbyV2() {
       document.querySelectorAll('.cls-btn').forEach((x) => x.classList.toggle('active', x === b));
       sendMeta();
       const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !s;
+      if (s) loadEquipped();
     });
   });
   document.querySelectorAll('.laps-btn').forEach((b) => {
@@ -1280,6 +1296,7 @@ function wireLobbyV2() {
       document.querySelectorAll('.cos-btn[data-cos="' + k + '"]').forEach((x) => x.classList.toggle('active', x === b));
       sendMeta();
       const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !s;
+      if (s) loadEquipped();
     });
   });
   const muteEl = $('set-mute'); if (muteEl) { muteEl.checked = !!prefs.mute; muteEl.addEventListener('change', () => { prefs.mute = muteEl.checked; savePrefs(); setAudio(); }); }
@@ -1306,6 +1323,7 @@ function wireLobbyV2() {
       else { chip.textContent = '👤 guest'; btn.hidden = false; out.hidden = true; }
       sendMeta();
       const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !s;
+      if (s) loadEquipped();
     }
     SRAccount.session().then((s) => { if (s && !SRAccount.name() && s.email) SRAccount.setName(s.email.split('@')[0]); paint(s); });
     btn.addEventListener('click', () => { dlg.hidden = false; $('acc-err').textContent = ''; });
@@ -1417,6 +1435,82 @@ function openFriends() {
     }));
   })();
 }
+// ---------------------------------------------------------------------------
+// v75 — GARAGE: collection, customization, coin shop (server-validated)
+// ---------------------------------------------------------------------------
+function garageData() {
+  return (async () => {
+    const acc = window.SRAccount;
+    if (!(acc && acc.loggedIn())) return null;
+    const uid = acc.uid();
+    const [st, w, inv] = await Promise.all([
+      sbGet('/rest/v1/player_stats?user_id=eq.' + uid + '&select=xp,wins,rating'),
+      sbGet('/rest/v1/player_wallet?user_id=eq.' + uid + '&select=coins', acc.token()),
+      sbGet('/rest/v1/player_inventory?user_id=eq.' + uid + '&select=item_id', acc.token()),
+    ]);
+    const s0 = (st && st[0]) || {};
+    return {
+      d: { level: (window.SRProg ? SRProg.levelFromXp(Number(s0.xp) || 0).level : 1), wins: s0.wins || 0, rating: s0.rating || 1000, owned: (inv || []).map((x) => x.item_id) },
+      coins: (w && w[0] && Number(w[0].coins)) || 0
+    };
+  })();
+}
+function openGarage() {
+  const dlg = $('garage-dlg'); if (!dlg) return;
+  dlg.hidden = false;
+  const body = $('garage-body');
+  const acc = window.SRAccount;
+  if (!(acc && acc.loggedIn())) { body.innerHTML = '<div class="p-empty">Sign in to open your garage — cars, paints, neon and more unlock as you race.</div>'; return; }
+  body.innerHTML = '<div class="p-empty">Opening garage…</div>';
+  (async () => {
+    const gd = await garageData();
+    if (!gd) return;
+    const { d, coins } = gd;
+    const eq = myEq || { car: 'street_runner', paint: 0, wheels: 0, trail: 0, decal: 0, neon: 0 };
+    let html = '<div class="g-head">🪙 <b>' + coins + '</b> RUSH COINS <span class="g-hint">earn coins by racing · dailies · wins</span></div>';
+    html += '<div class="p-sub">MY CARS</div><div class="g-cars">';
+    for (const c of (window.SRCos ? SRCos.CARS : [])) {
+      const un = SRCos.itemUnlocked(c.unlock, d, 'car:' + c.id);
+      const sel = eq.car === c.id;
+      html += '<div class="g-car' + (sel ? ' sel' : '') + '" style="border-color:' + (un ? SRCos.RARITY[c.rarity] : '#232c47') + '">' +
+        '<div class="g-cn" style="color:' + SRCos.RARITY[c.rarity] + '">' + c.name + '</div>' +
+        '<div class="g-cr">' + c.rarity.toUpperCase() + '</div>' +
+        '<div class="g-bars">' + c.bars.map((b) => '<i style="width:' + (b * 10) + '%"></i>').join('') + '</div>' +
+        (sel ? '<div class="g-st">SELECTED</div>' : un ? '<button class="ghost sm g-eq" data-car="' + c.id + '">SELECT</button>' : '<div class="g-lock">🔒 ' + SRCos.unlockText(c.unlock) + '</div>') +
+        '</div>';
+    }
+    html += '</div>';
+    const sect = (title, list, kind) => {
+      let h = '<div class="p-sub">' + title + '</div><div class="g-items">';
+      for (const it of list) {
+        const un = SRCos.itemUnlocked(it.unlock, d, kind + ':' + it.id);
+        const cur = eq[kind === 'paint' ? 'paint' : kind] === it.id;
+        h += '<button class="g-it' + (cur ? ' sel' : '') + '" data-kind="' + kind + '" data-id="' + it.id + '" ' + (!un ? '' : '') + '>' +
+          (it.hex != null ? '<i class="sw" style="background:#' + it.hex.toString(16).padStart(6, '0') + '"></i>' : '') +
+          '<span>' + it.name + '</span>' +
+          (cur ? '<em>✔</em>' : un ? '' : '<em class="lk">🔒 ' + SRCos.unlockText(it.unlock) + '</em>') + '</button>';
+      }
+      return h + '</div>';
+    };
+    html += sect('PAINT', SRCos.PAINTS, 'paint') + sect('WHEELS', SRCos.WHEELS, 'wheels') + sect('TRAILS', SRCos.TRAILS, 'trail') + sect('DECALS', SRCos.DECALS, 'decal') + sect('NEON', SRCos.NEONS, 'neon');
+    body.innerHTML = html;
+    body.querySelectorAll('.g-eq').forEach((b) => b.addEventListener('click', () => {
+      net.send({ type: 'equip', eq: Object.assign({}, eq, { car: b.dataset.car }) });
+    }));
+    body.querySelectorAll('.g-it').forEach((b) => b.addEventListener('click', () => {
+      const kind = b.dataset.kind, id = parseInt(b.dataset.id, 10);
+      const list = kind === 'paint' ? SRCos.PAINTS : kind === 'wheels' ? SRCos.WHEELS : kind === 'trail' ? SRCos.TRAILS : kind === 'decal' ? SRCos.DECALS : SRCos.NEONS;
+      const it = list.find((x) => x.id === id);
+      if (!it) return;
+      if (!SRCos.itemUnlocked(it.unlock, d, kind + ':' + id)) {
+        if (SRCos.isCoinItem(it.unlock)) { net.send({ type: 'buy', item: kind + ':' + id }); }
+        else toast('🔒 ' + SRCos.unlockText(it.unlock));
+        return;
+      }
+      net.send({ type: 'equip', eq: Object.assign({}, eq, { [kind]: id }) });
+    }));
+  })();
+}
 // v73 wiring: profile / ratings access points
 (function () {
   const rp = document.createElement('button'); rp.id = 'res-profile'; rp.className = 'ghost sm'; rp.textContent = '👤 PROFILE';
@@ -1426,6 +1520,8 @@ function openFriends() {
   rb.addEventListener('click', () => { const r = $('results'); if (r) r.classList.add('hidden'); showRatingTab(); });
   const pc = $('profile-close'); if (pc) pc.addEventListener('click', () => { const d = $('profile-dlg'); if (d) d.hidden = true; });
   const fb = $('friends-btn'); if (fb) fb.addEventListener('click', openFriends);
+  const gb = $('garage-btn'); if (gb) gb.addEventListener('click', openGarage);
+  const gc = $('garage-close'); if (gc) gc.addEventListener('click', () => { const d = $('garage-dlg'); if (d) d.hidden = true; });
   const fc = $('friends-close'); if (fc) fc.addEventListener('click', () => { const d = $('friends-dlg'); if (d) d.hidden = true; });
   const cc = document.createElement('button'); cc.id = 'res-challenge'; cc.className = 'ghost sm'; cc.textContent = '⚔️ COPY CHALLENGE';
   const rm2 = $('rematch-btn'); if (rm2 && rm2.parentNode) rm2.parentNode.appendChild(cc);
@@ -1702,6 +1798,7 @@ function showResults(order) {
         (row.rd ? '<div class="c-rd ' + (row.rd > 0 ? 'up' : 'dn') + '">' + (row.rd > 0 ? '+' : '') + row.rd + ' RATING</div>' : '<div class="c-rd mu">RATED · vs humans only</div>') +
         (row.levelUp ? '<div class="c-lvl">⬆ LEVEL ' + row.levelNew + '</div>' : '') +
         (row.pr ? '<div class="c-pr">🎉 PERSONAL RECORD</div>' : '') +
+        (row.coins ? '<div class="c-xp" style="color:#ffd479">🪙 +' + row.coins + ' COINS</div>' : '') +
         (row.dailyXp ? '<div class="c-pr">📅 DAILY +150 XP</div>' : '') +
         (row.chDone ? '<div class="c-pr">⚔️ CHALLENGE COMPLETE +100</div>' : '') +
         (row.ach && row.ach.length ? '<div class="c-pr">' + row.ach.map((a) => a.icon + ' ' + a.name + ' +' + a.xp).join(' · ') + '</div>' : '') +
@@ -2318,6 +2415,10 @@ function processEvents(snap) {
         }
         toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
       case 'settle': pendingSettle = e.rows || []; break; // v73
+      case 'equipped': myEq = e.eq || myEq; if (typeof sendMeta === 'function') sendMeta(); if (!$('garage-dlg').hidden) openGarage(); toast('🏎️ Loadout equipped'); break; // v75
+      case 'bought': toast('🛍️ Purchased! (' + e.coins + ' coins left)'); if (!$('garage-dlg').hidden) openGarage(); break; // v75
+      case 'buy-err': toast('⚠ ' + (e.msg || 'purchase failed')); break;
+      case 'equip-err': toast('⚠ Locked — keep racing to unlock!'); break;
       case 'results': showResults(e.order); break;
     }
   }
@@ -2328,7 +2429,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v74';
+const BUILD = 'v75';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2813,10 +2914,15 @@ function updateAudio(mine, rival) {
 const DECAL_COLORS = [0, 0xffffff, 0xff6a00, 0x111111];
 const WHEEL_HUBS = [0xb9bec7, 0xe8f4ff, 0xd4af37];
 const TRAIL_COLS = [0x35e0ff, 0xff20c8, 0xffd400];
-function applyCos(v, dc, wh, tr) {
-  const key = dc + '|' + wh + '|' + tr;
+function applyCos(v, dc, wh, tr, ne, sp) {
+  const key = dc + '|' + wh + '|' + tr + '|' + (ne || 0) + '|' + (sp || 0);
   if (v.cosKey === key) return;
   v.cosKey = key;
+  if (v.neonMesh) { v.body.remove(v.neonMesh); v.neonMesh = null; }
+  if (v.spoiler) { v.body.remove(v.spoiler); v.spoiler = null; }
+  const neHex = (ne && window.SRCos && SRCos.NEONS[ne]) ? SRCos.NEONS[ne].hex : 0;
+  if (neHex) { const nm = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 4.6), new THREE.MeshBasicMaterial({ color: neHex, transparent: true, opacity: 0.5 })); nm.rotation.x = -Math.PI / 2; nm.position.y = 0.12; v.body.add(nm); v.neonMesh = nm; }
+  if (sp) { const sm = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 0.5), new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.5, metalness: 0.6 })); sm.position.set(0, 1.25, -2.1); v.body.add(sm); v.spoiler = sm; }
   if (v.decalGroup) { v.body.remove(v.decalGroup); v.decalGroup = null; }
   if (dc > 0) {
     const dg = new THREE.Group();
@@ -2833,7 +2939,7 @@ function placeCar(slot, cs, dt) {
   const v = carVisuals[slot];
   if (!cs) return;
   if (cs.col != null && v.paint && v.paint.color.getHex() !== cs.col) v.paint.color.setHex(cs.col);
-  applyCos(v, cs.dc || 0, cs.wh || 0, cs.tr || 0); // v59 cosmetics
+  applyCos(v, cs.dc || 0, cs.wh || 0, cs.tr || 0, cs.ne || 0, cs.sp || 0); // v59 cosmetics / v75 neon+spoiler
   v.group.visible = cs.p === 1;
   if (!v.group.visible) { v.netInit = false; return; }
   // ---- network smoothing: exponentially follow the interpolated snapshot
@@ -3103,7 +3209,7 @@ function openProfile() {
   body.innerHTML = '<div class="p-empty">Loading career…</div>';
   (async () => {
     const uid = acc.uid(), tok = acc.token();
-    const [prof, stats, recs, hist, achs, seas, psea] = await Promise.all([
+    const [prof, stats, recs, hist, achs, seas, psea, peq] = await Promise.all([
       sbGet('/rest/v1/profiles?id=eq.' + uid + '&select=username'),
       sbGet('/rest/v1/player_stats?user_id=eq.' + uid),
       sbGet('/rest/v1/player_map_records?user_id=eq.' + uid + '&order=races.desc'),
@@ -3111,6 +3217,7 @@ function openProfile() {
       sbGet('/rest/v1/player_achievements?user_id=eq.' + uid + '&select=ach,unlocked_at'),
       sbGet('/rest/v1/seasons?order=id.desc&limit=1&select=id,name,end_at'),
       sbGet('/rest/v1/player_seasons?user_id=eq.' + uid + '&select=season_id,rating,xp'),
+      sbGet('/rest/v1/player_equipped?id=eq.' + uid + '&select=car,neon,title'),
     ]);
     const p = (prof && prof[0]) || { username: acc.name() || 'RACER' };
     const st = (stats && stats[0]) || { races: 0, wins: 0, podiums: 0, xp: 0, rating: 1000, peak_rating: 1000, streak: 0 };
@@ -3118,7 +3225,8 @@ function openProfile() {
     const tr = window.SRProg ? SRProg.tier(st.rating) : { name: 'BRONZE III', col: '#d09a6a' };
     const season = seas && seas[0]; const mySeason = psea && psea.find((x) => season && x.season_id === season.id);
     const wr = st.races ? Math.round(100 * st.wins / st.races) : 0;
-    let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + '</div>' +
+    const eqCar = (window.SRCos && peq && peq[0]) ? SRCos.findCar(peq[0].car) : null;
+    let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + (eqCar ? ' <span class="p-car" style="color:' + SRCos.RARITY[eqCar.rarity] + '">🏎️ ' + eqCar.name + '</span>' : '') + '</div>' +
       '<div class="p-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + st.rating + ' <i>peak ' + st.peak_rating + '</i></div>' +
       '<div class="p-level">' + tr.name.split(' ')[0] + ' PROGRESS<div class="p-bar"><i style="width:' + (tr.pct || 0) + '%"></i></div><span class="p-xp">' + tr.next ? '' : '' + '</span></div>' +
       (tr.next ? '<div class="p-xp" style="text-align:center">Next: ' + tr.next + '</div>' : '') +
