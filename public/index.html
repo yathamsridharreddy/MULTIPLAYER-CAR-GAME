@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&display=swap" media="print" onload="this.media='all'"/>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&display=swap"/></noscript>
-  <link rel="stylesheet" href="css/style.css?v=75"/>
+  <link rel="stylesheet" href="css/style.css?v=76"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -181,6 +181,9 @@
             <p class="small">Send them this link — they open it, join this room, and their screen syncs with yours live:</p>
             <p class="url" id="game-link"></p>
             <button id="copy-game-link" class="ghost">COPY GAME LINK</button>
+            <div id="room-count" class="daily-meta" style="margin-top:6px"></div>
+            <div id="room-players" class="room-players"></div>
+            <button id="ready-btn" class="ghost sm" hidden>🏁 READY UP</button>
             <div class="share-row">
               <button id="wa-share" class="ghost sm">🟢 WHATSAPP</button>
               <button id="tg-share" class="ghost sm">✈️ TELEGRAM</button>
@@ -266,7 +269,7 @@
 
         <button id="next-btn" class="big-cta" data-i18n="setup">SET UP RACE →</button>
         <div class="share-row" id="community-row" hidden><a id="comm-wa" class="ghost sm" target="_blank" rel="noopener">💬 WHATSAPP GROUP</a><a id="comm-dc" class="ghost sm" target="_blank" rel="noopener">🎮 DISCORD</a></div>
-        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v75</p>
+        <p class="foot">3‑2‑1‑GO countdown · nitro 🔥 · drift smoke · first to the line wins · laptops stay in sync · build v76</p>
       </div>
     </div>
 
@@ -393,14 +396,14 @@
 
   <script defer src="js/vendor/three.min.js"></script>
   <script defer src="js/vendor/qrcode.js"></script>
-  <script defer src="js/game-core.js?v=75"></script>
-  <script defer src="js/progression.js?v=75"></script>
-  <script defer src="js/cosmetics.js?v=75"></script>
+  <script defer src="js/game-core.js?v=76"></script>
+  <script defer src="js/progression.js?v=76"></script>
+  <script defer src="js/cosmetics.js?v=76"></script>
   <script src="js/config.js"></script>
-  <script defer src="js/account.js?v=75"></script>
-  <script defer src="js/i18n.js?v=75"></script>
-  <script defer src="js/net.js?v=75"></script>
-  <script defer src="js/game.js?v=75"></script>
+  <script defer src="js/account.js?v=76"></script>
+  <script defer src="js/i18n.js?v=76"></script>
+  <script defer src="js/net.js?v=76"></script>
+  <script defer src="js/game.js?v=76"></script>
   <script>
   // PWA (v36): register service worker + show INSTALL button when the browser allows it
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {

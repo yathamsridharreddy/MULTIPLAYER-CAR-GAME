@@ -57,7 +57,7 @@
         if (pk.type === 0) car.puB = 3;                    // BOOST
         else if (pk.type === 1) car.puSh = true;           // SHIELD
         else {                                             // SLOW -> opponent
-          const opp = room.cars[room.cars[0] === car ? 1 : 0];
+          let opp = null; for (const o of room.participants()) if (o !== car && (!opp || o.totalProgress() > opp.totalProgress())) opp = o; // v76: target the leader
           if (opp && opp.puSh) opp.puSh = false; else if (opp) opp.puS = 3;
         }
         ev.pu = { x: pk.x, z: pk.z, type: pk.type, slot: car.slot };
@@ -117,6 +117,7 @@
   ];
 
   // car classes: stat trade-offs (top speed / acceleration / grip+steer)
+  const SLOT_COLS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7]; // v76
   const CAR_CLASSES = {
     velocity:    { name: 'VELOCITY',    top: 1.12, acc: 0.95, grip: 0.95, steer: 0.95 },
     accelerator: { name: 'ACCELERATOR', top: 0.97, acc: 1.22, grip: 1.0,  steer: 1.0 },
@@ -409,7 +410,7 @@
   const r3 = (v) => Math.round(v * 1000) / 1000;
 
   class RaceRoom {
-    constructor(code, mode, mapId) {
+    constructor(code, mode, mapId, maxSlots) {
       this.code = code;
       this.mode = ['coop','elim','drift'].includes(mode) ? mode : 'race';
       this.mapId = (mapId != null && MAPS[mapId]) ? mapId : 0;
@@ -420,9 +421,16 @@
       this.raceTime = 0;
       this.countVal = 0;
       this.countTimer = 0;
-      this.cars = [new Car(1, this.track.a - 2.8, this.track), new Car(2, this.track.a + 2.8, this.track)];
-      this.inputs = { 1: ZERO_INPUT(), 2: ZERO_INPUT() };
-      this.controllers = { 1: false, 2: false };
+      // v76: 1-6 player slots (physics unchanged; slot 1-2 layout identical to v75)
+      this.cap = Math.max(2, Math.min(6, parseInt(maxSlots, 10) || 2));
+      this.cars = [];
+      this.inputs = {}; this.controllers = {}; this.seats = {};
+      for (let s = 1; s <= this.cap; s++) {
+        const c = new Car(s, this.track.a - 2.8, this.track);
+        c.color = SLOT_COLS[(s - 1) % SLOT_COLS.length];
+        this.cars.push(c);
+        this.inputs[s] = ZERO_INPUT(); this.controllers[s] = false; this.seats[s] = false;
+      }
       this.laps = CFG.totalLaps;
       this.bot = false;
       this.winner = null;
@@ -474,6 +482,7 @@
     }
 
     setController(slot, connected) { this.controllers[slot] = connected; this.lastActivity = Date.now(); }
+    setSeat(slot, on) { if (slot >= 1 && slot <= this.cap) this.seats[slot] = !!on; } // v76 human screen seat
 
     setInput(slot, input) {
       let steer = clamp(input.steer || 0, -1, 1);
@@ -501,12 +510,16 @@
       this.raceTime = 0;
       this.winner = null;
       this.banner = { text: '', seq: ++this.bannerSeq };
-      this.cars.forEach((c) => { c.maxLaps = this.laps; c.resetState(0); });
-      this.cars[0].participating = true;
-      const botActive = this.mode !== 'coop' && this.bot && !this.controllers[2];
-      if (botActive) this.cars[1].setMeta('AI DRIVER', 0x0a84ff);
-      this.cars[1].participating = this.mode !== 'coop' && (this.controllers[2] || botActive);
-      this._botActive = botActive;
+      this.cars.forEach((c) => { c.maxLaps = this.laps; c.resetState(0); }); // v76 N-player
+      const botOn = this.mode !== 'coop' && this.bot;
+      for (const c of this.cars) {
+        if (c.slot === 1) { c.participating = true; c._bot = false; continue; }
+        const human = !!(this.controllers[c.slot] || this.seats[c.slot]);
+        c.participating = this.mode !== 'coop' && (human || botOn);
+        c._bot = this.mode !== 'coop' && !human && botOn;
+        if (c._bot) c.setMeta('AI DRIVER', 0x0a84ff);
+      }
+      this._botActive = botOn;
       this.state = 'countdown';
       this.countVal = 3;
       this.countTimer = 0;
@@ -557,8 +570,19 @@
       });
     }
 
-    botInput() {
-      const car = this.cars[1];
+    botInputFor(car) { // v76: bots may occupy any slot
+      if (this.track && this.track.type === 'spline') {
+        const P = this.track.points;
+        const n = this.track.nearest ? this.track.nearest(car.x, car.z, car._th) : splineNearest(this.track, car.x, car.z, car._nearIdx);
+        if (this.track.nearest) car._th = n.th; else car._nearIdx = n.idx;
+        const la = P[(n.idx + 10) % P.length];
+        const desired = Math.atan2(la.x - car.x, la.z - car.z);
+        let diff = desired - car.heading;
+        while (diff > Math.PI) diff -= PI2; while (diff < -Math.PI) diff += PI2;
+        const steer = clamp(-diff * 2.2, -1, 1);
+        const bCap = this.botSkill ? 0.94 : 0.72; const throttle = clamp(bCap - Math.abs(steer) * 0.45, 0.4, bCap);
+        return { steer, throttle, brake: 0, handbrake: false, nitro: !!this.botSkill && Math.abs(steer) < 0.15 && Math.random() < 0.015 };
+      }
       const a = this.track.a, b = this.track.b;
       const phi = Math.atan2(car.z / b, car.x / a);
       const la = phi + 0.10;
@@ -568,9 +592,10 @@
       while (diff > Math.PI) diff -= PI2;
       while (diff < -Math.PI) diff += PI2;
       const steer = clamp(-diff * 2.2, -1, 1);
-      const bCap = this.botSkill ? 0.94 : 0.72; /* v45: ROOKIE tops out slower */ const throttle = clamp(bCap - Math.abs(steer) * 0.45, 0.4, bCap);
+      const bCap2 = this.botSkill ? 0.94 : 0.72; /* v45: ROOKIE tops out slower */ const throttle = clamp(bCap2 - Math.abs(steer) * 0.45, 0.4, bCap2);
       return { steer, throttle, brake: 0, handbrake: false, nitro: !!this.botSkill && Math.abs(steer) < 0.15 && Math.random() < 0.015 };
     }
+    botInput() { return this.botInputFor(this.cars[1]); }
 
     update(dt) {
       if (this.state === 'waiting' || this.state === 'finished') return;
@@ -593,7 +618,7 @@
       }
 
       for (const pk of this.pickups) if (!pk.on) { pk.t -= dt; if (pk.t <= 0) pk.on = true; } // v59 pickup respawn
-      if (this._botActive && this.state === 'racing') this.inputs[2] = this.botInput();
+      if (this._botActive && this.state === 'racing') for (const c of this.cars) if (c._bot && c.participating) this.inputs[c.slot] = this.botInputFor(c); // v76
       this.applyInputs();
       const colliders = this.track.world.colliders;
 
@@ -623,7 +648,7 @@
         if (ev.finish) {
           if (!this.winner) {
             this.winner = this.mode === 'drift'
-              ? (this.cars[0].driftScore >= this.cars[1].driftScore ? 1 : 2)
+              ? this.participants().reduce((a, b) => (a.driftScore >= b.driftScore ? a : b)).slot // v76 N-player
               : car.slot;
             const multi = this.participants().length > 1;
             this.setBanner(multi ? `PLAYER ${car.slot} WINS!` : `FINISH — ${fmtTime(car.finishTime)}`);
@@ -638,7 +663,8 @@
       // its length, so bumping is solid from every angle and cars can never
       // ghost through each other
       {
-        const c1 = this.cars[0], c2 = this.cars[1];
+        for (let ci = 0; ci < this.cars.length; ci++) for (let cj = ci + 1; cj < this.cars.length; cj++) { // v76: all 15 pairs at 6p
+        const c1 = this.cars[ci], c2 = this.cars[cj];
         if (c1.participating && c2.participating && this.state !== 'waiting') {
           const discs = (c) => {
             const dx = Math.sin(c.heading), dz = Math.cos(c.heading);
@@ -668,6 +694,7 @@
             }
             clampCarToBarrier(c1); clampCarToBarrier(c2);
           }
+        }
         }
       }
 
@@ -713,7 +740,7 @@
         winner: this.winner,
         laps: this.laps,
         bot: !!this._botActive,
-        controllers: { 1: this.controllers[1], 2: this.controllers[2] },
+          controllers: Object.assign({}, this.controllers), // v76 N slots
         banner: this.banner,
         cars: this.cars.map((c) => ({
           s: c.slot,
@@ -943,22 +970,7 @@
   };
   const _carReset = Car.prototype.resetState;
   Car.prototype.resetState = function (t) { this._along = null; this._nearIdx = null; this._th = null; return _carReset.apply(this, arguments); };
-  const _bot = RaceRoom.prototype.botInput;
-  RaceRoom.prototype.botInput = function () {
-    if (this.track && this.track.type === 'spline') {
-      const car = this.cars[1];
-      const P = this.track.points;
-      const n = this.track.nearest ? this.track.nearest(car.x, car.z, car._th) : splineNearest(this.track, car.x, car.z, car._nearIdx); if (!this.track.nearest) car._nearIdx = n.idx; else car._th = n.th; // v69 warm
-      const la = P[(n.idx + 10) % P.length];
-      const desired = Math.atan2(la.x - car.x, la.z - car.z);
-      let diff = desired - car.heading;
-      while (diff > Math.PI) diff -= PI2; while (diff < -Math.PI) diff += PI2;
-      const steer = clamp(-diff * 2.2, -1, 1);
-      const bCap = this.botSkill ? 0.94 : 0.72; /* v45: ROOKIE tops out slower */ const throttle = clamp(bCap - Math.abs(steer) * 0.45, 0.4, bCap);
-      return { steer, throttle, brake: 0, handbrake: false, nitro: !!this.botSkill && Math.abs(steer) < 0.15 && Math.random() < 0.015 };
-    }
-    return _bot.call(this);
-  };
+  // v76: spline bot logic merged into botInputFor above
 
   (function addSplineMaps() {
     const canyon = makeSplineTrack([
@@ -1235,10 +1247,12 @@
     if (track.type === 'spline' && track.points) {
       const P = track.points, p0 = P[0], p1 = P[1];
       let tx = p1.x - p0.x, tz = p1.z - p0.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
-      const nx = -tz, nz = tx; const side = slot === 1 ? -2.8 : 2.8;
-      return { x: p0.x + nx * side - tx * 5, z: p0.z + nz * side - tz * 5, h: Math.atan2(tx, tz) };
+      const nx = -tz, nz = tx;
+      const row = Math.floor((slot - 1) / 2), side = (slot % 2 === 1 ? -2.8 : 2.8); // v76 2-wide grid
+      return { x: p0.x + nx * side - tx * (5 + row * 5.5), z: p0.z + nz * side - tz * (5 + row * 5.5), h: Math.atan2(tx, tz) };
     }
-    return { x: track.a + (slot === 1 ? -2.8 : 2.8), z: -5, h: 0 };
+    const row = Math.floor((slot - 1) / 2), side = (slot % 2 === 1 ? -2.8 : 2.8); // v76
+    return { x: track.a + side, z: -5 - row * 5.5, h: 0 };
   }
 
   const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

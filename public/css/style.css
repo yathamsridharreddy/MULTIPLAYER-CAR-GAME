@@ -641,3 +641,14 @@ body.spec #overlay, body.spec .share-row, body.spec #quickplay-btn { display: no
 .g-it .sw{width:14px;height:14px;border-radius:4px;display:inline-block}
 .g-it .lk{color:#8b93a8;font-style:normal;font-size:10px}
 .p-car{font:800 12px Orbitron,system-ui}
+
+/* v76 room lobby */
+.room-players{margin:8px 0}
+.rp-row{display:flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid #232c47;border-radius:10px;margin:4px 0;font:700 12px system-ui;color:#cfd6dd}
+.rp-row.me{border-color:#7ee78a}
+.rp-row.empty{border-style:dashed;color:#8b93a8}
+.rp-slot{width:16px;color:#8b93a8}
+.rp-name{flex:1}
+.rp-rating{color:#ffd479}
+.rp-ready{font-size:10px;letter-spacing:1px;color:#8b93a8}
+.rp-ready.on{color:#7ee78a}

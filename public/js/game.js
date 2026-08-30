@@ -811,11 +811,14 @@ function createCar(paintColor, num, accent) {
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return { group: g, body, wheels, paint, hubMat, calMat };
 }
-const carVisuals = {
-  1: Object.assign(createCar(0xe10600, 1, 0xffd400), { spinAngle: 0 }),
-  2: Object.assign(createCar(0x0a84ff, 2, 0xff2038), { spinAngle: 0 })
-};
-scene.add(carVisuals[1].group, carVisuals[2].group);
+const carVisuals = {}; // v76: lazy up to 6
+const SLOT_HEX = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7];
+const SLOT_ACC = [0xffd400, 0xff2038, 0x111111, 0xffffff, 0x111111, 0xffffff];
+function ensureCarVisual(s) {
+  if (!carVisuals[s]) { carVisuals[s] = Object.assign(createCar(SLOT_HEX[(s - 1) % 6], s, SLOT_ACC[(s - 1) % 6]), { spinAngle: 0 }); scene.add(carVisuals[s].group); }
+  return carVisuals[s];
+}
+ensureCarVisual(1); ensureCarVisual(2);
 
 // ---------------------------------------------------------------------------
 // ===========================================================================
@@ -1511,6 +1514,21 @@ function openGarage() {
     }));
   })();
 }
+// v76 — room lobby panel (players / rating / ready / host)
+let iAmReady = false;
+function renderRoomLobby(e) {
+  const el = $('room-players'); if (!el) return;
+  const ps = e.players || [];
+  $('room-count') && ($('room-count').textContent = ps.length + ' / ' + (e.cap || 6) + ' PLAYERS');
+  el.innerHTML = ps.map((p) =>
+    '<div class="rp-row' + (p.slot === mySlot ? ' me' : '') + '"><span class="rp-slot">' + p.slot + '</span>' +
+    '<span class="rp-name">' + escapeHtml(p.name) + (p.host ? ' 👑' : '') + '</span>' +
+    '<span class="rp-rating">' + (p.rating != null ? p.rating : '—') + '</span>' +
+    '<span class="rp-ready ' + (p.ready ? 'on' : '') + '">' + (p.ready ? 'READY' : 'NOT READY') + '</span></div>').join('') +
+    (ps.length < (e.cap || 6) ? '<div class="rp-row empty"><span class="rp-slot">·</span><span class="rp-name dim">open slot — share the code</span></div>' : '');
+  const rb = $('ready-btn');
+  if (rb) { rb.hidden = ps.length < 3; rb.textContent = iAmReady ? '✅ READY' : '🏁 READY UP'; }
+}
 // v73 wiring: profile / ratings access points
 (function () {
   const rp = document.createElement('button'); rp.id = 'res-profile'; rp.className = 'ghost sm'; rp.textContent = '👤 PROFILE';
@@ -1521,6 +1539,7 @@ function openGarage() {
   const pc = $('profile-close'); if (pc) pc.addEventListener('click', () => { const d = $('profile-dlg'); if (d) d.hidden = true; });
   const fb = $('friends-btn'); if (fb) fb.addEventListener('click', openFriends);
   const gb = $('garage-btn'); if (gb) gb.addEventListener('click', openGarage);
+  const rbtn = $('ready-btn'); if (rbtn) rbtn.addEventListener('click', () => { iAmReady = !iAmReady; net.send({ type: 'ready', on: iAmReady }); renderRoomLobby({ players: window.__lastLobby || [], cap: 6 }); });
   const gc = $('garage-close'); if (gc) gc.addEventListener('click', () => { const d = $('garage-dlg'); if (d) d.hidden = true; });
   const fc = $('friends-close'); if (fc) fc.addEventListener('click', () => { const d = $('friends-dlg'); if (d) d.hidden = true; });
   const cc = document.createElement('button'); cc.id = 'res-challenge'; cc.className = 'ghost sm'; cc.textContent = '⚔️ COPY CHALLENGE';
@@ -2394,6 +2413,9 @@ function processEvents(snap) {
       case 'pu': { const nm = ['⚡ BOOST', '🛡️ SHIELD', '🌀 SLOW'][e.ptype] || 'PU'; toast(`P${e.slot} grabbed ${nm}!`); beep(980, 0.12, 'square', 0.2); break; }
       case 'respawn': if (e.slot === mySlot) { toast('🔄 Back on track'); beep(220, 0.2, 'sawtooth', 0.18); } break;
       case 'rematch': toast(`🔁 Rematch vote ${e.n}/${e.total}`); break;
+      case 'lobby': window.__lastLobby = e.players || []; renderRoomLobby(e); break; // v76
+      case 'need-ready': toast('⚠ ' + (e.msg || 'not ready yet')); break; // v76
+      case 'full': toast('⚠ Room is full (6 max)'); break; // v76
       case 'finished':
         if (e.slot === mySlot) {
           let gb = false;
@@ -2429,7 +2451,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v75';
+const BUILD = 'v76';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -3080,7 +3102,7 @@ function drawMinimap(mine, rival) {
   if (curMap && curMap.type === 'spline') { const p0 = curMap.points[0]; mctx.moveTo(p0.x * MSCALE - 4, p0.z * MSCALE); mctx.lineTo(p0.x * MSCALE + 4, p0.z * MSCALE); }
   else { mctx.moveTo((A - RH) * MSCALE, 0); mctx.lineTo((A + RH) * MSCALE, 0); }
   mctx.stroke();
-  for (const cs of [mine, rival]) {
+  for (const cs of (latest ? latest.cars.filter((c) => c.p === 1) : [mine])) { // v76
     if (!cs || cs.p !== 1) continue;
     mctx.fillStyle = '#' + cbCol(cs.s).toString(16).padStart(6, '0');
     mctx.beginPath(); mctx.arc(cs.x * MSCALE, cs.z * MSCALE, 3.4, 0, Math.PI * 2); mctx.fill();
@@ -3153,14 +3175,12 @@ function updateHUD(mine, rival) {
   if (latest.mode === 'drift') raceStr += `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">DRIFT ${mine.drift || 0}</span>`;
   hHTML(hEl('raceinfo'), raceStr);
   const row = (c) => `L${Math.min(c.lap + 1, CFG.totalLaps)}  ${c.ll != null ? fmtTime(c.ll) : '--:--.--'}  <span class="dim">best ${c.best != null ? fmtTime(c.best) : '--:--.--'}</span>`;
-  hHTML(hEl('lap-p1'), `<b style="color:#ff6b6b">P1</b> ${row(latest.cars[0])}`);
-  const lp2 = hEl('lap-p2');
-  if (latest.mode === 'race') {
-    hStyle(lp2, 'display', '');
-    hHTML(lp2, `<b style="color:#64b5f6">P2</b> ${latest.cars[1].p === 1 ? row(latest.cars[1]) : '<span class="dim">waiting…</span>'}`);
-  } else {
-    hStyle(lp2, 'display', 'none');
-  }
+  // v76 live ranking from authoritative snapshot (finished first, then progress)
+  const rankCols = ['#ff6b6b', '#64b5f6', '#ffd479', '#7ee78a', '#ff8ae2', '#7ee7ff'];
+  const val = (c) => (c.fin ? 1e7 - (c.ft || 0) : (c.pr || 0));
+  const ord2 = latest.cars.filter((c) => c.p === 1).slice().sort((a, b) => val(b) - val(a));
+  hHTML(hEl('lap-p1'), ord2.map((c, i) => `<b style="color:${rankCols[i % 6]}">${i + 1}</b> ${c.s === mySlot ? 'YOU' : escapeHtml(c.nm || ('P' + c.s))} <span class="dim">L${Math.min(c.lap + 1, CFG.totalLaps)}</span>`).join('<br>'));
+  hStyle(hEl('lap-p2'), 'display', 'none');
   hStyle(hEl('speedlines'), 'opacity', String(prefs.rm ? 0 : clamp((Math.abs(mine.v) - 26) / 34, 0, 0.6)));
   frameFlip = !frameFlip; if (frameFlip) drawMinimap(mine, rival); // v66: half-rate minimap
 }
@@ -3356,10 +3376,14 @@ function frame() {
     }
   }
   const mine = interpState(mySlot);
-  const rival = interpState(mySlot === 1 ? 2 : 1);
+  let rival = null; // v76: nearest other racer
+  if (latest && latest.cars) {
+    const myC = latest.cars[mySlot - 1];
+    const others = latest.cars.filter((c) => c.p === 1 && c.s !== mySlot);
+    if (others.length) { others.sort((a, b) => Math.abs((a.pr || 0) - (myC ? myC.pr : 0)) - Math.abs((b.pr || 0) - (myC ? myC.pr : 0))); rival = interpState(others[0].s); }
+  }
   if (latest && latest.state === 'countdown') updateCountdownVisual();
-  placeCar(1, interpState(1), dt);
-  placeCar(2, interpState(2), dt);
+  for (let s = 1; s <= 6; s++) { const cs = interpState(s); if (cs && cs.p === 1) { ensureCarVisual(s); placeCar(s, cs, dt); } else if (carVisuals[s]) carVisuals[s].group.visible = false; } // v76
   if (latest && latest.state === 'racing') {
     if (mine) ghostRecord(latest.raceTime, mine.x, mine.z, mine.h);
     ghostUpdate(latest.raceTime);

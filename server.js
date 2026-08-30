@@ -229,7 +229,7 @@ async function settleRace(entry) {
   const humans = [];
   for (const c of order) { const uid = entry.uidBySlot && entry.uidBySlot[c.slot]; if (uid) humans.push({ c, uid }); }
   if (!humans.length) return;
-  const rated = humans.length === 2 && room.participants().length === 2; // human 1v1 only
+  const rated = humans.length >= 2 && room.participants().length === humans.length; // v76: all-human races rate (1v1 unchanged)
   const today = new Date().toISOString().slice(0, 10);
   let dailyMap = -1; try { dailyMap = dailyInfo().map; } catch (e) {}
   const uids = humans.map((h) => h.uid);
@@ -251,7 +251,18 @@ async function settleRace(entry) {
     const pos = order.indexOf(h.c) + 1;
     const st = stats[h.uid] || { rating: 1000, peak_rating: 1000, xp: 0, streak: 0, best_streak: 0, races: 0, wins: 0, podiums: 0, daily_days: 0, last_daily: '', challenges_done: 0 };
     let rd = 0;
-    if (rated) { const other = humans[1 - i]; rd = prog.eloDelta(st.rating, (stats[other.uid] || { rating: 1000 }).rating, pos === 1 ? 1 : 0); }
+    if (rated) {
+      if (humans.length === 2) { const other = humans[1 - i]; rd = prog.eloDelta(st.rating, (stats[other.uid] || { rating: 1000 }).rating, pos === 1 ? 1 : 0); }
+      else { // v76: mean of pairwise Elo vs every other human (reduces to classic K=32 in 1v1)
+        let sum = 0;
+        for (let j = 0; j < humans.length; j++) {
+          if (j === i) continue;
+          const oj = humans[j]; const posJ = order.indexOf(oj.c) + 1;
+          sum += prog.eloDelta(st.rating, (stats[oj.uid] || { rating: 1000 }).rating, pos < posJ ? 1 : 0);
+        }
+        rd = Math.round(sum / (humans.length - 1));
+      }
+    }
     const xpBase = prog.xpForRace(h.c.finished, pos, order.length);
     const win = pos === 1, podium = pos <= Math.min(3, order.length);
     const lapMs = h.c.best != null ? Math.round(h.c.best * 1000) : null;
@@ -408,10 +419,10 @@ app.get('/ghost', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'db' }); }
 });
 
-function newRoom(mode, mapId) {
+function newRoom(mode, mapId, cap) { // v76: configurable capacity (2..6)
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
-  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set(), lastState: 'waiting', raceSeq: 0, _settled: false, uidBySlot: {}, chBySlot: {} };
+  const entry = { room: new core.RaceRoom(code, mode, mapId, cap), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set(), lastState: 'waiting', raceSeq: 0, _settled: false, uidBySlot: {}, chBySlot: {}, slotByWs: new Map(), ready: new Set(), ratingBySlot: {} };
   rooms.set(code, entry);
   console.log(`[room ${code}] created (${entry.room.mode}, map ${entry.room.mapId})`);
   return entry;
@@ -433,6 +444,16 @@ function broadcastScreens(entry, obj, except) {
   }
 }
 
+function broadcastLobby(entry) { // v76: player list with rating + ready
+  const room = entry.room;
+  const players = [];
+  for (const [ws, slot] of entry.slotByWs) {
+    const c = room.cars[slot - 1];
+    players.push({ slot, name: (c && c.name) || 'RACER', rating: entry.ratingBySlot[slot] || null, ready: entry.ready.has(ws), host: slot === 1 });
+  }
+  players.sort((a, b) => a.slot - b.slot);
+  broadcastScreens(entry, { type: 'lobby', players, cap: room.cap, state: room.state });
+}
 function controllerTelemetry(entry, ws, slot) {
   const room = entry.room;
   const car = room.cars[slot - 1];
@@ -493,7 +514,13 @@ function joinRoom(client, entry, role) {
     broadcastScreens(entry, { type: 'controller-joined', slot });
   } else {
     entry.screens.add(client.ws);
-    client.slot = entry.screens.size === 1 ? 1 : 2;
+    const taken = new Set(entry.slotByWs.values());
+    let slot = 0; for (let ss = 1; ss <= room.cap; ss++) if (!taken.has(ss)) { slot = ss; break; }
+    if (!slot) { sendJSON(client.ws, { type: 'full' }); entry.screens.delete(client.ws); client.entry = null; setTimeout(() => { try { client.ws.close(); } catch (e) {} }, 500); return; }
+    client.slot = slot;
+    entry.slotByWs.set(client.ws, slot);
+    room.setSeat(slot, true);
+    broadcastLobby(entry);
     sendJSON(client.ws, {
       type: 'welcome', role, slot: client.slot, code: room.code, mode: room.mode,
       controllers: { 1: room.controllers[1], 2: room.controllers[2] },
@@ -513,7 +540,7 @@ function handleMessage(client, msg) {
         entry = rooms.get(String(msg.room).toUpperCase().trim());
         if (!entry) { sendJSON(client.ws, { type: 'error', code: 'no-room' }); return; }
       } else {
-        entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race', msg.map);
+        entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race', msg.map, msg.mode === 'coop' ? 2 : 6); // v76
       }
       if (msg.role === 'spec') {
         client.entry = entry; client.role = 'spec'; entry.specs.add(client.ws);
@@ -531,14 +558,20 @@ function handleMessage(client, msg) {
         if (msg.cls) { classPick(msg.cls); room.cars[client.slot - 1].clsKey = msg.cls; } // v64 telemetry
         if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
         // v73: verify the racer's Supabase token server-side -> authoritative uid
-        if (msg.tok) verifyUid(msg.tok).then((uid) => { if (uid && client.entry) { client.uid = uid; entry.uidBySlot[client.slot] = uid; } });
+        if (msg.tok) verifyUid(msg.tok).then(async (uid) => {
+          if (uid && client.entry) {
+            client.uid = uid; entry.uidBySlot[client.slot] = uid;
+            try { const r = await fetch(SB_URL + '/rest/v1/player_stats?user_id=eq.' + uid + '&select=rating', { headers: sbHdr() }); if (r.ok) { const j = await r.json(); if (j[0]) entry.ratingBySlot[client.slot] = j[0].rating; } } catch (e) {}
+            broadcastLobby(entry);
+          }
+        }); // v76
         if (msg.chid) entry.chBySlot[client.slot] = String(parseInt(msg.chid, 10) || ''); // v74 challenge link
       }
       break;
     }
 
     case 'map':
-      if (client.entry && client.role === 'screen') client.entry.room.setMap(msg.map);
+      if (client.entry && client.role === 'screen' && (client.entry.screens.size < 3 || client.slot === 1)) client.entry.room.setMap(msg.map); // v76 host-only 3+
       break;
 
     case 'meta':
@@ -550,7 +583,7 @@ function handleMessage(client, msg) {
       break;
 
     case 'laps':
-      if (client.entry && client.role === 'screen') client.entry.room.setLaps(msg.laps);
+      if (client.entry && client.role === 'screen' && (client.entry.screens.size < 3 || client.slot === 1)) client.entry.room.setLaps(msg.laps); // v76
       break;
 
     case 'bot':
@@ -566,6 +599,7 @@ function handleMessage(client, msg) {
       break;
 
     case 'input': {
+      client.msgs = (client.msgs || 0) + 1; if (client.msgs > 240) { try { client.ws.close(); } catch (e) {} return; } // v76 spam guard
       if (!client.entry) return;
       const room = client.entry.room;
       if (client.role === 'controller' && client.slot) {
@@ -643,8 +677,24 @@ function handleMessage(client, msg) {
       })();
       break;
     }
+    case 'ready': { // v76
+      if (client.entry && client.role === 'screen') {
+        if (msg.on) client.entry.ready.add(client.ws); else client.entry.ready.delete(client.ws);
+        broadcastLobby(client.entry);
+      }
+      break;
+    }
     case 'start':
-      if (client.entry && client.role === 'screen') { client.entry.rematch && client.entry.rematch.clear(); client.entry.room.start(); }
+      if (client.entry && client.role === 'screen') {
+        const en = client.entry;
+        if (en.screens.size >= 3) {
+          if (client.slot !== 1) { sendJSON(client.ws, { type: 'need-ready', msg: 'host starts 3+ player races' }); break; }
+          let allReady = true;
+          for (const ws of en.screens) if (ws !== client.ws && !en.ready.has(ws)) allReady = false;
+          if (!allReady) { sendJSON(client.ws, { type: 'need-ready', msg: 'waiting for all racers to ready up' }); break; }
+        }
+        en.rematch && en.rematch.clear(); en.ready.clear(); en.room.start(); broadcastLobby(en);
+      }
       break;
 
     // v59 rematch voting: when every connected screen votes, reuse the room
@@ -698,7 +748,7 @@ function handleMessage(client, msg) {
         const wsA = matchQueue.shift(), wsB = matchQueue.shift();
         const cA = clientsByWs.get(wsA), cB = clientsByWs.get(wsB);
         if (cA && cB) {
-          const entry = newRoom('race', 0);
+          const entry = newRoom('race', 0, 6); // v76
           joinRoom(cA, entry, 'screen');
           joinRoom(cB, entry, 'screen');
           sendJSON(wsA, { type: 'matched', code: entry.room.code });
@@ -709,6 +759,7 @@ function handleMessage(client, msg) {
     }
 
     case 'ping':
+      client.msgs = 0; // v76 rate window reset
       sendJSON(client.ws, { type: 'pong', t: msg.t });
       break;
   }
@@ -730,6 +781,8 @@ function handleLeave(client) {
     }
   } else if (client.role === 'screen') {
     entry.screens.delete(client.ws);
+    const sl = entry.slotByWs.get(client.ws);
+    if (sl) { entry.slotByWs.delete(client.ws); entry.ready.delete(client.ws); if (entry.room.state === 'waiting') entry.room.setSeat(sl, false); broadcastLobby(entry); }
   } else if (client.role === 'spec') {
     entry.specs.delete(client.ws);
   }
@@ -815,7 +868,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v75', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v76', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
