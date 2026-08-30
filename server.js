@@ -107,7 +107,7 @@ app.get(['/', '/index.html', '/controller.html', '/controller'], (req, res, next
 app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 65536 }); // v77 BUG-003: oversized frames rejected by the library
 
 // ---------------------------------------------------------------------------
 // Rooms
@@ -227,7 +227,7 @@ async function settleRace(entry) {
   if (room.mode !== 'race' && room.mode !== 'elim') return;   // rated formats only
   const order = room.standings().filter((c) => c.participating);
   const humans = [];
-  for (const c of order) { const uid = entry.uidBySlot && entry.uidBySlot[c.slot]; if (uid) humans.push({ c, uid }); }
+  for (const c of order) { const uid = entry.uidBySlot && entry.uidBySlot[c.slot]; if (uid && !entry.dupUid[c.slot]) humans.push({ c, uid }); } // v77 BUG-001 dedupe
   if (!humans.length) return;
   const rated = humans.length >= 2 && room.participants().length === humans.length; // v76: all-human races rate (1v1 unchanged)
   const today = new Date().toISOString().slice(0, 10);
@@ -422,7 +422,7 @@ app.get('/ghost', async (req, res) => {
 function newRoom(mode, mapId, cap) { // v76: configurable capacity (2..6)
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
-  const entry = { room: new core.RaceRoom(code, mode, mapId, cap), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set(), lastState: 'waiting', raceSeq: 0, _settled: false, uidBySlot: {}, chBySlot: {}, slotByWs: new Map(), ready: new Set(), ratingBySlot: {} };
+  const entry = { room: new core.RaceRoom(code, mode, mapId, cap), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set(), lastState: 'waiting', raceSeq: 0, _settled: false, uidBySlot: {}, chBySlot: {}, slotByWs: new Map(), ready: new Set(), ratingBySlot: {}, dupUid: {}, controllerPids: {} };
   rooms.set(code, entry);
   console.log(`[room ${code}] created (${entry.room.mode}, map ${entry.room.mapId})`);
   return entry;
@@ -444,12 +444,13 @@ function broadcastScreens(entry, obj, except) {
   }
 }
 
+function hostSlot(entry) { let h = 0; for (const s of entry.slotByWs.values()) if (!h || s < h) h = s; return h; } // v77 BUG-006
 function broadcastLobby(entry) { // v76: player list with rating + ready
   const room = entry.room;
   const players = [];
   for (const [ws, slot] of entry.slotByWs) {
     const c = room.cars[slot - 1];
-    players.push({ slot, name: (c && c.name) || 'RACER', rating: entry.ratingBySlot[slot] || null, ready: entry.ready.has(ws), host: slot === 1 });
+    players.push({ slot, name: (c && c.name) || 'RACER', rating: entry.ratingBySlot[slot] || null, ready: entry.ready.has(ws), host: slot === hostSlot(entry) });
   }
   players.sort((a, b) => a.slot - b.slot);
   broadcastScreens(entry, { type: 'lobby', players, cap: room.cap, state: room.state });
@@ -500,6 +501,18 @@ function joinRoom(client, entry, role) {
   client.role = role;
 
   if (role === 'controller') {
+    // v77 BUG-008: one physical phone = one controller slot (pid-keyed; stale socket replaced)
+    const pid = typeof msg.pid === 'string' && msg.pid ? String(msg.pid).slice(0, 24) : null;
+    if (pid) {
+      entry.controllerPids = entry.controllerPids || {};
+      const oldWs = entry.controllerPids[pid];
+      if (oldWs && oldWs !== client.ws && oldWs.readyState === 1) {
+        const oldSlot = entry.controllers.get(oldWs);
+        try { oldWs.close(); } catch (e) {}
+        if (oldSlot) { entry.controllers.delete(oldWs); room.setController(oldSlot, false); }
+      }
+      entry.controllerPids[pid] = client.ws;
+    }
     const slot = !room.controllers[1] ? 1 : (!room.controllers[2] ? 2 : 0);
     if (!slot) {
       sendJSON(client.ws, { type: 'full' });
@@ -561,6 +574,8 @@ function handleMessage(client, msg) {
         if (msg.tok) verifyUid(msg.tok).then(async (uid) => {
           if (uid && client.entry) {
             client.uid = uid; entry.uidBySlot[client.slot] = uid;
+            // v77 BUG-001: same account in two slots must not farm rewards/rating
+            entry.dupUid[client.slot] = Object.entries(entry.uidBySlot).some(([s2, u2]) => u2 === uid && Number(s2) !== client.slot);
             try { const r = await fetch(SB_URL + '/rest/v1/player_stats?user_id=eq.' + uid + '&select=rating', { headers: sbHdr() }); if (r.ok) { const j = await r.json(); if (j[0]) entry.ratingBySlot[client.slot] = j[0].rating; } } catch (e) {}
             broadcastLobby(entry);
           }
@@ -571,7 +586,7 @@ function handleMessage(client, msg) {
     }
 
     case 'map':
-      if (client.entry && client.role === 'screen' && (client.entry.screens.size < 3 || client.slot === 1)) client.entry.room.setMap(msg.map); // v76 host-only 3+
+      if (client.entry && client.role === 'screen' && (client.entry.screens.size < 3 || client.slot === hostSlot(client.entry))) client.entry.room.setMap(msg.map); // v76/v77 host-only 3+
       break;
 
     case 'meta':
@@ -583,7 +598,7 @@ function handleMessage(client, msg) {
       break;
 
     case 'laps':
-      if (client.entry && client.role === 'screen' && (client.entry.screens.size < 3 || client.slot === 1)) client.entry.room.setLaps(msg.laps); // v76
+      if (client.entry && client.role === 'screen' && (client.entry.screens.size < 3 || client.slot === hostSlot(client.entry))) client.entry.room.setLaps(msg.laps); // v76/v77
       break;
 
     case 'bot':
@@ -637,7 +652,7 @@ function handleMessage(client, msg) {
             trail: pick(cos.TRAILS, 'trail', eq.trail),
             decal: pick(cos.DECALS, 'decal', eq.decal),
             neon: pick(cos.NEONS, 'neon', eq.neon),
-            title: String(eq.title || '').slice(0, 24)
+            title: String(eq.title || '').replace(/[<>"'&\\]/g, '').slice(0, 24) // v77 BUG-010
           };
           await fetch(SB_URL + '/rest/v1/player_equipped', { method: 'POST',
             headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
@@ -658,21 +673,15 @@ function handleMessage(client, msg) {
           const list = kind === 'paint' ? cos.PAINTS : kind === 'wheels' ? cos.WHEELS : kind === 'trail' ? cos.TRAILS : kind === 'decal' ? cos.DECALS : cos.NEONS;
           const it = list.find((x) => x.id === id);
           if (!it || !cos.isCoinItem(it.unlock)) return;
-          const [wR, iR] = await Promise.all([
-            fetch(SB_URL + '/rest/v1/player_wallet?user_id=eq.' + uid + '&select=coins', { headers: sbHdr() }),
-            fetch(SB_URL + '/rest/v1/player_inventory?user_id=eq.' + uid + '&item_id=eq.' + kind + ':' + id + '&select=item_id', { headers: sbHdr() }),
-          ]);
-          const have = iR.ok ? (await iR.json()).length : 0;
-          if (have) return sendJSON(client.ws, { type: 'buy-err', msg: 'owned' });
-          const coins = wR.ok ? (((await wR.json())[0] || {}).coins || 0) : 0;
-          if (coins < it.unlock.v) return sendJSON(client.ws, { type: 'buy-err', msg: 'need ' + it.unlock.v + ' coins' });
-          await fetch(SB_URL + '/rest/v1/player_wallet', { method: 'POST',
-            headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
-            body: JSON.stringify([{ user_id: uid, coins: coins - it.unlock.v, updated_at: new Date().toISOString() }]) });
-          await fetch(SB_URL + '/rest/v1/player_inventory', { method: 'POST',
-            headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
-            body: JSON.stringify([{ user_id: uid, item_id: kind + ':' + id }]) });
-          sendJSON(client.ws, { type: 'bought', item: kind + ':' + id, coins: coins - it.unlock.v });
+          // v77 BUG-005: single atomic DB transaction (balance check + decrement + insert)
+          const r = await fetch(SB_URL + '/rest/v1/rpc/spend_coins', {
+            method: 'POST', headers: Object.assign(sbHdr(), { Prefer: 'return=representation' }),
+            body: JSON.stringify({ p_uid: uid, p_amount: it.unlock.v, p_item: kind + ':' + id }),
+          });
+          const j = r.ok ? await r.json() : null;
+          const row = Array.isArray(j) ? j[0] : j;
+          if (!row || !row.ok) return sendJSON(client.ws, { type: 'buy-err', msg: row && row.err === 'funds' ? 'need ' + it.unlock.v + ' coins' : row && row.err === 'owned' ? 'already owned' : 'purchase failed' });
+          sendJSON(client.ws, { type: 'bought', item: kind + ':' + id, coins: row.coins });
         } catch (e) {}
       })();
       break;
@@ -688,7 +697,7 @@ function handleMessage(client, msg) {
       if (client.entry && client.role === 'screen') {
         const en = client.entry;
         if (en.screens.size >= 3) {
-          if (client.slot !== 1) { sendJSON(client.ws, { type: 'need-ready', msg: 'host starts 3+ player races' }); break; }
+          if (client.slot !== hostSlot(en)) { sendJSON(client.ws, { type: 'need-ready', msg: 'host starts 3+ player races' }); break; } // v77 BUG-006
           let allReady = true;
           for (const ws of en.screens) if (ws !== client.ws && !en.ready.has(ws)) allReady = false;
           if (!allReady) { sendJSON(client.ws, { type: 'need-ready', msg: 'waiting for all racers to ready up' }); break; }
@@ -782,7 +791,12 @@ function handleLeave(client) {
   } else if (client.role === 'screen') {
     entry.screens.delete(client.ws);
     const sl = entry.slotByWs.get(client.ws);
-    if (sl) { entry.slotByWs.delete(client.ws); entry.ready.delete(client.ws); if (entry.room.state === 'waiting') entry.room.setSeat(sl, false); broadcastLobby(entry); }
+    if (sl) {
+      entry.slotByWs.delete(client.ws); entry.ready.delete(client.ws);
+      delete entry.uidBySlot[sl]; delete entry.ratingBySlot[sl]; delete entry.dupUid[sl]; // v77 BUG-002
+      if (entry.room.state === 'waiting') entry.room.setSeat(sl, false);
+      broadcastLobby(entry);
+    }
   } else if (client.role === 'spec') {
     entry.specs.delete(client.ws);
   }
@@ -806,6 +820,9 @@ setInterval(() => {
   for (const [code, entry] of rooms) {
     const room = entry.room;
     room.update(dt);
+    if (entry.screens.size === 0) room.events.length = 0; // v77 BUG-004: unwatched rooms must not accumulate events
+    const hasHumans = entry.screens.size > 0 || entry.controllers.size > 0;
+    if (hasHumans) entry.lastHuman = now;
 
     // v73: race sequencing + one-time authoritative settlement per race
     if (room.state === 'countdown' && entry.lastState !== 'countdown') { entry.raceSeq = (entry.raceSeq || 0) + 1; entry._settled = false; }
@@ -853,8 +870,8 @@ setInterval(() => {
     }
 
     // garbage-collect abandoned rooms
-    if (entry.screens.size === 0 && entry.controllers.size === 0 && now - room.lastActivity > IDLE_ROOM_MS) {
-      rooms.delete(code);
+    if (entry.screens.size === 0 && entry.controllers.size === 0 && now - (entry.lastHuman || 0) > IDLE_ROOM_MS) {
+      rooms.delete(code); // v77 BUG-004: bots can no longer keep abandoned rooms alive
       console.log(`[room ${code}] closed (idle)`);
     }
   }
@@ -868,7 +885,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v76', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v78', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

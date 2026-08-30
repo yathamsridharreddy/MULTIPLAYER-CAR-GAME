@@ -209,3 +209,32 @@ create table if not exists public.player_equipped (
 );
 alter table public.player_equipped enable row level security;
 create policy "equipped read" on public.player_equipped for select using (true);
+
+-- v77 BUG-005: atomic coin spend (single transaction: balance check + decrement + insert)
+create or replace function public.spend_coins(p_uid uuid, p_amount bigint, p_item text)
+returns json language plpgsql security definer set search_path = public as $$
+declare v_coins bigint;
+begin
+  if exists (select 1 from player_inventory where user_id = p_uid and item_id = p_item) then
+    return json_build_object('ok', false, 'err', 'owned');
+  end if;
+  select coins into v_coins from player_wallet where user_id = p_uid for update;
+  if v_coins is null then v_coins := 0; end if;
+  if v_coins < p_amount then
+    return json_build_object('ok', false, 'err', 'funds');
+  end if;
+  if v_coins = 0 and not exists (select 1 from player_wallet where user_id = p_uid) then
+    insert into player_wallet (user_id, coins) values (p_uid, 0);
+  end if;
+  update player_wallet set coins = coins - p_amount, updated_at = now() where user_id = p_uid;
+  insert into player_inventory (user_id, item_id) values (p_uid, p_item)
+    on conflict (user_id, item_id) do nothing;
+  return json_build_object('ok', true, 'coins', v_coins - p_amount);
+end $$;
+
+-- v78 BUG-007: friend challenges (to_uid) + recipient accept/decline; expiry client-side
+alter table public.challenges add column if not exists to_uid uuid references auth.users(id) on delete cascade;
+create index if not exists ch_to on public.challenges (to_uid, status);
+create policy "ch answer" on public.challenges for update
+  using (auth.uid() = to_uid)
+  with check (status in ('accepted', 'declined'));

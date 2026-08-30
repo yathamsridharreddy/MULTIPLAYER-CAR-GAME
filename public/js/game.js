@@ -1370,7 +1370,7 @@ function wireLobbyV2() {
     })();
   }
 })();
-async function createChallenge(targetMs) {
+async function createChallenge(targetMs, toUid) { // v78: toUid enables friend accept/decline
   const acc = window.SRAccount;
   if (!(acc && acc.loggedIn())) { toast('Sign in to create challenges'); const b = $('account-btn'); if (b) b.click(); return null; }
   const c = sbCfg(); if (!c.url) return null;
@@ -1378,7 +1378,7 @@ async function createChallenge(targetMs) {
     const r = await fetch(c.url + '/rest/v1/challenges', {
       method: 'POST',
       headers: { apikey: c.anon, Authorization: 'Bearer ' + acc.token(), 'Content-Type': 'application/json', Prefer: 'return=representation' },
-      body: JSON.stringify([{ from_uid: acc.uid(), from_name: acc.name() || 'A RACER', map: selectedMap, mode: 'race', laps: prefs.laps || 1, target_ms: targetMs ? Math.round(targetMs * 1000) : null }]),
+      body: JSON.stringify([{ from_uid: acc.uid(), from_name: acc.name() || 'A RACER', map: selectedMap, mode: 'race', laps: prefs.laps || 1, target_ms: targetMs ? Math.round(targetMs * 1000) : null, to_uid: toUid || null }]),
     });
     if (!r.ok) return null;
     const j = await r.json();
@@ -1408,6 +1408,16 @@ function openFriends() {
     let names = {};
     if (fids.length) { const p = await sbGet('/rest/v1/profiles?' + fids.map((f) => 'id=eq.' + f).join('&') + '&select=id,username'); (p || []).forEach((x) => { names[x.id] = x.username; }); }
     let html = '<div class="f-row"><input id="f-search" class="f-in" placeholder="search username…" maxlength="16"/><button id="f-add" class="ghost sm">ADD</button></div>';
+    // v78 incoming challenges (accept/decline allowed by RLS "ch answer")
+    const week = Date.now() - 7 * 86400000;
+    const inch = await sbGet('/rest/v1/challenges?to_uid=eq.' + uid + '&status=eq.open&select=id,from_name,map,target_ms,created_at', tok);
+    const live = (inch || []).filter((x) => new Date(x.created_at).getTime() > week);
+    if (live.length) {
+      html += '<div class="p-sub">⚔️ CHALLENGES FOR YOU</div>';
+      live.forEach((x) => {
+        html += '<div class="f-item"><span>🔥 ' + escapeHtml(x.from_name) + ' · ' + escapeHtml(((CORE.MAPS[x.map] || {}).name || 'CIRCUIT')) + (x.target_ms ? ' · beat ' + fmtTime(x.target_ms / 1000) : '') + '</span><span><button class="ghost sm ch-acc" data-id="' + x.id + '">✔</button> <button class="ghost sm ch-rej" data-id="' + x.id + '">✖</button></span></div>';
+      });
+    }
     if (reqs && reqs.length) {
       html += '<div class="p-sub">REQUESTS</div>';
       const rids = reqs.map((r) => 'id=eq.' + r.from_uid).join('&');
@@ -1430,10 +1440,12 @@ function openFriends() {
       toast(r.ok ? '✉️ Request sent to ' + t.username : 'Request failed (already friends?)');
       openFriends();
     });
+    body.querySelectorAll('.ch-acc').forEach((b) => b.addEventListener('click', async () => { const c = sbCfg(); await fetch(c.url + '/rest/v1/challenges?id=eq.' + b.dataset.id, { method: 'PATCH', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'accepted' }) }); toast('⚔️ Challenge accepted — race!'); location.href = location.origin + '/?ch=' + b.dataset.id; }));
+    body.querySelectorAll('.ch-rej').forEach((b) => b.addEventListener('click', async () => { const c = sbCfg(); await fetch(c.url + '/rest/v1/challenges?id=eq.' + b.dataset.id, { method: 'PATCH', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'declined' }) }); openFriends(); }));
     body.querySelectorAll('.f-acc').forEach((b) => b.addEventListener('click', async () => { const c = sbCfg(); await fetch(c.url + '/rest/v1/friends?id=eq.' + b.dataset.id, { method: 'PATCH', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'accepted' }) }); openFriends(); }));
     body.querySelectorAll('.f-rej').forEach((b) => b.addEventListener('click', async () => { const c = sbCfg(); await fetch(c.url + '/rest/v1/friends?id=eq.' + b.dataset.id, { method: 'PATCH', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'rejected' }) }); openFriends(); }));
     body.querySelectorAll('.f-ch').forEach((b) => b.addEventListener('click', async () => {
-      const id = await createChallenge(null);
+      const id = await createChallenge(null, b.dataset.uid);
       if (id) copyChallengeLink(id, b.dataset.name || 'A RACER', null);
     }));
   })();
@@ -2451,7 +2463,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v76';
+const BUILD = 'v78';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2461,6 +2473,12 @@ const BUILD = 'v76';
       // A build-tag difference alone just means some newer features are absent
       // on one side; the race itself is safe, so don't nag with a banner.
       const geomMismatch = v && v.geom && CORE.GEOM_ID && v.geom !== CORE.GEOM_ID;
+      // v77 BUG-011: cosmetic-only deploys — reload idle tabs on BUILD mismatch (once per build)
+      if (!geomMismatch && v && v.build && v.build !== BUILD && !sessionStorage.getItem('sr_br_' + v.build) && (!latest || latest.state === 'waiting')) {
+        sessionStorage.setItem('sr_br_' + v.build, '1');
+        location.replace(location.pathname + '?r=' + Date.now());
+        return;
+      }
       if (geomMismatch) {
         const key = 'sr_reload_' + (v.build || 'x');
         if (!sessionStorage.getItem(key)) {

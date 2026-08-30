@@ -151,7 +151,8 @@ const net = new RoomLink({
 });
 
 function showJoinScreen(err) { $('join-screen').style.display = 'flex'; $('pads').classList.add('locked'); if (err) $('join-error').textContent = err; }
-function joinRoom(code) { $('join-screen').style.display = 'none'; $('pads').classList.remove('locked'); setStatus('Connecting…', 'wait'); net.connect({ type: 'hello', role: 'controller', room: code.toUpperCase().trim() }); }
+function ctrlPid() { try { let p = localStorage.getItem('sr_ctrl_pid'); if (!p) { p = 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('sr_ctrl_pid', p); } return p; } catch (e) { return null; } } // v77 BUG-008
+function joinRoom(code) { $('join-screen').style.display = 'none'; $('pads').classList.remove('locked'); setStatus('Connecting…', 'wait'); net.connect({ type: 'hello', role: 'controller', room: code.toUpperCase().trim(), pid: ctrlPid() }); }
 
 const wantedRoom = urlParam('room');
 if (wantedRoom) joinRoom(wantedRoom); else showJoinScreen('');
