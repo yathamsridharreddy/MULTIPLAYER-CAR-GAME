@@ -229,48 +229,76 @@ async function settleRace(entry) {
   for (const c of order) { const uid = entry.uidBySlot && entry.uidBySlot[c.slot]; if (uid) humans.push({ c, uid }); }
   if (!humans.length) return;
   const rated = humans.length === 2 && room.participants().length === 2; // human 1v1 only
-  let stats = {}, recs = {};
-  try {
-    const q = '/rest/v1/player_stats?' + humans.map((h) => 'user_id=eq.' + h.uid).join('&') + '&select=user_id,rating,peak_rating,xp,streak,best_streak,races,wins,podiums';
-    const r = await fetch(SB_URL + q, { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { stats[x.user_id] = x; });
-  } catch (e) {}
-  try {
-    const q = '/rest/v1/player_map_records?' + humans.map((h) => 'user_id=eq.' + h.uid).join('&') + '&map=eq.' + room.mapId + '&select=user_id,best_lap_ms,best_race_ms,races,wins';
-    const r = await fetch(SB_URL + q, { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { recs[x.user_id] = x; });
-  } catch (e) {}
+  const today = new Date().toISOString().slice(0, 10);
+  let dailyMap = -1; try { dailyMap = dailyInfo().map; } catch (e) {}
+  const uids = humans.map((h) => h.uid);
+  const uq = uids.map((u) => 'user_id=eq.' + u).join('&');
+  let stats = {}, recs = {}, achHave = {}, mapCount = {}, seasXp = {}, season = null;
+  try { const r = await fetch(SB_URL + '/rest/v1/seasons?order=id.desc&limit=1&select=id,name,end_at', { headers: sbHdr() }); if (r.ok) { const j = await r.json(); season = j[0] || null; } } catch (e) {}
+  try { const r = await fetch(SB_URL + '/rest/v1/player_stats?' + uq + '&select=user_id,rating,peak_rating,xp,streak,best_streak,races,wins,podiums,daily_days,last_daily,challenges_done', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { stats[x.user_id] = x; }); } catch (e) {}
+  try { const r = await fetch(SB_URL + '/rest/v1/player_map_records?' + uq + '&select=user_id,map', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { mapCount[x.user_id] = (mapCount[x.user_id] || 0) + 1; }); } catch (e) {}
+  try { const r = await fetch(SB_URL + '/rest/v1/player_achievements?' + uq + '&select=user_id,ach', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { (achHave[x.user_id] = achHave[x.user_id] || {})[x.ach] = true; }); } catch (e) {}
+  try { const r = await fetch(SB_URL + '/rest/v1/player_seasons?' + uq + (season ? '&season_id=eq.' + season.id : '') + '&select=user_id,xp', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { seasXp[x.user_id] = Number(x.xp) || 0; }); } catch (e) {}
+  try { const r = await fetch(SB_URL + '/rest/v1/player_map_records?' + uq + '&map=eq.' + room.mapId + '&select=user_id,best_lap_ms,best_race_ms,races,wins', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { recs[x.user_id] = x; }); } catch (e) {}
   const rowsOut = [];
   for (let i = 0; i < humans.length; i++) {
     const h = humans[i];
     const pos = order.indexOf(h.c) + 1;
-    const st = stats[h.uid] || { rating: 1000, peak_rating: 1000, xp: 0, streak: 0, best_streak: 0, races: 0, wins: 0, podiums: 0 };
+    const st = stats[h.uid] || { rating: 1000, peak_rating: 1000, xp: 0, streak: 0, best_streak: 0, races: 0, wins: 0, podiums: 0, daily_days: 0, last_daily: '', challenges_done: 0 };
     let rd = 0;
-    if (rated) {
-      const other = humans[1 - i];
-      rd = prog.eloDelta(st.rating, (stats[other.uid] || { rating: 1000 }).rating, pos === 1 ? 1 : 0);
-    }
-    const xp = prog.xpForRace(h.c.finished, pos, order.length);
+    if (rated) { const other = humans[1 - i]; rd = prog.eloDelta(st.rating, (stats[other.uid] || { rating: 1000 }).rating, pos === 1 ? 1 : 0); }
+    const xpBase = prog.xpForRace(h.c.finished, pos, order.length);
     const win = pos === 1, podium = pos <= Math.min(3, order.length);
     const lapMs = h.c.best != null ? Math.round(h.c.best * 1000) : null;
     const raceMs = (h.c.finished && h.c.finishTime != null) ? Math.round(h.c.finishTime * 1000) : null;
     const prev = recs[h.uid];
     const pr = !!lapMs && (!prev || prev.best_lap_ms == null || lapMs < prev.best_lap_ms);
-    const xpOld = Number(st.xp || 0);
-    const xpNew = xpOld + xp;
+    // daily reward: first finish on today's map (server-tracked, once per UTC day)
+    let dailyXp = 0, dailyDays = st.daily_days || 0, lastDaily = st.last_daily || '';
+    if (h.c.finished && room.mode === 'race' && room.mapId === dailyMap && lastDaily !== today) { dailyXp = 150; dailyDays += 1; lastDaily = today; }
+    // challenge completion: server verifies map/mode/target against the stored row
+    let chXp = 0, chDone = false;
+    const chid = entry.chBySlot && entry.chBySlot[h.c.slot];
+    if (chid && h.c.finished && raceMs != null) {
+      try {
+        const r = await fetch(SB_URL + '/rest/v1/challenges?id=eq.' + chid + '&select=id,map,mode,target_ms,status', { headers: sbHdr() });
+        if (r.ok) {
+          const ch = (await r.json())[0];
+          if (ch && ch.status === 'open' && ch.map === room.mapId && ch.mode === room.mode && (!ch.target_ms || raceMs < ch.target_ms)) {
+            await fetch(SB_URL + '/rest/v1/challenges?id=eq.' + chid, { method: 'PATCH', headers: sbHdr(), body: JSON.stringify({ status: 'done', winner_uid: h.uid }) });
+            chXp = 100; chDone = true;
+          }
+        }
+      } catch (e) {}
+    }
+    // achievements: computed ONLY from authoritative stats/history
+    const d = { wins: (st.wins || 0) + (win ? 1 : 0), streak: win ? (st.streak || 0) + 1 : 0, podiums: (st.podiums || 0) + (podium ? 1 : 0), mapsPlayed: mapCount[h.uid] || 0, daily_days: dailyDays, challenges_done: (st.challenges_done || 0) + (chDone ? 1 : 0), races: (st.races || 0) + 1, peak_rating: Math.max(st.peak_rating || 1000, (st.rating || 1000) + rd) };
+    const newAch = [];
+    for (const a of prog.ACHIEVEMENTS) { if (!(achHave[h.uid] && achHave[h.uid][a.id]) && a.test(d)) newAch.push(a); }
+    let achXp = 0; for (const a of newAch) achXp += a.xp;
+    const xpTotal = xpBase + dailyXp + chXp + achXp;
+    const xpOld = Number(st.xp || 0), xpNew = xpOld + xpTotal;
     const lvlOld = prog.levelFromXp(xpOld).level, lvlNew = prog.levelFromXp(xpNew).level;
     const ratingNew = (st.rating || 1000) + rd;
     const streakNew = win ? (st.streak || 0) + 1 : 0;
-    rowsOut.push({ slot: h.c.slot, pos, xp, rd, ratingNew, levelNew: lvlNew, levelUp: lvlNew > lvlOld, pr });
+    rowsOut.push({ slot: h.c.slot, pos, xp: xpTotal, rd, ratingNew, levelNew: lvlNew, levelUp: lvlNew > lvlOld, pr, dailyXp, chDone, ach: newAch.map((a) => ({ id: a.id, name: a.name, icon: a.icon, xp: a.xp })), seasonId: season ? season.id : null });
     const key = room.code + '-' + (entry.raceSeq || 0) + '-' + h.c.slot; // idempotent
     try {
       await fetch(SB_URL + '/rest/v1/race_history', { method: 'POST',
         headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
-        body: JSON.stringify([{ race_key: key, user_id: h.uid, map: room.mapId, mode: room.mode, position: pos, players: order.length, duration_ms: raceMs, best_lap_ms: lapMs, rating_delta: rd, xp }]) });
+        body: JSON.stringify([{ race_key: key, user_id: h.uid, map: room.mapId, mode: room.mode, position: pos, players: order.length, duration_ms: raceMs, best_lap_ms: lapMs, rating_delta: rd, xp: xpTotal }]) });
       await fetch(SB_URL + '/rest/v1/player_stats', { method: 'POST',
         headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
-        body: JSON.stringify([{ user_id: h.uid, races: (st.races || 0) + 1, wins: (st.wins || 0) + (win ? 1 : 0), podiums: (st.podiums || 0) + (podium ? 1 : 0), xp: xpNew, rating: ratingNew, peak_rating: Math.max(st.peak_rating || 1000, ratingNew), streak: streakNew, best_streak: Math.max(st.best_streak || 0, streakNew), updated_at: new Date().toISOString() }]) });
+        body: JSON.stringify([{ user_id: h.uid, races: (st.races || 0) + 1, wins: (st.wins || 0) + (win ? 1 : 0), podiums: (st.podiums || 0) + (podium ? 1 : 0), xp: xpNew, rating: ratingNew, peak_rating: Math.max(st.peak_rating || 1000, ratingNew), streak: streakNew, best_streak: Math.max(st.best_streak || 0, streakNew), daily_days: dailyDays, last_daily: lastDaily, challenges_done: (st.challenges_done || 0) + (chDone ? 1 : 0), updated_at: new Date().toISOString() }]) });
       await fetch(SB_URL + '/rest/v1/player_map_records', { method: 'POST',
         headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
         body: JSON.stringify([{ user_id: h.uid, map: room.mapId, races: (prev ? (prev.races || 0) : 0) + 1, wins: (prev ? (prev.wins || 0) : 0) + (win ? 1 : 0), best_lap_ms: (prev && prev.best_lap_ms != null && (lapMs == null || prev.best_lap_ms < lapMs)) ? prev.best_lap_ms : lapMs, best_race_ms: (prev && prev.best_race_ms != null && (raceMs == null || prev.best_race_ms < raceMs)) ? prev.best_race_ms : raceMs }]) });
+      if (newAch.length) await fetch(SB_URL + '/rest/v1/player_achievements', { method: 'POST',
+        headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
+        body: JSON.stringify(newAch.map((a) => ({ user_id: h.uid, ach: a.id }))) });
+      if (season) await fetch(SB_URL + '/rest/v1/player_seasons', { method: 'POST',
+        headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+        body: JSON.stringify([{ user_id: h.uid, season_id: season.id, rating: ratingNew, xp: (seasXp[h.uid] || 0) + xpTotal }]) });
     } catch (e) { /* settlement must never break a race */ }
   }
   broadcastScreens(entry, { type: 'settle', rows: rowsOut });
@@ -369,7 +397,7 @@ app.get('/ghost', async (req, res) => {
 function newRoom(mode, mapId) {
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
-  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set(), lastState: 'waiting', raceSeq: 0, _settled: false, uidBySlot: {} };
+  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set(), lastState: 'waiting', raceSeq: 0, _settled: false, uidBySlot: {}, chBySlot: {} };
   rooms.set(code, entry);
   console.log(`[room ${code}] created (${entry.room.mode}, map ${entry.room.mapId})`);
   return entry;
@@ -490,6 +518,7 @@ function handleMessage(client, msg) {
         if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
         // v73: verify the racer's Supabase token server-side -> authoritative uid
         if (msg.tok) verifyUid(msg.tok).then((uid) => { if (uid && client.entry) { client.uid = uid; entry.uidBySlot[client.slot] = uid; } });
+        if (msg.chid) entry.chBySlot[client.slot] = String(parseInt(msg.chid, 10) || ''); // v74 challenge link
       }
       break;
     }
@@ -706,7 +735,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v73', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v74', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

@@ -102,3 +102,78 @@ alter table public.race_history enable row level security;
 create policy "history own read" on public.race_history for select using (auth.uid() = user_id);
 -- NOTE: no insert/update/delete policies for stats/records/history on purpose:
 -- settlement happens exclusively through the server's service-role key.
+
+-- ----------------------------------------------------------------------------
+-- v74: social + retention layer (friends, challenges, achievements, seasons)
+-- Social rows are RLS-safe for clients; results/XP/achievements stay
+-- server-written (service role) — clients can never settle outcomes.
+-- ----------------------------------------------------------------------------
+alter table public.player_stats add column if not exists daily_days int not null default 0;
+alter table public.player_stats add column if not exists last_daily text not null default '';
+alter table public.player_stats add column if not exists challenges_done int not null default 0;
+
+create table if not exists public.friends (
+  id         bigint generated always as identity primary key,
+  from_uid   uuid not null references auth.users(id) on delete cascade,
+  to_uid     uuid not null references auth.users(id) on delete cascade,
+  status     text not null default 'pending' check (status in ('pending','accepted','rejected')),
+  created_at timestamptz not null default now(),
+  unique (from_uid, to_uid),
+  check (from_uid <> to_uid)
+);
+create index if not exists friends_to on public.friends (to_uid, status);
+create index if not exists friends_from on public.friends (from_uid, status);
+alter table public.friends enable row level security;
+create policy "friends see"  on public.friends for select using (auth.uid() = from_uid or auth.uid() = to_uid);
+create policy "friends ask"  on public.friends for insert with check (auth.uid() = from_uid);
+create policy "friends ans"  on public.friends for update using (auth.uid() = to_uid);
+create policy "friends drop" on public.friends for delete using (auth.uid() = from_uid or auth.uid() = to_uid);
+
+create table if not exists public.challenges (
+  id         bigint generated always as identity primary key,
+  from_uid   uuid not null references auth.users(id) on delete cascade,
+  from_name  text not null,
+  map        int not null,
+  mode       text not null default 'race',
+  laps       int not null default 1,
+  target_ms  int,                      -- time to beat (null = just race)
+  status     text not null default 'open' check (status in ('open','done','expired')),
+  winner_uid uuid,
+  created_at timestamptz not null default now()
+);
+create index if not exists ch_open on public.challenges (status) where status = 'open';
+alter table public.challenges enable row level security;
+create policy "ch read" on public.challenges for select using (true);   -- share links are public
+create policy "ch make" on public.challenges for insert with check (auth.uid() = from_uid);
+-- no update policy: only the relay (service role) completes a challenge
+
+create table if not exists public.player_achievements (
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  ach         text not null,
+  unlocked_at timestamptz not null default now(),
+  primary key (user_id, ach)
+);
+alter table public.player_achievements enable row level security;
+create policy "ach read" on public.player_achievements for select using (true);
+
+create table if not exists public.seasons (
+  id       int primary key,
+  name     text not null,
+  start_at timestamptz not null,
+  end_at   timestamptz not null
+);
+alter table public.seasons enable row level security;
+create policy "seasons read" on public.seasons for select using (true);
+insert into public.seasons (id, name, start_at, end_at)
+values (1, 'SEASON 01', now(), now() + interval '90 days')
+on conflict (id) do nothing;
+
+create table if not exists public.player_seasons (
+  user_id   uuid not null references auth.users(id) on delete cascade,
+  season_id int not null references public.seasons(id) on delete cascade,
+  rating    int not null default 1000,
+  xp        bigint not null default 0,
+  primary key (user_id, season_id)
+);
+alter table public.player_seasons enable row level security;
+create policy "pseasons read" on public.player_seasons for select using (true);

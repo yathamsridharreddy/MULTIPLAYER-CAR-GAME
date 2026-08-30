@@ -1106,7 +1106,7 @@ function identityPayload() {
     name = SRAccount.name() || prefs.name;
   }
   const cos = prefs.cos || { decal: 0, wheels: 0, trail: 0 };
-  return { name, pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, cos, title: playerTitle().title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined }; // v73
+  return { name, pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, cos, title: playerTitle().title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined, chid: window.__chId || undefined }; // v73/v74
 }
 
 function applyQuality(q) {
@@ -1229,6 +1229,7 @@ function wireLobbyV2() {
       prefs.cls = b.dataset.cls; savePrefs();
       document.querySelectorAll('.cls-btn').forEach((x) => x.classList.toggle('active', x === b));
       sendMeta();
+      const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !s;
     });
   });
   document.querySelectorAll('.laps-btn').forEach((b) => {
@@ -1278,6 +1279,7 @@ function wireLobbyV2() {
       prefs.cos[k] = v; savePrefs();
       document.querySelectorAll('.cos-btn[data-cos="' + k + '"]').forEach((x) => x.classList.toggle('active', x === b));
       sendMeta();
+      const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !s;
     });
   });
   const muteEl = $('set-mute'); if (muteEl) { muteEl.checked = !!prefs.mute; muteEl.addEventListener('change', () => { prefs.mute = muteEl.checked; savePrefs(); setAudio(); }); }
@@ -1303,6 +1305,7 @@ function wireLobbyV2() {
       if (s) { chip.textContent = '👤 ' + (s.name || (s.email || 'racer').split('@')[0]); btn.hidden = true; out.hidden = false; }
       else { chip.textContent = '👤 guest'; btn.hidden = false; out.hidden = true; }
       sendMeta();
+      const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !s;
     }
     SRAccount.session().then((s) => { if (s && !SRAccount.name() && s.email) SRAccount.setName(s.email.split('@')[0]); paint(s); });
     btn.addEventListener('click', () => { dlg.hidden = false; $('acc-err').textContent = ''; });
@@ -1328,7 +1331,93 @@ function wireLobbyV2() {
     $('acc-signup').addEventListener('click', () => doIt((e, p, n) => SRAccount.signup(e, p, n)));
     $('acc-login').addEventListener('click', () => doIt((e, p) => SRAccount.login(e, p)));
   })();
-  // v73 wiring: profile / ratings access points
+  // ---------------------------------------------------------------------------
+// v74 — friends, challenges, shareable results, profile league/achievements
+// ---------------------------------------------------------------------------
+(function () { // challenge link deep-read (?ch=ID)
+  const m = String(location.search.match(/[?&]ch=(\d+)/) || '');
+  const id = (location.search.match(/[?&]ch=(\d+)/) || [])[1];
+  if (id) {
+    window.__chId = id;
+    (async () => {
+      const ch = await sbGet('/rest/v1/challenges?id=eq.' + id + '&select=from_name,map,mode,laps,target_ms,status');
+      if (ch && ch[0] && ch[0].status === 'open') {
+        const M = (CORE.MAPS[ch[0].map] || {}).name || 'a circuit';
+        toast('🔥 ' + ch[0].from_name + ' challenges you' + (ch[0].target_ms ? ': beat ' + fmtTime(ch[0].target_ms / 1000) : '') + ' on ' + M + '!');
+        selectedMap = ch[0].map;
+      }
+    })();
+  }
+})();
+async function createChallenge(targetMs) {
+  const acc = window.SRAccount;
+  if (!(acc && acc.loggedIn())) { toast('Sign in to create challenges'); const b = $('account-btn'); if (b) b.click(); return null; }
+  const c = sbCfg(); if (!c.url) return null;
+  try {
+    const r = await fetch(c.url + '/rest/v1/challenges', {
+      method: 'POST',
+      headers: { apikey: c.anon, Authorization: 'Bearer ' + acc.token(), 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify([{ from_uid: acc.uid(), from_name: acc.name() || 'A RACER', map: selectedMap, mode: 'race', laps: prefs.laps || 1, target_ms: targetMs ? Math.round(targetMs * 1000) : null }]),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j && j[0] ? j[0].id : null;
+  } catch (e) { return null; }
+}
+function copyChallengeLink(id, name, targetMs) {
+  const M = (CORE.MAPS[selectedMap] || {}).name || 'a circuit';
+  const msg = '🔥 ' + (name || 'A RACER') + ' challenged you' + (targetMs ? ' to beat ' + fmtTime(targetMs) : '') + ' on ' + M + '.\n' + location.origin + '/?ch=' + id;
+  copyText(msg); toast('⚔️ Challenge link copied — send it!');
+}
+function openFriends() {
+  const dlg = $('friends-dlg'); if (!dlg) return;
+  dlg.hidden = false;
+  const body = $('friends-body');
+  const acc = window.SRAccount;
+  if (!(acc && acc.loggedIn())) { body.innerHTML = '<div class="p-empty">Sign in to add friends, send challenges and build rivalries.</div>'; return; }
+  const uid = acc.uid(), tok = acc.token();
+  body.innerHTML = '<div class="p-empty">Loading…</div>';
+  (async () => {
+    const [mine, reqs] = await Promise.all([
+      sbGet('/rest/v1/friends?or=(from_uid.eq.' + uid + ',to_uid.eq.' + uid + ')&status=eq.accepted&select=from_uid,to_uid'),
+      sbGet('/rest/v1/friends?to_uid=eq.' + uid + '&status=eq.pending&select=id,from_uid', tok),
+    ]);
+    const fids = [];
+    (mine || []).forEach((f) => fids.push(f.from_uid === uid ? f.to_uid : f.from_uid));
+    let names = {};
+    if (fids.length) { const p = await sbGet('/rest/v1/profiles?' + fids.map((f) => 'id=eq.' + f).join('&') + '&select=id,username'); (p || []).forEach((x) => { names[x.id] = x.username; }); }
+    let html = '<div class="f-row"><input id="f-search" class="f-in" placeholder="search username…" maxlength="16"/><button id="f-add" class="ghost sm">ADD</button></div>';
+    if (reqs && reqs.length) {
+      html += '<div class="p-sub">REQUESTS</div>';
+      const rids = reqs.map((r) => 'id=eq.' + r.from_uid).join('&');
+      const rp = await sbGet('/rest/v1/profiles?' + rids + '&select=id,username');
+      const rn = {}; (rp || []).forEach((x) => { rn[x.id] = x.username; });
+      reqs.forEach((r) => { html += '<div class="f-item"><span>' + escapeHtml(rn[r.from_uid] || 'RACER') + '</span><span><button class="ghost sm f-acc" data-id="' + r.id + '">✔</button> <button class="ghost sm f-rej" data-id="' + r.id + '">✖</button></span></div>'; });
+    }
+    html += '<div class="p-sub">FRIENDS</div>';
+    if (!fids.length) html += '<div class="p-empty">No friends yet — search a username above.</div>';
+    fids.forEach((f) => { html += '<div class="f-item"><span>' + escapeHtml(names[f] || 'RACER') + '</span><button class="ghost sm f-ch" data-uid="' + f + '" data-name="' + escapeHtml(names[f] || 'RACER') + '">⚔️ CHALLENGE</button></div>'; });
+    body.innerHTML = html;
+    $('f-add').addEventListener('click', async () => {
+      const q = $('f-search').value.trim();
+      const p = await sbGet('/rest/v1/profiles?username=ilike.' + encodeURIComponent(q) + '&select=id,username&limit=5');
+      if (!p || !p.length) { toast('No racer named ' + q); return; }
+      const t = p.find((x) => x.username.toLowerCase() === q.toLowerCase()) || p[0];
+      if (t.id === uid) { toast('That is you 🙂'); return; }
+      const c = sbCfg();
+      const r = await fetch(c.url + '/rest/v1/friends', { method: 'POST', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ from_uid: uid, to_uid: t.id }) });
+      toast(r.ok ? '✉️ Request sent to ' + t.username : 'Request failed (already friends?)');
+      openFriends();
+    });
+    body.querySelectorAll('.f-acc').forEach((b) => b.addEventListener('click', async () => { const c = sbCfg(); await fetch(c.url + '/rest/v1/friends?id=eq.' + b.dataset.id, { method: 'PATCH', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'accepted' }) }); openFriends(); }));
+    body.querySelectorAll('.f-rej').forEach((b) => b.addEventListener('click', async () => { const c = sbCfg(); await fetch(c.url + '/rest/v1/friends?id=eq.' + b.dataset.id, { method: 'PATCH', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'rejected' }) }); openFriends(); }));
+    body.querySelectorAll('.f-ch').forEach((b) => b.addEventListener('click', async () => {
+      const id = await createChallenge(null);
+      if (id) copyChallengeLink(id, b.dataset.name || 'A RACER', null);
+    }));
+  })();
+}
+// v73 wiring: profile / ratings access points
 (function () {
   const rp = document.createElement('button'); rp.id = 'res-profile'; rp.className = 'ghost sm'; rp.textContent = '👤 PROFILE';
   const rb = document.createElement('button'); rb.id = 'res-board'; rb.className = 'ghost sm'; rb.textContent = '🏆 RANKINGS';
@@ -1336,6 +1425,11 @@ function wireLobbyV2() {
   rp.addEventListener('click', () => { const r = $('results'); if (r) r.classList.add('hidden'); openProfile(); });
   rb.addEventListener('click', () => { const r = $('results'); if (r) r.classList.add('hidden'); showRatingTab(); });
   const pc = $('profile-close'); if (pc) pc.addEventListener('click', () => { const d = $('profile-dlg'); if (d) d.hidden = true; });
+  const fb = $('friends-btn'); if (fb) fb.addEventListener('click', openFriends);
+  const fc = $('friends-close'); if (fc) fc.addEventListener('click', () => { const d = $('friends-dlg'); if (d) d.hidden = true; });
+  const cc = document.createElement('button'); cc.id = 'res-challenge'; cc.className = 'ghost sm'; cc.textContent = '⚔️ COPY CHALLENGE';
+  const rm2 = $('rematch-btn'); if (rm2 && rm2.parentNode) rm2.parentNode.appendChild(cc);
+  cc.addEventListener('click', async () => { const my = (lastResults || []).find((c) => c.s === mySlot); if (my && my.t != null) { const id = await createChallenge(my.t); if (id) copyChallengeLink(id, (window.SRAccount && SRAccount.name()) || prefs.name, my.t); } });
 })();
 function showRatingTab() {
   const t = $('board-tab-rate'), l = $('board-tab-time');
@@ -1357,6 +1451,15 @@ const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutor
     if (!lastResults) return;
     const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
     const mapName = (CORE.MAPS[mapId] || {}).name || '';
+    // v74 shareable result card
+    {
+      const my = lastResults.find((c) => c.s === mySlot);
+      const pos = lastResults.indexOf(my) + 1;
+      const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+      const card = '🏁 SRIDHAR RUSH\n' + (pos === 1 ? '1st PLACE' : 'P' + pos) + '\nMAP: ' + mapName + '\nTIME: ' + (my && my.t != null ? fmtTime(my.t) : 'DNF') + (row ? '\nRATING: ' + (row.rd > 0 ? '+' : '') + row.rd + '\nXP: +' + row.xp : '') + '\n\nCan you beat me? ' + location.origin + '/';
+      if (navigator.share) navigator.share({ text: card }).catch(() => {}); else { copyText(card); toast('Result card copied!'); }
+      return;
+    }
     const myRow = lastResults.find((c) => c.s === mySlot);
     const pos = lastResults.findIndex((c) => c.s === mySlot) + 1;
     const lines = lastResults.map((r, i) => `${i + 1}. ${r.name || ('P' + r.slot)} — ${r.t != null ? fmtTime(r.t) : 'DNF'}`).join('\n');
@@ -1599,6 +1702,9 @@ function showResults(order) {
         (row.rd ? '<div class="c-rd ' + (row.rd > 0 ? 'up' : 'dn') + '">' + (row.rd > 0 ? '+' : '') + row.rd + ' RATING</div>' : '<div class="c-rd mu">RATED · vs humans only</div>') +
         (row.levelUp ? '<div class="c-lvl">⬆ LEVEL ' + row.levelNew + '</div>' : '') +
         (row.pr ? '<div class="c-pr">🎉 PERSONAL RECORD</div>' : '') +
+        (row.dailyXp ? '<div class="c-pr">📅 DAILY +150 XP</div>' : '') +
+        (row.chDone ? '<div class="c-pr">⚔️ CHALLENGE COMPLETE +100</div>' : '') +
+        (row.ach && row.ach.length ? '<div class="c-pr">' + row.ach.map((a) => a.icon + ' ' + a.name + ' +' + a.xp).join(' · ') + '</div>' : '') +
         '<div class="c-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + row.ratingNew + '</div>';
     } else if (cer) cer.hidden = true;
   }
@@ -1749,7 +1855,21 @@ function renderDailyBoard(rows) {
       const gap = ((me.t - rows[0].t) / Math.max(0.001, rows[0].t)) * 100;
       meta.textContent = '🎯 Target ' + fmtTime(rows[0].t) + ' · You #' + (rows.indexOf(me) + 1) + ' ' + fmtTime(me.t) + (rows.indexOf(me) === 0 ? ' 👑' : ' (+' + gap.toFixed(1) + '%)');
     }
-  }
+    meta.textContent += ' · 🎁 +150 XP first finish · ⏳ ' + utcResetCountdown();
+  } else if (meta) meta.textContent += ' · 🎁 +150 XP first finish · ⏳ ' + utcResetCountdown();
+}
+function utcResetCountdown() {
+  const now = new Date();
+  const mid = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0);
+  const m = Math.floor((mid - now.getTime()) / 60000);
+  return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+}
+function weekResetCountdown() {
+  const now = new Date();
+  const day = now.getUTCDay(); // Monday reset
+  const d = (8 - ((day + 6) % 7)) % 7 || 7;
+  const mon = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + d, 0, 0, 0);
+  return Math.max(0, Math.floor((mon - now.getTime()) / 86400000)) + 'd';
 }
 setInterval(pollLobbyExtras, 8000);
 setTimeout(pollLobbyExtras, 1200);
@@ -2208,7 +2328,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v73';
+const BUILD = 'v74';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2983,19 +3103,26 @@ function openProfile() {
   body.innerHTML = '<div class="p-empty">Loading career…</div>';
   (async () => {
     const uid = acc.uid(), tok = acc.token();
-    const [prof, stats, recs, hist] = await Promise.all([
+    const [prof, stats, recs, hist, achs, seas, psea] = await Promise.all([
       sbGet('/rest/v1/profiles?id=eq.' + uid + '&select=username'),
       sbGet('/rest/v1/player_stats?user_id=eq.' + uid),
       sbGet('/rest/v1/player_map_records?user_id=eq.' + uid + '&order=races.desc'),
       sbGet('/rest/v1/race_history?user_id=eq.' + uid + '&order=created_at.desc&limit=8', tok),
+      sbGet('/rest/v1/player_achievements?user_id=eq.' + uid + '&select=ach,unlocked_at'),
+      sbGet('/rest/v1/seasons?order=id.desc&limit=1&select=id,name,end_at'),
+      sbGet('/rest/v1/player_seasons?user_id=eq.' + uid + '&select=season_id,rating,xp'),
     ]);
     const p = (prof && prof[0]) || { username: acc.name() || 'RACER' };
     const st = (stats && stats[0]) || { races: 0, wins: 0, podiums: 0, xp: 0, rating: 1000, peak_rating: 1000, streak: 0 };
     const lv = window.SRProg ? SRProg.levelFromXp(st.xp) : { level: 1, pct: 0, cur: 0, span: 100 };
-    const tr = window.SRProg ? SRProg.tier(st.rating) : { name: 'BRONZE', col: '#d09a6a' };
+    const tr = window.SRProg ? SRProg.tier(st.rating) : { name: 'BRONZE III', col: '#d09a6a' };
+    const season = seas && seas[0]; const mySeason = psea && psea.find((x) => season && x.season_id === season.id);
     const wr = st.races ? Math.round(100 * st.wins / st.races) : 0;
     let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + '</div>' +
       '<div class="p-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + st.rating + ' <i>peak ' + st.peak_rating + '</i></div>' +
+      '<div class="p-level">' + tr.name.split(' ')[0] + ' PROGRESS<div class="p-bar"><i style="width:' + (tr.pct || 0) + '%"></i></div><span class="p-xp">' + tr.next ? '' : '' + '</span></div>' +
+      (tr.next ? '<div class="p-xp" style="text-align:center">Next: ' + tr.next + '</div>' : '') +
+      (season ? '<div class="p-xp" style="text-align:center">🌞 ' + season.name + ' · ' + (window.SRProg ? SRProg.seasonCountdown(season.end_at) : '') + (mySeason ? ' · season rating ' + mySeason.rating : '') + '</div>' : '') +
       '<div class="p-level">LEVEL ' + lv.level + '<div class="p-bar"><i style="width:' + lv.pct + '%"></i></div><span class="p-xp">' + lv.cur + '/' + lv.span + ' XP</span></div></div>' +
       '<div class="p-grid">' +
       '<div><b>' + st.races + '</b><span>RACES</span></div><div><b>' + st.wins + '</b><span>WINS</span></div>' +
@@ -3009,6 +3136,11 @@ function openProfile() {
     if (hist && hist.length) {
       html += '<div class="p-sub">RECENT RACES</div><div class="p-hist">';
       hist.forEach((h) => { const m = (CORE.MAPS[h.map] || {}).name || ('MAP ' + h.map); html += '<div class="p-hrow"><span>P' + h.position + '/' + h.players + '</span><em>' + escapeHtml(m) + ' · ' + h.mode + '</em><b>' + (h.rating_delta > 0 ? '+' : '') + h.rating_delta + '</b><i>+' + h.xp + ' XP</i></div>'; });
+      html += '</div>';
+    }
+    if (achs && achs.length && window.SRProg) {
+      html += '<div class="p-sub">ACHIEVEMENTS</div><div class="p-recs">';
+      achs.forEach((a) => { const def = SRProg.ACHIEVEMENTS.find((x) => x.id === a.ach); html += '<div class="p-rec"><span>' + (def ? def.icon : '🏅') + ' ' + escapeHtml(def ? def.name : a.ach) + '</span><i>' + new Date(a.unlocked_at).toLocaleDateString() + '</i></div>'; });
       html += '</div>';
     }
     if (!st.races) html += '<div class="p-empty">No settled races yet — your career starts at the next finish line. 🏁</div>';

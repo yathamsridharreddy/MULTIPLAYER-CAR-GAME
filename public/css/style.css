@@ -617,3 +617,8 @@ body.spec #overlay, body.spec .share-row, body.spec #quickplay-btn { display: no
 .p-rec i,.p-hrow i{color:#8b93a8;font-style:normal;font-size:11px}
 .p-hrow span{color:#ffd479;font-weight:800}
 .p-hrow em{font-style:normal;color:#8b93a8;flex:1}
+
+/* v74 friends */
+.f-row{display:flex;gap:6px;margin:6px 0}
+.f-in{flex:1;background:#0e1322;border:1px solid #232c47;border-radius:8px;color:#fff;padding:8px 10px;font:600 13px system-ui}
+.f-item{display:flex;justify-content:space-between;align-items:center;padding:7px 8px;border-bottom:1px solid #1c2440;font:600 13px system-ui;color:#cfd6dd}
