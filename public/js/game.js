@@ -1106,7 +1106,7 @@ function identityPayload() {
     name = SRAccount.name() || prefs.name;
   }
   const cos = prefs.cos || { decal: 0, wheels: 0, trail: 0 };
-  return { name, pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, cos, title: playerTitle().title };
+  return { name, pid, color: prefs.color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, cos, title: playerTitle().title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined }; // v73
 }
 
 function applyQuality(q) {
@@ -1316,15 +1316,42 @@ function wireLobbyV2() {
         if (r.error === 'CHECK_EMAIL') { err.textContent = r.msg; return; }
         if (r.error) { err.textContent = r.error === 'NETWORK' ? 'Network error — try again.' : r.error; return; }
         if (!SRAccount.name()) SRAccount.setName(nm);
+        // v73: bind a unique username to the account (server-validated by DB)
+        const un = (nm || '').replace(/[^A-Za-z0-9_]/g, '_').slice(0, 16) || ('RACER_' + Math.floor(Math.random() * 9999));
+        const pr = await SRAccount.ensureProfile(un);
+        if (pr && pr.error === 'TAKEN') toast('⚠ Username taken — using a variant. Change it in your profile soon.');
         dlg.hidden = true;
         paint(await SRAccount.session());
-        toast('Welcome, ' + nm + '! 🏁');
+        toast('Welcome, ' + un + '! 🏁');
       });
     }
     $('acc-signup').addEventListener('click', () => doIt((e, p, n) => SRAccount.signup(e, p, n)));
     $('acc-login').addEventListener('click', () => doIt((e, p) => SRAccount.login(e, p)));
   })();
-  const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutorial').style.display = 'none'; try { localStorage.setItem('sr_tut', '1'); } catch (e) {} });
+  // v73 wiring: profile / ratings access points
+(function () {
+  const rp = document.createElement('button'); rp.id = 'res-profile'; rp.className = 'ghost sm'; rp.textContent = '👤 PROFILE';
+  const rb = document.createElement('button'); rb.id = 'res-board'; rb.className = 'ghost sm'; rb.textContent = '🏆 RANKINGS';
+  const rm = $('rematch-btn'); if (rm && rm.parentNode) { rm.parentNode.appendChild(rp); rm.parentNode.appendChild(rb); }
+  rp.addEventListener('click', () => { const r = $('results'); if (r) r.classList.add('hidden'); openProfile(); });
+  rb.addEventListener('click', () => { const r = $('results'); if (r) r.classList.add('hidden'); showRatingTab(); });
+  const pc = $('profile-close'); if (pc) pc.addEventListener('click', () => { const d = $('profile-dlg'); if (d) d.hidden = true; });
+})();
+function showRatingTab() {
+  const t = $('board-tab-rate'), l = $('board-tab-time');
+  if (t) t.classList.add('active'); if (l) l.classList.remove('active');
+  const lb = $('leaderboard'), rt = $('rate-board');
+  if (lb) lb.hidden = true; if (rt) rt.hidden = false;
+  loadRatingBoard();
+  const setup = $('setup'); if (setup) setup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+(function () {
+  const t = $('board-tab-time'), r = $('board-tab-rate');
+  if (!t || !r) return;
+  t.addEventListener('click', () => { t.classList.add('active'); r.classList.remove('active'); const lb = $('leaderboard'), rt = $('rate-board'); if (lb) lb.hidden = false; if (rt) rt.hidden = true; });
+  r.addEventListener('click', showRatingTab);
+})();
+const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutorial').style.display = 'none'; try { localStorage.setItem('sr_tut', '1'); } catch (e) {} });
   const shareEl = $('share-btn');
   if (shareEl) shareEl.addEventListener('click', () => {
     if (!lastResults) return;
@@ -1513,6 +1540,7 @@ function showCount(txt) {
   el.classList.toggle('go', txt === 'GO!');
   el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
 }
+let pendingSettle = []; // v73 server-settled XP/rating rows
 function showResults(order) {
   if (TT.on) return; // v61: TT/practice use their own overlay
   lastResults = order;
@@ -1557,6 +1585,22 @@ function showResults(order) {
       pf.hidden = false;
       pf.innerHTML = '📸 PHOTO FINISH — ' + escapeHtml(f[0].name || 'P' + f[0].slot) + ' ' + fmtTime(f[0].t) + ' vs ' + escapeHtml(f[1].name || 'P' + f[1].slot) + ' ' + fmtTime(f[1].t) + ' · margin <b>' + (f[1].t - f[0].t).toFixed(3) + 's</b>';
     } else pf.hidden = true;
+  }
+  // v73 ranked ceremony: server-settled XP / rating / level / PR
+  const cer = $('res-ceremony');
+  if (cer) {
+    const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+    if (row && window.SRProg) {
+      const tr = SRProg.tier(row.ratingNew);
+      cer.hidden = false;
+      cer.innerHTML =
+        '<div class="c-pos">P' + row.pos + '</div>' +
+        '<div class="c-xp">+' + row.xp + ' XP</div>' +
+        (row.rd ? '<div class="c-rd ' + (row.rd > 0 ? 'up' : 'dn') + '">' + (row.rd > 0 ? '+' : '') + row.rd + ' RATING</div>' : '<div class="c-rd mu">RATED · vs humans only</div>') +
+        (row.levelUp ? '<div class="c-lvl">⬆ LEVEL ' + row.levelNew + '</div>' : '') +
+        (row.pr ? '<div class="c-pr">🎉 PERSONAL RECORD</div>' : '') +
+        '<div class="c-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + row.ratingNew + '</div>';
+    } else if (cer) cer.hidden = true;
   }
   // v59 progression + personal-best celebration
   try {
@@ -2153,6 +2197,7 @@ function processEvents(snap) {
           }
         }
         toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
+      case 'settle': pendingSettle = e.rows || []; break; // v73
       case 'results': showResults(e.order); break;
     }
   }
@@ -2163,7 +2208,7 @@ const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v72';
+const BUILD = 'v73';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -2912,6 +2957,76 @@ $('start-btn').addEventListener('click', () => {
   track('race', selectedMap);
   const pb = $('practice-bar'); if (pb) pb.hidden = !TT.practice;
 });
+// ---------------------------------------------------------------------------
+// v73 — persistent platform UI: profile, rating board, ceremony actions
+// Reads use the anon key (RLS public read); history uses the user's own token
+// (RLS own-row read). Writes happen ONLY on the relay (service role).
+// ---------------------------------------------------------------------------
+function sbCfg() { return { url: String(window.SUPABASE_URL || '').replace(/\/+$/, ''), anon: String(window.SUPABASE_ANON || '') }; }
+async function sbGet(path, userTok) {
+  const c = sbCfg(); if (!c.url) return null;
+  try {
+    const r = await fetch(c.url + path, { headers: { apikey: c.anon, Authorization: 'Bearer ' + (userTok || c.anon) } });
+    return r.ok ? await r.json() : null;
+  } catch (e) { return null; }
+}
+function openProfile() {
+  const dlg = $('profile-dlg'); if (!dlg) return;
+  dlg.hidden = false;
+  const body = $('profile-body');
+  const acc = window.SRAccount;
+  if (!(acc && acc.available && acc.available() && acc.loggedIn())) {
+    body.innerHTML = '<div class="p-empty">Create a free racer account to build a permanent racing identity: rating, XP, history, records.<br><br><button id="p-signin" class="big-cta">SIGN IN / CREATE ACCOUNT</button></div>';
+    const b = $('p-signin'); if (b) b.addEventListener('click', () => { dlg.hidden = true; const ab = $('account-btn'); if (ab) ab.click(); });
+    return;
+  }
+  body.innerHTML = '<div class="p-empty">Loading career…</div>';
+  (async () => {
+    const uid = acc.uid(), tok = acc.token();
+    const [prof, stats, recs, hist] = await Promise.all([
+      sbGet('/rest/v1/profiles?id=eq.' + uid + '&select=username'),
+      sbGet('/rest/v1/player_stats?user_id=eq.' + uid),
+      sbGet('/rest/v1/player_map_records?user_id=eq.' + uid + '&order=races.desc'),
+      sbGet('/rest/v1/race_history?user_id=eq.' + uid + '&order=created_at.desc&limit=8', tok),
+    ]);
+    const p = (prof && prof[0]) || { username: acc.name() || 'RACER' };
+    const st = (stats && stats[0]) || { races: 0, wins: 0, podiums: 0, xp: 0, rating: 1000, peak_rating: 1000, streak: 0 };
+    const lv = window.SRProg ? SRProg.levelFromXp(st.xp) : { level: 1, pct: 0, cur: 0, span: 100 };
+    const tr = window.SRProg ? SRProg.tier(st.rating) : { name: 'BRONZE', col: '#d09a6a' };
+    const wr = st.races ? Math.round(100 * st.wins / st.races) : 0;
+    let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + '</div>' +
+      '<div class="p-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + st.rating + ' <i>peak ' + st.peak_rating + '</i></div>' +
+      '<div class="p-level">LEVEL ' + lv.level + '<div class="p-bar"><i style="width:' + lv.pct + '%"></i></div><span class="p-xp">' + lv.cur + '/' + lv.span + ' XP</span></div></div>' +
+      '<div class="p-grid">' +
+      '<div><b>' + st.races + '</b><span>RACES</span></div><div><b>' + st.wins + '</b><span>WINS</span></div>' +
+      '<div><b>' + st.podiums + '</b><span>PODIUMS</span></div><div><b>' + wr + '%</b><span>WIN RATE</span></div>' +
+      '<div><b>🔥' + st.streak + '</b><span>STREAK</span></div><div><b>' + st.best_streak + '</b><span>BEST</span></div></div>';
+    if (recs && recs.length) {
+      html += '<div class="p-sub">MAP RECORDS</div><div class="p-recs">';
+      recs.forEach((r) => { const m = (CORE.MAPS[r.map] || {}).name || ('MAP ' + r.map); html += '<div class="p-rec"><span>' + escapeHtml(m) + '</span><b>' + (r.best_lap_ms ? fmtTime(r.best_lap_ms / 1000) : '--:--.--') + '</b><i>' + r.wins + 'W/' + r.races + 'R</i></div>'; });
+      html += '</div>';
+    }
+    if (hist && hist.length) {
+      html += '<div class="p-sub">RECENT RACES</div><div class="p-hist">';
+      hist.forEach((h) => { const m = (CORE.MAPS[h.map] || {}).name || ('MAP ' + h.map); html += '<div class="p-hrow"><span>P' + h.position + '/' + h.players + '</span><em>' + escapeHtml(m) + ' · ' + h.mode + '</em><b>' + (h.rating_delta > 0 ? '+' : '') + h.rating_delta + '</b><i>+' + h.xp + ' XP</i></div>'; });
+      html += '</div>';
+    }
+    if (!st.races) html += '<div class="p-empty">No settled races yet — your career starts at the next finish line. 🏁</div>';
+    body.innerHTML = html;
+  })();
+}
+function loadRatingBoard() {
+  const el = $('rate-board'); if (!el) return;
+  (async () => {
+    const c = sbCfg(); if (!c.url) { el.innerHTML = '<div class="p-empty">Accounts offline</div>'; return; }
+    const rows = await sbGet('/rest/v1/player_stats?order=rating.desc&limit=10&select=user_id,rating,xp');
+    if (!rows || !rows.length) { el.innerHTML = '<div class="p-empty">No rated racers yet — win a 1v1 to claim #1.</div>'; return; }
+    const ids = rows.map((r) => 'id=eq.' + r.user_id).join('&');
+    const prof = await sbGet('/rest/v1/profiles?' + ids + '&select=id,username');
+    const nm = {}; (prof || []).forEach((p) => { nm[p.id] = p.username; });
+    el.innerHTML = rows.map((r, i) => { const lv = window.SRProg ? SRProg.levelFromXp(r.xp).level : 1; const tr = window.SRProg ? SRProg.tier(r.rating) : { col: '#fff' }; return '<div class="lb-row"><span class="lb-rank">' + (i + 1) + '</span><span class="lb-name">' + escapeHtml(nm[r.user_id] || 'RACER') + ' <i>Lv' + lv + '</i></span><b style="color:' + tr.col + '">' + r.rating + '</b></div>'; }).join('');
+  })();
+}
 $('rematch-btn').addEventListener('click', () => {
   $('results').classList.add('hidden');
   const humanRival = latest && latest.cars && latest.cars[1] && latest.cars[1].p === 1 && !latest.bot;

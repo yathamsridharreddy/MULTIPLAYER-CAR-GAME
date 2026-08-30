@@ -19,6 +19,7 @@ const http = require('http');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const core = require('./shared/game-core.js');
+const prog = require('./shared/progression.js'); // v73 XP/Elo/tier math
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 // Opt-in lean mode for tight free tiers (set LOW_BANDWIDTH=1): race snapshots
@@ -197,6 +198,84 @@ const SB_URL = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SB_ROLE = String(process.env.SUPABASE_SERVICE_ROLE || '');
 const sbOn = () => !!(SB_URL && SB_ROLE && typeof fetch === 'function');
 
+// ---------------------------------------------------------------------------
+// v73 — server-authoritative player platform settlement (accounts, XP, Elo,
+// history). Identity: screens optionally send their Supabase ACCESS TOKEN in
+// hello; we verify it against Supabase Auth — a client-supplied uid is never
+// trusted. All writes use the service role; RLS denies client writes.
+// ---------------------------------------------------------------------------
+const SB_ANON = String(process.env.SUPABASE_ANON || '');
+const tokCache = new Map();
+async function verifyUid(tok) {
+  if (!sbOn() || typeof tok !== 'string' || tok.length < 20) return null;
+  const hit = tokCache.get(tok);
+  if (hit && hit.exp > Date.now()) return hit.uid;
+  try {
+    const r = await fetch(SB_URL + '/auth/v1/user', { headers: { apikey: SB_ANON || SB_ROLE, Authorization: 'Bearer ' + tok } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const uid = j && j.id ? String(j.id) : null;
+    if (uid) { tokCache.set(tok, { uid, exp: Date.now() + 300000 }); if (tokCache.size > 800) tokCache.clear(); }
+    return uid;
+  } catch (e) { return null; }
+}
+const sbHdr = () => ({ apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE, 'Content-Type': 'application/json' });
+async function settleRace(entry) {
+  if (!sbOn() || entry.noRecord) return;                 // practice/TT never settle
+  const room = entry.room;
+  if (room.mode !== 'race' && room.mode !== 'elim') return;   // rated formats only
+  const order = room.standings().filter((c) => c.participating);
+  const humans = [];
+  for (const c of order) { const uid = entry.uidBySlot && entry.uidBySlot[c.slot]; if (uid) humans.push({ c, uid }); }
+  if (!humans.length) return;
+  const rated = humans.length === 2 && room.participants().length === 2; // human 1v1 only
+  let stats = {}, recs = {};
+  try {
+    const q = '/rest/v1/player_stats?' + humans.map((h) => 'user_id=eq.' + h.uid).join('&') + '&select=user_id,rating,peak_rating,xp,streak,best_streak,races,wins,podiums';
+    const r = await fetch(SB_URL + q, { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { stats[x.user_id] = x; });
+  } catch (e) {}
+  try {
+    const q = '/rest/v1/player_map_records?' + humans.map((h) => 'user_id=eq.' + h.uid).join('&') + '&map=eq.' + room.mapId + '&select=user_id,best_lap_ms,best_race_ms,races,wins';
+    const r = await fetch(SB_URL + q, { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { recs[x.user_id] = x; });
+  } catch (e) {}
+  const rowsOut = [];
+  for (let i = 0; i < humans.length; i++) {
+    const h = humans[i];
+    const pos = order.indexOf(h.c) + 1;
+    const st = stats[h.uid] || { rating: 1000, peak_rating: 1000, xp: 0, streak: 0, best_streak: 0, races: 0, wins: 0, podiums: 0 };
+    let rd = 0;
+    if (rated) {
+      const other = humans[1 - i];
+      rd = prog.eloDelta(st.rating, (stats[other.uid] || { rating: 1000 }).rating, pos === 1 ? 1 : 0);
+    }
+    const xp = prog.xpForRace(h.c.finished, pos, order.length);
+    const win = pos === 1, podium = pos <= Math.min(3, order.length);
+    const lapMs = h.c.best != null ? Math.round(h.c.best * 1000) : null;
+    const raceMs = (h.c.finished && h.c.finishTime != null) ? Math.round(h.c.finishTime * 1000) : null;
+    const prev = recs[h.uid];
+    const pr = !!lapMs && (!prev || prev.best_lap_ms == null || lapMs < prev.best_lap_ms);
+    const xpOld = Number(st.xp || 0);
+    const xpNew = xpOld + xp;
+    const lvlOld = prog.levelFromXp(xpOld).level, lvlNew = prog.levelFromXp(xpNew).level;
+    const ratingNew = (st.rating || 1000) + rd;
+    const streakNew = win ? (st.streak || 0) + 1 : 0;
+    rowsOut.push({ slot: h.c.slot, pos, xp, rd, ratingNew, levelNew: lvlNew, levelUp: lvlNew > lvlOld, pr });
+    const key = room.code + '-' + (entry.raceSeq || 0) + '-' + h.c.slot; // idempotent
+    try {
+      await fetch(SB_URL + '/rest/v1/race_history', { method: 'POST',
+        headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
+        body: JSON.stringify([{ race_key: key, user_id: h.uid, map: room.mapId, mode: room.mode, position: pos, players: order.length, duration_ms: raceMs, best_lap_ms: lapMs, rating_delta: rd, xp }]) });
+      await fetch(SB_URL + '/rest/v1/player_stats', { method: 'POST',
+        headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+        body: JSON.stringify([{ user_id: h.uid, races: (st.races || 0) + 1, wins: (st.wins || 0) + (win ? 1 : 0), podiums: (st.podiums || 0) + (podium ? 1 : 0), xp: xpNew, rating: ratingNew, peak_rating: Math.max(st.peak_rating || 1000, ratingNew), streak: streakNew, best_streak: Math.max(st.best_streak || 0, streakNew), updated_at: new Date().toISOString() }]) });
+      await fetch(SB_URL + '/rest/v1/player_map_records', { method: 'POST',
+        headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+        body: JSON.stringify([{ user_id: h.uid, map: room.mapId, races: (prev ? (prev.races || 0) : 0) + 1, wins: (prev ? (prev.wins || 0) : 0) + (win ? 1 : 0), best_lap_ms: (prev && prev.best_lap_ms != null && (lapMs == null || prev.best_lap_ms < lapMs)) ? prev.best_lap_ms : lapMs, best_race_ms: (prev && prev.best_race_ms != null && (raceMs == null || prev.best_race_ms < raceMs)) ? prev.best_race_ms : raceMs }]) });
+    } catch (e) { /* settlement must never break a race */ }
+  }
+  broadcastScreens(entry, { type: 'settle', rows: rowsOut });
+}
+
 async function sbUpsert(mapId, entry) {
   if (!sbOn() || !entry.pid || entry.t == null) return;
   const pid = String(entry.pid);
@@ -290,7 +369,7 @@ app.get('/ghost', async (req, res) => {
 function newRoom(mode, mapId) {
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
-  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set() };
+  const entry = { room: new core.RaceRoom(code, mode, mapId), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set(), lastState: 'waiting', raceSeq: 0, _settled: false, uidBySlot: {} };
   rooms.set(code, entry);
   console.log(`[room ${code}] created (${entry.room.mode}, map ${entry.room.mapId})`);
   return entry;
@@ -409,6 +488,8 @@ function handleMessage(client, msg) {
         if (msg.name || msg.color || msg.cls) room.setPlayerMeta(client.slot, msg);
         if (msg.cls) { classPick(msg.cls); room.cars[client.slot - 1].clsKey = msg.cls; } // v64 telemetry
         if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
+        // v73: verify the racer's Supabase token server-side -> authoritative uid
+        if (msg.tok) verifyUid(msg.tok).then((uid) => { if (uid && client.entry) { client.uid = uid; entry.uidBySlot[client.slot] = uid; } });
       }
       break;
     }
@@ -564,6 +645,11 @@ setInterval(() => {
     const room = entry.room;
     room.update(dt);
 
+    // v73: race sequencing + one-time authoritative settlement per race
+    if (room.state === 'countdown' && entry.lastState !== 'countdown') { entry.raceSeq = (entry.raceSeq || 0) + 1; entry._settled = false; }
+    entry.lastState = room.state;
+    if (room.state === 'finished' && !entry._settled) { entry._settled = true; settleRace(entry); }
+
     // record finishes to the per-map leaderboard (once per car per race)
     for (const car of room.cars) {
       if (car.finished && car.finishTime != null && !car._lb) {
@@ -620,7 +706,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v72', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v73', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 server.listen(PORT, '0.0.0.0', () => {

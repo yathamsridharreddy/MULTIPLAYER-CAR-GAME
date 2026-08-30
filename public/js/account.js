@@ -43,6 +43,7 @@
     available: () => !!(url && key),
     loggedIn: () => !!(ses && ses.access_token),
     uid: () => (ses && ses.uid) || null,
+    token: () => (ses && ses.access_token) || null, // v73: sent to the relay for server-side verification
     email: () => (ses && ses.email) || '',
     name: () => { try { return localStorage.getItem(NKEY) || ''; } catch (e) { return ''; } },
     setName: (n) => { try { localStorage.setItem(NKEY, String(n).slice(0, 16)); } catch (e) {} },
@@ -88,6 +89,27 @@
           uid: (j.user && j.user.id) || '', email: (j.user && j.user.email) || email,
         });
         return { ok: true };
+      } catch (e) { return { error: 'NETWORK' }; }
+    },
+
+    // v73: bind a unique username to the authenticated identity.
+    // RLS allows insert/update of OWN profile row only; the DB CHECK + UNIQUE
+    // constraints are the server-side truth for validity & duplicates.
+    async ensureProfile(username) {
+      if (!this.loggedIn()) return { error: 'NOAUTH' };
+      if (!(window.SRProg && window.SRProg.validUsername(username))) return { error: 'BADNAME' };
+      await ensure();
+      if (!ses || !ses.access_token) return { error: 'NOAUTH' };
+      try {
+        const r = await fetch(url + '/rest/v1/profiles', {
+          method: 'POST',
+          headers: Object.assign(hdrs(ses.access_token), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+          body: JSON.stringify({ id: this.uid(), username: String(username) }),
+        });
+        if (r.ok) return { ok: true };
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 409 || j.code === '23505') return { error: 'TAKEN' };
+        return { error: j.message || ('FAIL ' + r.status) };
       } catch (e) { return { error: 'NETWORK' }; }
     },
 
