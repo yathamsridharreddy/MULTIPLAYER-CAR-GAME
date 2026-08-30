@@ -819,12 +819,6 @@
     }
     return out;
   }
-  function makeSplineTrack(ctrl) {
-    const points = catmullRom(ctrl, 16);
-    let mx = 0, mz = 0;
-    points.forEach((p) => { mx = Math.max(mx, Math.abs(p.x)); mz = Math.max(mz, Math.abs(p.z)); });
-    return { type: 'spline', points, a: mx, b: mz };
-  }
   function makeSplineWorld(seed, track, theme) {
     const rnd = mulberry32(seed);
     const colliders = [], buildings = [], trees = [];
@@ -972,23 +966,6 @@
   Car.prototype.resetState = function (t) { this._along = null; this._nearIdx = null; this._th = null; return _carReset.apply(this, arguments); };
   // v76: spline bot logic merged into botInputFor above
 
-  (function addSplineMaps() {
-    const canyon = makeSplineTrack([
-      { x: 130, z: 0 }, { x: 95, z: 70 }, { x: 20, z: 95 }, { x: -60, z: 80 },
-      { x: -120, z: 40 }, { x: -95, z: -20 }, { x: -30, z: -35 }, { x: 20, z: -20 },
-      { x: 60, z: -45 }, { x: 110, z: -60 }
-    ]);
-    canyon.theme = 'neon'; canyon.name = 'CANYON CHICANE';
-    canyon.world = makeSplineWorld(4242, canyon, 'highland');
-    const hairpin = makeSplineTrack([
-      { x: 140, z: 0 }, { x: 100, z: 70 }, { x: 20, z: 92 }, { x: -60, z: 72 },
-      { x: -125, z: 30 }, { x: -140, z: -30 }, { x: -90, z: -72 }, { x: -20, z: -60 },
-      { x: 20, z: -84 }, { x: 90, z: -70 }, { x: 132, z: -40 }
-    ]);
-    hairpin.theme = 'island'; hairpin.name = 'HAIRPIN GP';
-    hairpin.world = makeSplineWorld(777, hairpin, 'island');
-    MAPS.push(canyon, hairpin);
-  })();
 
 
 

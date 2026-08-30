@@ -66,7 +66,7 @@ app.get('/stats', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   const clsOut = {};
   for (const k of Object.keys(CLASS_TELE)) { const c = CLASS_TELE[k]; clsOut[k] = { pick: c.pick, win: c.win, fin: c.fin, avgPos: c.fin ? +(c.posSum / c.fin).toFixed(2) : null, avgTime: c.fin ? +(c.tSum / c.fin).toFixed(2) : null }; }
-  res.json(Object.assign({ classes: clsOut }, AN));
+  res.json(Object.assign({ classes: clsOut, settleFails, ghost429 }, AN)); // v79
 });
 
 // Dynamic client config. For local runs the server URL is same-origin
@@ -221,6 +221,29 @@ async function verifyUid(tok) {
   } catch (e) { return null; }
 }
 const sbHdr = () => ({ apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE, 'Content-Type': 'application/json' });
+let settleFails = 0, ghost429 = 0; // v79 telemetry
+async function withRetry(label, fn) { // v79 BUG-018: 3 attempts, exp backoff, no infinite retry
+  for (let a = 0; a < 3; a++) {
+    try {
+      const r = await fn();
+      if (r && (r.ok || r.status === 400 || r.status === 409)) return true; // success or permanent
+    } catch (e) { /* transient */ }
+    if (a < 2) await new Promise((rs) => setTimeout(rs, 300 * Math.pow(2, a)));
+  }
+  settleFails++;
+  console.error('[settle] FAILED after 3 attempts:', label);
+  return false;
+}
+// v79 BUG-014: per-IP ghost upload bucket (10/min), bounded memory, periodic prune
+const ghostRate = new Map();
+const ghostPrune = setInterval(() => { const n = Date.now(); for (const [k, v] of ghostRate) if (n - v.t > 60000) ghostRate.delete(k); if (ghostRate.size > 10000) ghostRate.clear(); }, 300000);
+if (ghostPrune.unref) ghostPrune.unref();
+function ghostLimited(ip) {
+  const n = Date.now(); const e = ghostRate.get(ip);
+  if (!e || n - e.t > 60000) { ghostRate.set(ip, { c: 1, t: n }); return false; }
+  if (e.c >= 10) return true;
+  e.c++; return false;
+}
 async function settleRace(entry) {
   if (!sbOn() || entry.noRecord) return;                 // practice/TT never settle
   const room = entry.room;
@@ -237,8 +260,6 @@ async function settleRace(entry) {
   let stats = {}, recs = {}, achHave = {}, mapCount = {}, seasXp = {}, season = null;
   try { const r = await fetch(SB_URL + '/rest/v1/seasons?order=id.desc&limit=1&select=id,name,end_at', { headers: sbHdr() }); if (r.ok) { const j = await r.json(); season = j[0] || null; } } catch (e) {}
   try { const r = await fetch(SB_URL + '/rest/v1/player_stats?' + uq + '&select=user_id,rating,peak_rating,xp,streak,best_streak,races,wins,podiums,daily_days,last_daily,challenges_done', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { stats[x.user_id] = x; }); } catch (e) {}
-  let wallet = {};
-  try { const r = await fetch(SB_URL + '/rest/v1/player_wallet?' + uq + '&select=user_id,coins', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { wallet[x.user_id] = Number(x.coins) || 0; }); } catch (e) {}
   let invRows = {};
   try { const r = await fetch(SB_URL + '/rest/v1/player_inventory?' + uq + '&select=user_id,item_id', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { (invRows[x.user_id] = invRows[x.user_id] || []).push(x.item_id); }); } catch (e) {}
   try { const r = await fetch(SB_URL + '/rest/v1/player_map_records?' + uq + '&select=user_id,map', { headers: sbHdr() }); if (r.ok) (await r.json()).forEach((x) => { mapCount[x.user_id] = (mapCount[x.user_id] || 0) + 1; }); } catch (e) {}
@@ -297,34 +318,46 @@ async function settleRace(entry) {
     if (h.c.finished) coins += cos.COINS.finish;
     if (win) coins += cos.COINS.win; else if (podium) coins += cos.COINS.podium;
     if (dailyXp) coins += cos.COINS.daily;
-    const coinsNew = (wallet[h.uid] || 0) + coins;
     const xpTotal = xpBase + dailyXp + chXp + achXp;
     const xpOld = Number(st.xp || 0), xpNew = xpOld + xpTotal;
     const lvlOld = prog.levelFromXp(xpOld).level, lvlNew = prog.levelFromXp(xpNew).level;
     const ratingNew = (st.rating || 1000) + rd;
     const streakNew = win ? (st.streak || 0) + 1 : 0;
+    const key = room.code + '-' + (entry.raceSeq || 0) + '-' + h.c.slot; // idempotent (race_key)
+    let failed = false;
+    const step = (label, fn) => { return withRetry(label + ':' + key, fn).then((ok) => { if (!ok) failed = true; }); };
+    await step('history', () => fetch(SB_URL + '/rest/v1/race_history', { method: 'POST',
+      headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
+      body: JSON.stringify([{ race_key: key, user_id: h.uid, map: room.mapId, mode: room.mode, position: pos, players: order.length, duration_ms: raceMs, best_lap_ms: lapMs, rating_delta: rd, xp: xpTotal }]) }));
+    await step('stats', () => fetch(SB_URL + '/rest/v1/player_stats', { method: 'POST',
+      headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify([{ user_id: h.uid, races: (st.races || 0) + 1, wins: (st.wins || 0) + (win ? 1 : 0), podiums: (st.podiums || 0) + (podium ? 1 : 0), xp: xpNew, rating: ratingNew, peak_rating: Math.max(st.peak_rating || 1000, ratingNew), streak: streakNew, best_streak: Math.max(st.best_streak || 0, streakNew), daily_days: dailyDays, last_daily: lastDaily, challenges_done: (st.challenges_done || 0) + (chDone ? 1 : 0), updated_at: new Date().toISOString() }]) }));
+    await step('records', () => fetch(SB_URL + '/rest/v1/player_map_records', { method: 'POST',
+      headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify([{ user_id: h.uid, map: room.mapId, races: (prev ? (prev.races || 0) : 0) + 1, wins: (prev ? (prev.wins || 0) : 0) + (win ? 1 : 0), best_lap_ms: (prev && prev.best_lap_ms != null && (lapMs == null || prev.best_lap_ms < lapMs)) ? prev.best_lap_ms : lapMs, best_race_ms: (prev && prev.best_race_ms != null && (raceMs == null || prev.best_race_ms < raceMs)) ? prev.best_race_ms : raceMs }]) }));
+    if (newAch.length) await step('ach', () => fetch(SB_URL + '/rest/v1/player_achievements', { method: 'POST',
+      headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
+      body: JSON.stringify(newAch.map((a) => ({ user_id: h.uid, ach: a.id }))) }));
+    if (season) await step('season', () => fetch(SB_URL + '/rest/v1/player_seasons', { method: 'POST',
+      headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify([{ user_id: h.uid, season_id: season.id, rating: ratingNew, xp: (seasXp[h.uid] || 0) + xpTotal }]) }));
+    // v79 BUG-016: atomic coin increment, ledger-ref idempotent (safe to retry)
+    let coinsNew = null;
+    if (coins > 0) {
+      for (let a = 0; a < 3 && coinsNew == null; a++) {
+        try {
+          const r = await fetch(SB_URL + '/rest/v1/rpc/earn_coins', { method: 'POST',
+            headers: Object.assign(sbHdr(), { Prefer: 'return=representation' }),
+            body: JSON.stringify({ p_uid: h.uid, p_delta: coins, p_ref: key, p_reason: 'race' }) });
+          if (r.ok) { const j = await r.json(); const row = Array.isArray(j) ? j[0] : j; if (row && row.ok) coinsNew = row.coins; }
+          else if (r.status === 400) break; // permanent validation failure
+        } catch (e) { /* transient */ }
+        if (coinsNew == null && a < 2) await new Promise((rs) => setTimeout(rs, 300 * Math.pow(2, a)));
+      }
+      if (coinsNew == null) failed = true;
+    }
+    if (failed) broadcastScreens(entry, { type: 'settle-warn', slot: h.c.slot }); // v79 BUG-018: never silent
     rowsOut.push({ slot: h.c.slot, pos, xp: xpTotal, rd, ratingNew, levelNew: lvlNew, levelUp: lvlNew > lvlOld, pr, dailyXp, chDone, coins, coinsNew, ach: newAch.map((a) => ({ id: a.id, name: a.name, icon: a.icon, xp: a.xp })), seasonId: season ? season.id : null });
-    const key = room.code + '-' + (entry.raceSeq || 0) + '-' + h.c.slot; // idempotent
-    try {
-      await fetch(SB_URL + '/rest/v1/race_history', { method: 'POST',
-        headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
-        body: JSON.stringify([{ race_key: key, user_id: h.uid, map: room.mapId, mode: room.mode, position: pos, players: order.length, duration_ms: raceMs, best_lap_ms: lapMs, rating_delta: rd, xp: xpTotal }]) });
-      await fetch(SB_URL + '/rest/v1/player_stats', { method: 'POST',
-        headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
-        body: JSON.stringify([{ user_id: h.uid, races: (st.races || 0) + 1, wins: (st.wins || 0) + (win ? 1 : 0), podiums: (st.podiums || 0) + (podium ? 1 : 0), xp: xpNew, rating: ratingNew, peak_rating: Math.max(st.peak_rating || 1000, ratingNew), streak: streakNew, best_streak: Math.max(st.best_streak || 0, streakNew), daily_days: dailyDays, last_daily: lastDaily, challenges_done: (st.challenges_done || 0) + (chDone ? 1 : 0), updated_at: new Date().toISOString() }]) });
-      await fetch(SB_URL + '/rest/v1/player_map_records', { method: 'POST',
-        headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
-        body: JSON.stringify([{ user_id: h.uid, map: room.mapId, races: (prev ? (prev.races || 0) : 0) + 1, wins: (prev ? (prev.wins || 0) : 0) + (win ? 1 : 0), best_lap_ms: (prev && prev.best_lap_ms != null && (lapMs == null || prev.best_lap_ms < lapMs)) ? prev.best_lap_ms : lapMs, best_race_ms: (prev && prev.best_race_ms != null && (raceMs == null || prev.best_race_ms < raceMs)) ? prev.best_race_ms : raceMs }]) });
-      await fetch(SB_URL + '/rest/v1/player_wallet', { method: 'POST',
-        headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
-        body: JSON.stringify([{ user_id: h.uid, coins: coinsNew, updated_at: new Date().toISOString() }]) });
-      if (newAch.length) await fetch(SB_URL + '/rest/v1/player_achievements', { method: 'POST',
-        headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
-        body: JSON.stringify(newAch.map((a) => ({ user_id: h.uid, ach: a.id }))) });
-      if (season) await fetch(SB_URL + '/rest/v1/player_seasons', { method: 'POST',
-        headers: Object.assign(sbHdr(), { Prefer: 'resolution=merge-duplicates,return=minimal' }),
-        body: JSON.stringify([{ user_id: h.uid, season_id: season.id, rating: ratingNew, xp: (seasXp[h.uid] || 0) + xpTotal }]) });
-    } catch (e) { /* settlement must never break a race */ }
   }
   broadcastScreens(entry, { type: 'settle', rows: rowsOut });
 }
@@ -384,6 +417,8 @@ app.get('/lb', async (req, res) => {
 // through the server). Without Supabase configured -> 503, client hides feature.
 // ---------------------------------------------------------------------------
 app.post('/ghost', (req, res) => {
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '?').split(',')[0]; // v79
+  if (ghostLimited(ip)) { ghost429++; return res.status(429).json({ error: 'rate' }); } // v79 BUG-014
   let b = '';
   req.on('data', (c) => { if (b.length < 400000) b += c; });
   req.on('end', async () => {
@@ -393,7 +428,7 @@ app.post('/ghost', (req, res) => {
       const map = parseInt(j.map, 10);
       if (!(map >= 0 && map < 5) || !Array.isArray(j.data) || j.data.length < 10 || j.data.length > 4000)
         return res.status(400).json({ error: 'bad' });
-      const id = Math.random().toString(36).slice(2, 8);
+      const id = require('crypto').randomBytes(6).toString('hex'); // v79 N-08: 12-hex, collision-resistant
       const r = await fetch(SB_URL + '/rest/v1/ghosts', {
         method: 'POST',
         headers: { apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
@@ -529,7 +564,17 @@ function joinRoom(client, entry, role) {
     entry.screens.add(client.ws);
     const taken = new Set(entry.slotByWs.values());
     let slot = 0; for (let ss = 1; ss <= room.cap; ss++) if (!taken.has(ss)) { slot = ss; break; }
-    if (!slot) { sendJSON(client.ws, { type: 'full' }); entry.screens.delete(client.ws); client.entry = null; setTimeout(() => { try { client.ws.close(); } catch (e) {} }, 500); return; }
+    if (!slot) {
+      if (room.state !== 'waiting') { // v79 BUG-017: race in progress -> spectator fallback (no retry loop)
+        if (entry.specs.size >= 16) { sendJSON(client.ws, { type: 'error', code: 'spec-full' }); entry.screens.delete(client.ws); client.entry = null; setTimeout(() => { try { client.ws.close(); } catch (e) {} }, 300); return; } // v79 N-07
+        entry.screens.delete(client.ws);
+        entry.specs.add(client.ws); client.role = 'spec'; client.slot = 0;
+        sendJSON(client.ws, { type: 'joined', role: 'spec', slot: 0 });
+        sendJSON(client.ws, { type: 'spec-fallback', code: room.code });
+        return;
+      }
+      sendJSON(client.ws, { type: 'full' }); entry.screens.delete(client.ws); client.entry = null; setTimeout(() => { try { client.ws.close(); } catch (e) {} }, 500); return;
+    }
     client.slot = slot;
     entry.slotByWs.set(client.ws, slot);
     room.setSeat(slot, true);
@@ -556,6 +601,7 @@ function handleMessage(client, msg) {
         entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race', msg.map, msg.mode === 'coop' ? 2 : 6); // v76
       }
       if (msg.role === 'spec') {
+        if (entry.specs.size >= 16) { sendJSON(client.ws, { type: 'error', code: 'spec-full' }); setTimeout(() => { try { client.ws.close(); } catch (e) {} }, 300); return; } // v79 N-07
         client.entry = entry; client.role = 'spec'; entry.specs.add(client.ws);
         sendJSON(client.ws, { type: 'joined', role: 'spec', slot: 0 });
       } else {
@@ -574,8 +620,18 @@ function handleMessage(client, msg) {
         if (msg.tok) verifyUid(msg.tok).then(async (uid) => {
           if (uid && client.entry) {
             client.uid = uid; entry.uidBySlot[client.slot] = uid;
-            // v77 BUG-001: same account in two slots must not farm rewards/rating
-            entry.dupUid[client.slot] = Object.entries(entry.uidBySlot).some(([s2, u2]) => u2 === uid && Number(s2) !== client.slot);
+            // v79 BUG-013: safe session takeover — only a LIVE, recently-pinging
+            // socket of the same uid blocks; a half-dead one is replaced cleanly.
+            entry.uidWs = entry.uidWs || {};
+            const other = entry.uidWs[uid];
+            let dup = false;
+            if (other && other.ws !== client.ws) {
+              const fresh = other.ws.readyState === 1 && (Date.now() - (other.lastPing || 0) < 45000);
+              if (fresh) dup = true;
+              else { try { other.ws.close(); } catch (e) {} delete entry.uidBySlot[other.slot]; delete entry.ratingBySlot[other.slot]; delete entry.dupUid[other.slot]; }
+            }
+            entry.dupUid[client.slot] = dup; // v77 anti-self-play preserved
+            entry.uidWs[uid] = { ws: client.ws, slot: client.slot, lastPing: Date.now() };
             try { const r = await fetch(SB_URL + '/rest/v1/player_stats?user_id=eq.' + uid + '&select=rating', { headers: sbHdr() }); if (r.ok) { const j = await r.json(); if (j[0]) entry.ratingBySlot[client.slot] = j[0].rating; } } catch (e) {}
             broadcastLobby(entry);
           }
@@ -769,6 +825,8 @@ function handleMessage(client, msg) {
 
     case 'ping':
       client.msgs = 0; // v76 rate window reset
+      client.lastPing = Date.now(); // v79 BUG-013
+      if (client.entry && client.uid && client.entry.uidWs && client.entry.uidWs[client.uid]) client.entry.uidWs[client.uid].lastPing = Date.now();
       sendJSON(client.ws, { type: 'pong', t: msg.t });
       break;
   }
@@ -783,6 +841,7 @@ function handleLeave(client) {
     const still = [...entry.controllers.values()].some((s, i) =>
       s === client.slot && [...entry.controllers.keys()][i] !== client.ws);
     entry.controllers.delete(client.ws);
+    if (entry.controllerPids) for (const [p, w] of Object.entries(entry.controllerPids)) if (w === client.ws) delete entry.controllerPids[p]; // v79 BUG-015
     if (!still) {
       entry.room.setController(client.slot, false);
       entry.room.setInput(client.slot, core.ZERO_INPUT());
@@ -794,6 +853,7 @@ function handleLeave(client) {
     if (sl) {
       entry.slotByWs.delete(client.ws); entry.ready.delete(client.ws);
       delete entry.uidBySlot[sl]; delete entry.ratingBySlot[sl]; delete entry.dupUid[sl]; // v77 BUG-002
+      if (client.uid && entry.uidWs && entry.uidWs[client.uid] && entry.uidWs[client.uid].ws === client.ws) delete entry.uidWs[client.uid]; // v79
       if (entry.room.state === 'waiting') entry.room.setSeat(sl, false);
       broadcastLobby(entry);
     }

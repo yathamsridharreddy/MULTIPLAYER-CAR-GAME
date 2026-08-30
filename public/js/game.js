@@ -2428,6 +2428,8 @@ function processEvents(snap) {
       case 'lobby': window.__lastLobby = e.players || []; renderRoomLobby(e); break; // v76
       case 'need-ready': toast('⚠ ' + (e.msg || 'not ready yet')); break; // v76
       case 'full': toast('⚠ Room is full (6 max)'); break; // v76
+      case 'joined': if (msg.role === 'spec' && !SPEC_ROOM) { mySlot = 0; document.body.classList.add('spec'); toast('👁️ Race in progress — spectating. Drive the next race!'); } break; // v79 BUG-017
+      case 'settle-warn': toast('⚠ Reward sync delayed — server retrying safely.'); break; // v79 BUG-018
       case 'finished':
         if (e.slot === mySlot) {
           let gb = false;

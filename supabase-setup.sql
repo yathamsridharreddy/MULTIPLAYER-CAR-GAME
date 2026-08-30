@@ -238,3 +238,32 @@ create index if not exists ch_to on public.challenges (to_uid, status);
 create policy "ch answer" on public.challenges for update
   using (auth.uid() = to_uid)
   with check (status in ('accepted', 'declined'));
+
+-- v79 BUG-016: coin ledger + atomic earn (idempotent by ref = race_key)
+create table if not exists public.coin_ledger (
+  id         bigint generated always as identity primary key,
+  ref        text not null unique,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  delta      bigint not null,
+  reason     text not null default 'race',
+  created_at timestamptz not null default now()
+);
+create index if not exists ledger_user on public.coin_ledger (user_id, created_at desc);
+
+create or replace function public.earn_coins(p_uid uuid, p_delta bigint, p_ref text, p_reason text default 'race')
+returns json language plpgsql security definer set search_path = public as $$
+declare v_coins bigint;
+begin
+  if p_delta <= 0 then
+    return json_build_object('ok', false, 'err', 'delta');
+  end if;
+  if exists (select 1 from coin_ledger where ref = p_ref) then
+    select coins into v_coins from player_wallet where user_id = p_uid;
+    return json_build_object('ok', true, 'coins', coalesce(v_coins, 0), 'dup', true);
+  end if;
+  insert into coin_ledger (ref, user_id, delta, reason) values (p_ref, p_uid, p_delta, p_reason);
+  insert into player_wallet (user_id, coins) values (p_uid, p_delta)
+    on conflict (user_id) do update set coins = player_wallet.coins + p_delta, updated_at = now();
+  select coins into v_coins from player_wallet where user_id = p_uid;
+  return json_build_object('ok', true, 'coins', v_coins);
+end $$;
