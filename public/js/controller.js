@@ -113,15 +113,15 @@ const net = new RoomLink({
   onWelcome(msg) {
     state.slot = msg.slot;
     $('pads').classList.remove('locked');
-    document.body.dataset.player = msg.slot === 2 ? 'p2' : 'p1';
-    $('player-label').textContent = msg.slot === 1 ? 'PLAYER 1' : 'PLAYER 2';
+    document.body.dataset.player = 'p' + msg.slot;
+    $('player-label').textContent = 'PLAYER ' + msg.slot;
     $('player-label').style.display = '';
     $('room-tag').textContent = 'ROOM ' + msg.code;
     setStatus('Connected · Player ' + msg.slot, 'ok');
     vibrate(30);
   },
   onMessage(msg) {
-    if (msg.type === 'full') { state.full = true; setStatus('Room full — 2 joysticks already', 'err'); $('full-note').style.display = ''; return; }
+    if (msg.type === 'full') { state.full = true; setStatus('Room full — max joysticks already', 'err'); $('full-note').style.display = ''; return; }
     if (msg.type === 'error' && msg.code === 'no-room') { setStatus('Room not found', 'err'); showJoinScreen('Room not found — check the code.'); return; }
     if (msg.type === 'telemetry' && msg.data) {
       const d = msg.data;
@@ -196,7 +196,11 @@ function trackCtl(e, m) {
       if (!/^(https?):\/\//i.test(cfg)) cfg = 'https://' + cfg;
       cfg = cfg.replace(/\/+$/, '');
     } else cfg = '';
-    fetch(cfg + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e, m }) }).catch(() => {});
+    const pid = ctrlPid();
+    let body = { e, pid };
+    if (typeof m === 'object' && m !== null) Object.assign(body, m);
+    else if (m !== undefined) body.m = m;
+    fetch(cfg + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) }).catch(() => {});
   } catch (err) {}
 }
 let ctrlLat = -1;

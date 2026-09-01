@@ -15,6 +15,7 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -34,39 +35,296 @@ const app = express();
 app.disable('x-powered-by');
 
 // ---------------------------------------------------------------------------
-// v40 lite analytics — aggregate counters only. No IPs, no cookies, no
-// personal data; a privacy-friendly pulse on how the game is used.
+// v80 analytics engine — privacy-friendly funnel, retention & telemetry
+// Persisted locally to analytics.json; resilient to crashes and file errors.
 // ---------------------------------------------------------------------------
-// v64 class balance telemetry (aggregate only, no personal data)
+const AN_FILE = path.join(__dirname, 'analytics.json');
 const CLASS_TELE = { velocity: { pick: 0, win: 0, fin: 0, posSum: 0, tSum: 0 }, accelerator: { pick: 0, win: 0, fin: 0, posSum: 0, tSum: 0 }, grip: { pick: 0, win: 0, fin: 0, posSum: 0, tSum: 0 } };
 function classPick(cls) { const c = CLASS_TELE[cls]; if (c) c.pick++; }
 function classResult(cls, pos, t, won) { const c = CLASS_TELE[cls]; if (!c) return; c.fin++; c.posSum += pos; if (t != null) c.tSum += t; if (won) c.win++; }
-const AN = { visits: 0, controller: 0, races: 0, finishes: 0, installs: 0, errors: 0, lastErr: [], byMap: [0, 0, 0, 0, 0] };
+
+let AN = {
+  counts: {
+    visits: 0, gameStarts: 0, racesStarted: 0, racesCompleted: 0, secondRaces: 0,
+    multiplayerRaces: 0, controllersConnected: 0, challengesSent: 0, challengesAccepted: 0,
+    shares: 0, installs: 0, errors: 0
+  },
+  uniques: {
+    visitors: 0, gameStarters: 0, raceStarters: 0, raceCompleters: 0, secondRacers: 0,
+    multiplayerPlayers: 0, controllerUsers: 0, challengeSenders: 0, challengeAcceptors: 0, sharers: 0
+  },
+  byMap: [0, 0, 0, 0, 0],
+  byMode: { race: 0, tt: 0, practice: 0, coop: 0, elim: 0, drift: 0 },
+  byShare: { wa: 0, tg: 0, link: 0, code: 0, card: 0, ghost: 0, cup: 0, daily: 0, challenge: 0 },
+  cohorts: {}, // YYYY-MM-DD -> { size: 0, d1: 0, d7: 0, d30: 0 }
+  users: {},   // pid -> { f: "YYYY-MM-DD", fIdx: int, l: "YYYY-MM-DD", lIdx: int, stages: {} }
+  lastErr: []
+};
+
+// Load existing analytics if present
+function loadAnalytics(filePath = AN_FILE) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      if (saved && typeof saved === 'object') {
+        if (saved.counts) Object.assign(AN.counts, saved.counts);
+        if (saved.uniques) Object.assign(AN.uniques, saved.uniques);
+        if (saved.byMap && typeof saved.byMap === 'object') Object.assign(AN.byMap, saved.byMap);
+        if (saved.byMode) Object.assign(AN.byMode, saved.byMode);
+        if (saved.byShare) Object.assign(AN.byShare, saved.byShare);
+        if (saved.cohorts) Object.assign(AN.cohorts, saved.cohorts);
+        if (saved.users) Object.assign(AN.users, saved.users);
+        if (Array.isArray(saved.lastErr)) AN.lastErr = saved.lastErr.slice(-10);
+      }
+    }
+  } catch (e) {
+    console.warn('[analytics] Failed to load ' + filePath + ' — starting fresh in memory');
+  }
+}
+
+function persistAnalytics(filePath = AN_FILE) {
+  try {
+    const data = {
+      counts: AN.counts,
+      uniques: AN.uniques,
+      byMap: AN.byMap,
+      byMode: AN.byMode,
+      byShare: AN.byShare,
+      cohorts: AN.cohorts,
+      users: AN.users,
+      lastErr: AN.lastErr
+    };
+    fs.writeFileSync(filePath, JSON.stringify(data));
+  } catch (e) {
+    console.warn('[analytics] Auto-save failed:', e.message);
+  }
+}
+
+loadAnalytics(AN_FILE);
+
+let anSaveTimer = null;
+function scheduleAnalyticsSave() {
+  if (anSaveTimer) return;
+  anSaveTimer = setTimeout(() => {
+    anSaveTimer = null;
+    persistAnalytics(AN_FILE);
+  }, 5000);
+  if (anSaveTimer.unref) anSaveTimer.unref();
+}
+
+function dayIndex(d = new Date()) { return Math.floor(d.getTime() / 86400000); }
+function dayString(d = new Date()) { return d.toISOString().slice(0, 10); }
+
+function recordUserEvent(pid, stageKey, uniqueCounterKey) {
+  if (!pid || typeof pid !== 'string') return;
+  pid = pid.slice(0, 32);
+  const now = new Date();
+  const todayStr = dayString(now);
+  const todayIdx = dayIndex(now);
+
+  let user = AN.users[pid];
+  if (!user) {
+    user = { f: todayStr, fIdx: todayIdx, l: todayStr, lIdx: todayIdx, stages: {} };
+    AN.users[pid] = user;
+    if (!AN.cohorts[todayStr]) AN.cohorts[todayStr] = { size: 0, d1: 0, d7: 0, d30: 0 };
+    AN.cohorts[todayStr].size++;
+
+    // Bounded memory protection: cap users map to 15,000 entries
+    const userKeys = Object.keys(AN.users);
+    if (userKeys.length > 15000) {
+      for (let i = 0; i < 1000; i++) delete AN.users[userKeys[i]];
+    }
+  } else {
+    const dayDiff = todayIdx - (user.fIdx || todayIdx);
+    if (dayDiff === 1 && !user.d1) {
+      user.d1 = true;
+      if (AN.cohorts[user.f]) AN.cohorts[user.f].d1++;
+    } else if (dayDiff >= 7 && dayDiff <= 8 && !user.d7) {
+      user.d7 = true;
+      if (AN.cohorts[user.f]) AN.cohorts[user.f].d7++;
+    } else if (dayDiff >= 30 && dayDiff <= 31 && !user.d30) {
+      user.d30 = true;
+      if (AN.cohorts[user.f]) AN.cohorts[user.f].d30++;
+    }
+    user.l = todayStr;
+    user.lIdx = todayIdx;
+  }
+
+  if (stageKey && uniqueCounterKey && !user.stages[stageKey]) {
+    user.stages[stageKey] = 1;
+    if (AN.uniques[uniqueCounterKey] != null) AN.uniques[uniqueCounterKey]++;
+  }
+}
+
 app.post('/a', (req, res) => {
   let b = '';
-  req.on('data', (c) => { if (b.length < 500) b += c; });
+  req.on('data', (c) => { if (b.length < 2000) b += c; });
   req.on('end', () => {
     try {
       const j = JSON.parse(b || '{}');
-      if (j.e === 'visit') AN.visits++;
-      else if (j.e === 'ctrl') AN.controller++;
-      else if (j.e === 'race') { AN.races++; if (j.map >= 0 && j.map < 5) AN.byMap[j.map]++; }
-      else if (j.e === 'fin') AN.finishes++;
-      else if (j.e === 'inst') AN.installs++;
-      else if (j.e === 'err') {
-        AN.errors++;
-        AN.lastErr.push({ m: String(j.m || 'error').slice(0, 140), ts: Date.now() });
-        if (AN.lastErr.length > 10) AN.lastErr.shift();
+      const pid = typeof j.pid === 'string' ? j.pid : null;
+      const e = String(j.e || '');
+
+      switch (e) {
+        case 'visit':
+          AN.counts.visits++;
+          recordUserEvent(pid, 'v', 'visitors');
+          break;
+        case 'game_start':
+          AN.counts.gameStarts++;
+          recordUserEvent(pid, 'g', 'gameStarters');
+          break;
+        case 'race':
+          AN.counts.racesStarted++;
+          if (j.map >= 0 && j.map < 5) AN.byMap[j.map]++;
+          if (j.mode && AN.byMode[j.mode] != null) AN.byMode[j.mode]++;
+          recordUserEvent(pid, 'r', 'raceStarters');
+          break;
+        case 'fin':
+          AN.counts.racesCompleted++;
+          recordUserEvent(pid, 'f', 'raceCompleters');
+          break;
+        case 'second_race':
+          AN.counts.secondRaces++;
+          recordUserEvent(pid, 's', 'secondRacers');
+          break;
+        case 'multiplayer':
+          AN.counts.multiplayerRaces++;
+          recordUserEvent(pid, 'm', 'multiplayerPlayers');
+          break;
+        case 'ctrl':
+          AN.counts.controllersConnected++;
+          recordUserEvent(pid, 'c', 'controllerUsers');
+          break;
+        case 'ch_send':
+          AN.counts.challengesSent++;
+          recordUserEvent(pid, 'cs', 'challengeSenders');
+          break;
+        case 'ch_accept':
+          AN.counts.challengesAccepted++;
+          recordUserEvent(pid, 'ca', 'challengeAcceptors');
+          break;
+        case 'share':
+          AN.counts.shares++;
+          if (j.channel && typeof j.channel === 'string') {
+            const chKey = j.channel.slice(0, 16);
+            AN.byShare[chKey] = (AN.byShare[chKey] || 0) + 1;
+          }
+          recordUserEvent(pid, 'sh', 'sharers');
+          break;
+        case 'inst':
+          AN.counts.installs++;
+          break;
+        case 'err':
+          AN.counts.errors++;
+          AN.lastErr.push({ m: String(j.m || 'error').slice(0, 140), ts: Date.now() });
+          if (AN.lastErr.length > 10) AN.lastErr.shift();
+          break;
       }
-    } catch (e) {}
+      scheduleAnalyticsSave();
+    } catch (err) {
+      // Malformed analytics must never crash or throw
+    }
     res.json({ ok: true });
   });
 });
+
 app.get('/stats', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   const clsOut = {};
-  for (const k of Object.keys(CLASS_TELE)) { const c = CLASS_TELE[k]; clsOut[k] = { pick: c.pick, win: c.win, fin: c.fin, avgPos: c.fin ? +(c.posSum / c.fin).toFixed(2) : null, avgTime: c.fin ? +(c.tSum / c.fin).toFixed(2) : null }; }
-  res.json(Object.assign({ classes: clsOut, settleFails, ghost429 }, AN)); // v79
+  for (const k of Object.keys(CLASS_TELE)) {
+    const c = CLASS_TELE[k];
+    clsOut[k] = { pick: c.pick, win: c.win, fin: c.fin, avgPos: c.fin ? +(c.posSum / c.fin).toFixed(2) : null, avgTime: c.fin ? +(c.tSum / c.fin).toFixed(2) : null };
+  }
+
+  // Calculate funnel conversions with explicit denominators
+  const u = AN.uniques, c = AN.counts;
+  const visitorToGameStart = u.visitors > 0 ? +(u.gameStarters / u.visitors).toFixed(4) : 0;
+  const gameStartToRace = u.gameStarters > 0 ? +(u.raceStarters / u.gameStarters).toFixed(4) : 0;
+  const raceStartToCompletion = c.racesStarted > 0 ? +(c.racesCompleted / c.racesStarted).toFixed(4) : 0;
+  const completionToSecondRace = u.raceCompleters > 0 ? +(u.secondRacers / u.raceCompleters).toFixed(4) : 0;
+  const multiplayerConversion = u.raceStarters > 0 ? +(u.multiplayerPlayers / u.raceStarters).toFixed(4) : 0;
+  const controllerConversion = u.visitors > 0 ? +(u.controllerUsers / u.visitors).toFixed(4) : 0;
+  const challengeAcceptance = c.challengesSent > 0 ? +(c.challengesAccepted / c.challengesSent).toFixed(4) : 0;
+
+  // Calculate biggest drop-off stage
+  const drops = [
+    { stage: 'visitor_to_game_start', drop: 1 - visitorToGameStart },
+    { stage: 'game_start_to_race_start', drop: 1 - gameStartToRace },
+    { stage: 'race_start_to_completion', drop: 1 - raceStartToCompletion },
+    { stage: 'completion_to_second_race', drop: 1 - completionToSecondRace }
+  ];
+  let biggestDrop = drops[0];
+  for (const d of drops) { if (d.drop > biggestDrop.drop) biggestDrop = d; }
+
+  // Calculate server-derived retention rates across cohorts
+  const todayIdx = dayIndex();
+  let d1Eligible = 0, d1Retained = 0;
+  let d7Eligible = 0, d7Retained = 0;
+  let d30Eligible = 0, d30Retained = 0;
+
+  for (const [dateStr, cohort] of Object.entries(AN.cohorts)) {
+    const cIdx = dayIndex(new Date(dateStr));
+    const age = todayIdx - cIdx;
+    if (age >= 1) { d1Eligible += cohort.size || 0; d1Retained += cohort.d1 || 0; }
+    if (age >= 7) { d7Eligible += cohort.size || 0; d7Retained += cohort.d7 || 0; }
+    if (age >= 30) { d30Eligible += cohort.size || 0; d30Retained += cohort.d30 || 0; }
+  }
+
+  const d1Rate = d1Eligible > 0 ? +(d1Retained / d1Eligible).toFixed(4) : null;
+  const d7Rate = d7Eligible > 0 ? +(d7Retained / d7Eligible).toFixed(4) : null;
+  const d30Rate = d30Eligible > 0 ? +(d30Retained / d30Eligible).toFixed(4) : null;
+
+  res.json({
+    ok: true,
+    // Top-level backwards compatibility fields
+    visits: c.visits,
+    controller: c.controllersConnected,
+    races: c.racesStarted,
+    finishes: c.racesCompleted,
+    installs: c.installs,
+    errors: c.errors,
+    byMap: AN.byMap,
+    classes: clsOut,
+    settleFails,
+    ghost429,
+    lastErr: AN.lastErr,
+
+    // Rich analytics models
+    counts: c,
+    uniques: u,
+    funnel: {
+      visitorToGameStartRate: visitorToGameStart,
+      gameStartToRaceRate: gameStartToRace,
+      raceStartToCompletionRate: raceStartToCompletion,
+      completionToSecondRaceRate: completionToSecondRace,
+      multiplayerConversionRate: multiplayerConversion,
+      controllerConversionRate: controllerConversion,
+      challengeAcceptanceRate: challengeAcceptance,
+      biggestDropOff: {
+        stage: biggestDrop.stage,
+        dropPercentage: +(biggestDrop.drop * 100).toFixed(2)
+      }
+    },
+    retention: {
+      d1RetentionRate: d1Rate,
+      d7RetentionRate: d7Rate,
+      d30RetentionRate: d30Rate,
+      cohorts: Object.entries(AN.cohorts).slice(-14).map(([date, c]) => {
+        const cIdx = dayIndex(new Date(date));
+        const age = todayIdx - cIdx;
+        return {
+          date,
+          size: c.size,
+          d1Rate: (age >= 1 && c.size > 0) ? +(c.d1 / c.size).toFixed(3) : null,
+          d7Rate: (age >= 7 && c.size > 0) ? +(c.d7 / c.size).toFixed(3) : null,
+          d30Rate: (age >= 30 && c.size > 0) ? +(c.d30 / c.size).toFixed(3) : null
+        };
+      })
+    },
+    byMode: AN.byMode,
+    byShare: AN.byShare
+  });
 });
 
 // Dynamic client config. For local runs the server URL is same-origin
@@ -119,7 +377,6 @@ const clientsByWs = new Map(); // ws -> client (for matchmaking pairing)
 // ---------------------------------------------------------------------------
 // Leaderboard (per-map, persisted to disk where available)
 // ---------------------------------------------------------------------------
-const fs = require('fs');
 const LB_FILE = path.join(__dirname, 'leaderboard.json');
 let leaderboard = {};
 try { leaderboard = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); } catch (e) { leaderboard = {}; }
@@ -569,7 +826,13 @@ function joinRoom(client, entry, role, msg) {
       }
       entry.controllerPids[pid] = client.ws;
     }
-    const slot = !room.controllers[1] ? 1 : (!room.controllers[2] ? 2 : 0);
+    let slot = 0;
+    for (let s = 1; s <= room.cap; s++) {
+      if (!room.controllers[s]) {
+        slot = s;
+        break;
+      }
+    }
     if (!slot) {
       sendJSON(client.ws, { type: 'full' });
       client.entry = null;
@@ -602,7 +865,7 @@ function joinRoom(client, entry, role, msg) {
     broadcastLobby(entry);
     sendJSON(client.ws, {
       type: 'welcome', role, slot: client.slot, code: room.code, mode: room.mode,
-      controllers: { 1: room.controllers[1], 2: room.controllers[2] },
+      controllers: Object.assign({}, room.controllers),
       snapshot: room.snapshot()
     });
   }
@@ -918,7 +1181,7 @@ function handleLeave(client) {
 // Game loop — advance every room, stream snapshots + telemetry
 // ---------------------------------------------------------------------------
 let tickCount = 0;
-setInterval(() => {
+const tickInterval = setInterval(() => {
   tickCount++;
   const dt = 1 / core.CFG.tickHz;
   const now = Date.now();
@@ -982,6 +1245,7 @@ setInterval(() => {
     }
   }
 }, TICK_MS);
+if (tickInterval.unref) tickInterval.unref();
 
 app.get('/health', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
@@ -994,6 +1258,21 @@ app.get('/version', (req, res) => {
   res.json({ build: 'v78', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[velocity-rush] multiplayer server on http://0.0.0.0:${PORT} (${core.CFG.tickHz} Hz sim)`);
-});
+if (require.main === module) {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[velocity-rush] multiplayer server on http://0.0.0.0:${PORT} (${core.CFG.tickHz} Hz sim)`);
+  });
+}
+
+module.exports = {
+  app,
+  server,
+  rooms,
+  AN,
+  persistAnalytics,
+  loadAnalytics,
+  joinRoom,
+  handleMessage,
+  handleLeave,
+  newRoom
+};
