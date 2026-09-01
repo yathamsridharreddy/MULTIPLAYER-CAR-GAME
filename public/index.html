@@ -81,6 +81,19 @@
     <button id="exit-btn" title="Back to lobby" style="display:none">⏏ EXIT</button>
   </div>
 
+  <!-- on-screen mobile solo touch controls (active during racing on mobile) -->
+  <div id="touch-controls" style="display:none">
+    <div class="tc-group tc-left">
+      <button id="tc-left" class="tc-btn" aria-label="Steer left">◀</button>
+      <button id="tc-right" class="tc-btn" aria-label="Steer right">▶</button>
+    </div>
+    <div class="tc-group tc-right">
+      <button id="tc-nitro" class="tc-btn tc-nitro" aria-label="Nitro">🔥</button>
+      <button id="tc-brake" class="tc-btn tc-brake" aria-label="Brake / Reverse">▼</button>
+      <button id="tc-gas" class="tc-btn tc-gas" aria-label="Accelerate">▲</button>
+    </div>
+  </div>
+
   <div id="slot-badge" class="slot-badge" style="display:none"></div>
 
   <!-- countdown -->
@@ -120,14 +133,20 @@
       <div id="podium-line" class="pb-note" hidden></div>
       <div id="motiv-line" class="daily-meta"></div>
       <div class="results-btns">
-        <button id="rematch-btn">🔁 REMATCH</button>
-        <button id="share-btn" class="ghost">📤 SHARE</button>
-        <button id="ghost-share-btn" class="ghost" hidden>👻 RACE MY GHOST</button>
-        <button id="beat-btn" class="ghost" hidden>⏱️ BEAT MY TIME</button>
-        <button id="replay-btn" class="ghost" hidden>🎥 REPLAY LINK</button>
-        <button id="photo-btn" class="ghost" hidden>📸 SAVE PHOTO</button>
-        <button id="track-btn" class="ghost">🗺️ CHANGE TRACK</button>
-        <button id="menu-btn" class="ghost">LOBBY</button>
+        <button id="rematch-btn" class="res-btn-primary">🔁 REMATCH</button>
+        <button id="res-challenge-btn" class="res-btn-secondary">🔥 CHALLENGE A FRIEND</button>
+        <div class="res-btn-row">
+          <button id="track-btn" class="ghost sm">🗺️ CHANGE CIRCUIT</button>
+          <button id="menu-btn" class="ghost sm">🚪 LOBBY</button>
+          <button id="more-opts-btn" class="ghost sm">⋯ MORE OPTIONS</button>
+        </div>
+        <div id="res-more-wrap" class="res-more-drawer" hidden>
+          <button id="share-btn" class="ghost sm">📄 COPY RESULT CARD</button>
+          <button id="ghost-share-btn" class="ghost sm" hidden>👻 RACE MY GHOST</button>
+          <button id="beat-btn" class="ghost sm" hidden>⏱️ BEAT MY TIME</button>
+          <button id="replay-btn" class="ghost sm" hidden>🎥 REPLAY LINK</button>
+          <button id="photo-btn" class="ghost sm" hidden>📸 SAVE PHOTO</button>
+        </div>
       </div>
     </div>
   </div>
@@ -162,6 +181,22 @@
           </div>
           <div id="lobby-conn">🟡 connecting…</div>
         </div>
+
+        <!-- challenge invitation banner (authenticated or guest) -->
+        <div id="challenge-banner" class="challenge-banner" style="display:none">
+          <span class="ch-badge" id="ch-badge">🔥 CHALLENGE</span>
+          <div class="ch-msg" id="ch-msg"></div>
+          <div class="ch-note" id="ch-note"></div>
+          <button id="ch-accept-btn" class="big-cta ch-cta">🏁 ACCEPT &amp; RACE</button>
+        </div>
+
+        <!-- mobile mode selection bar -->
+        <div id="mob-choice-bar" class="mobile-prompt-bar" style="display:none">
+          <span class="mob-prompt-txt">📱 Playing on phone:</span>
+          <button id="mob-play-solo" class="mob-choice-btn active">🏎️ PLAY ON THIS PHONE</button>
+          <a id="mob-use-ctrl" href="/controller.html" class="mob-choice-btn">📱 USE AS CONTROLLER</a>
+        </div>
+
         <p id="lobby-status">Waiting for joysticks…</p>
         <div id="recent-line" class="recent-line" hidden></div>
         <div id="account-line" class="account-line" hidden>

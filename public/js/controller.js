@@ -196,7 +196,11 @@ function trackCtl(e, m) {
       if (!/^(https?):\/\//i.test(cfg)) cfg = 'https://' + cfg;
       cfg = cfg.replace(/\/+$/, '');
     } else cfg = '';
-    fetch(cfg + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e, m }) }).catch(() => {});
+    const pid = ctrlPid();
+    let body = { e, pid };
+    if (typeof m === 'object' && m !== null) Object.assign(body, m);
+    else if (m !== undefined) body.m = m;
+    fetch(cfg + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) }).catch(() => {});
   } catch (err) {}
 }
 let ctrlLat = -1;

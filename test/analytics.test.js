@@ -300,6 +300,49 @@ describe('Analytics Engine & Funnel Tracking', () => {
     try { fs.unlinkSync(testStoragePath); } catch (e) {}
   });
 
+  test('tracks phone controller connections with PID attribution and deduplicates unique controllers on reconnect', async () => {
+    const server = app.listen(0);
+    const port = server.address().port;
+
+    try {
+      // 1. Phone 1 connects for the first time
+      const res1 = await fetch(`http://127.0.0.1:${port}/a`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ e: 'ctrl', pid: 'ctrl-phone-alpha' })
+      });
+      assert.equal(res1.status, 200);
+
+      let stats = await (await fetch(`http://127.0.0.1:${port}/stats`)).json();
+      assert.equal(stats.counts.controllersConnected, 1, 'Event count should increment to 1');
+      assert.equal(stats.uniques.controllerUsers, 1, 'Unique controller users should be 1');
+
+      // 2. Phone 1 reconnects (e.g. after sleep / refresh) with the same PID
+      await fetch(`http://127.0.0.1:${port}/a`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ e: 'ctrl', pid: 'ctrl-phone-alpha' })
+      });
+
+      stats = await (await fetch(`http://127.0.0.1:${port}/stats`)).json();
+      assert.equal(stats.counts.controllersConnected, 2, 'Total controller connections should increment to 2');
+      assert.equal(stats.uniques.controllerUsers, 1, 'Unique controller users must stay 1 on reconnect');
+
+      // 3. Phone 2 connects with a distinct PID
+      await fetch(`http://127.0.0.1:${port}/a`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ e: 'ctrl', pid: 'ctrl-phone-beta' })
+      });
+
+      stats = await (await fetch(`http://127.0.0.1:${port}/stats`)).json();
+      assert.equal(stats.counts.controllersConnected, 3, 'Total controller connections should be 3');
+      assert.equal(stats.uniques.controllerUsers, 2, 'Unique controller users should increment to 2');
+    } finally {
+      server.close();
+    }
+  });
+
   test('verifies cold module require loads existing analytics.json without TDZ ReferenceError', () => {
     const defaultAnPath = path.join(__dirname, '..', 'analytics.json');
     const mockData = {
