@@ -113,15 +113,15 @@ const net = new RoomLink({
   onWelcome(msg) {
     state.slot = msg.slot;
     $('pads').classList.remove('locked');
-    document.body.dataset.player = msg.slot === 2 ? 'p2' : 'p1';
-    $('player-label').textContent = msg.slot === 1 ? 'PLAYER 1' : 'PLAYER 2';
+    document.body.dataset.player = 'p' + msg.slot;
+    $('player-label').textContent = 'PLAYER ' + msg.slot;
     $('player-label').style.display = '';
     $('room-tag').textContent = 'ROOM ' + msg.code;
     setStatus('Connected · Player ' + msg.slot, 'ok');
     vibrate(30);
   },
   onMessage(msg) {
-    if (msg.type === 'full') { state.full = true; setStatus('Room full — 2 joysticks already', 'err'); $('full-note').style.display = ''; return; }
+    if (msg.type === 'full') { state.full = true; setStatus('Room full — max joysticks already', 'err'); $('full-note').style.display = ''; return; }
     if (msg.type === 'error' && msg.code === 'no-room') { setStatus('Room not found', 'err'); showJoinScreen('Room not found — check the code.'); return; }
     if (msg.type === 'telemetry' && msg.data) {
       const d = msg.data;
