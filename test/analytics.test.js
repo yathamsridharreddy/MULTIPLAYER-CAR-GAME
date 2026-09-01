@@ -299,4 +299,26 @@ describe('Analytics Engine & Funnel Tracking', () => {
     // Cleanup
     try { fs.unlinkSync(testStoragePath); } catch (e) {}
   });
+
+  test('verifies cold module require loads existing analytics.json without TDZ ReferenceError', () => {
+    const defaultAnPath = path.join(__dirname, '..', 'analytics.json');
+    const mockData = {
+      counts: { visits: 1337, racesStarted: 420 },
+      uniques: { visitors: 999 },
+      cohorts: { '2026-08-01': { size: 50, d1: 25, d7: 10, d30: 5 } }
+    };
+    fs.writeFileSync(defaultAnPath, JSON.stringify(mockData));
+
+    // Clear require cache and re-require server to simulate clean cold start
+    delete require.cache[require.resolve('../server.js')];
+    const reloadedServer = require('../server.js');
+
+    assert.equal(reloadedServer.AN.counts.visits, 1337, 'Cold require must restore saved visit counts');
+    assert.equal(reloadedServer.AN.counts.racesStarted, 420, 'Cold require must restore saved race counts');
+    assert.equal(reloadedServer.AN.uniques.visitors, 999, 'Cold require must restore unique visitor counts');
+    assert.equal(reloadedServer.AN.cohorts['2026-08-01'].size, 50);
+
+    // Cleanup default file
+    try { fs.unlinkSync(defaultAnPath); } catch (e) {}
+  });
 });

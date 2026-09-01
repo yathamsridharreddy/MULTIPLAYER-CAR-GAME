@@ -2481,6 +2481,16 @@ function processEvents(snap) {
 
 const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
+
+// Route mobile phone/touch devices opening a room link to the mobile controller pad
+(function () {
+  if (typeof window === 'undefined') return;
+  const isTouchPhone = ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0))
+    && (window.innerWidth <= 768 || window.innerHeight <= 500 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+  if (wantedRoom && isTouchPhone && !SPEC_ROOM && !urlParam('ch') && !urlParam('g') && !urlParam('screen')) {
+    location.replace('/controller.html?room=' + encodeURIComponent(wantedRoom));
+  }
+})();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
 const BUILD = 'v78';
@@ -3387,7 +3397,15 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   if (fxComposer) fxComposer.setSize(window.innerWidth, window.innerHeight);
 });
-window.addEventListener('pointerdown', ensureAudio, { passive: true });
+const unlockAudio = () => {
+  ensureAudio();
+  if (audio && audio.ctx && audio.ctx.state === 'suspended') {
+    audio.ctx.resume().catch(() => {});
+  }
+};
+window.addEventListener('pointerdown', unlockAudio, { passive: true });
+window.addEventListener('touchstart', unlockAudio, { passive: true });
+window.addEventListener('touchend', unlockAudio, { passive: true });
 
 // ---------------------------------------------------------------------------
 // Main loop

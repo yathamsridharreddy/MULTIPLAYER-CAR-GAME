@@ -15,6 +15,7 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -376,7 +377,6 @@ const clientsByWs = new Map(); // ws -> client (for matchmaking pairing)
 // ---------------------------------------------------------------------------
 // Leaderboard (per-map, persisted to disk where available)
 // ---------------------------------------------------------------------------
-const fs = require('fs');
 const LB_FILE = path.join(__dirname, 'leaderboard.json');
 let leaderboard = {};
 try { leaderboard = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); } catch (e) { leaderboard = {}; }
