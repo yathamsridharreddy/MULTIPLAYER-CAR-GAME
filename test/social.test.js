@@ -111,4 +111,143 @@ describe('Social Features, Challenges & Daily Rotations', () => {
     const normalHome = { url: '/', width: 390, height: 844, hasTouch: true, userAgent: 'iPhone' };
     assert.equal(shouldRouteToController(normalHome), false, 'Normal homepage load must stay on homepage');
   });
+
+  test('parses and validates guest personal challenges while rejecting malformed inputs and maintaining unverified status', () => {
+    function parseGuestChallenge(urlSearch) {
+      try {
+        const u = new URLSearchParams(urlSearch);
+        const pch = u.get('pch') || (u.get('ch') && !/^\d+$/.test(u.get('ch')) ? u.get('ch') : null);
+        if (!pch) return null;
+        let m = pch.match(/^(?:m)?([0-4])_(?:t)?(\d{3,7})_(.+)$/i);
+        if (!m) m = pch.match(/(?:map:)?([0-4]):(?:t:)?(\d{3,7}):(?:name:)?(.+)/i);
+        if (!m) return null;
+        const map = parseInt(m[1], 10);
+        const targetMs = parseInt(m[2], 10);
+        const name = decodeURIComponent(m[3]).replace(/[<>]/g, '').trim().slice(0, 14) || 'A RACER';
+        if (isNaN(map) || map < 0 || map > 4) return null;
+        if (isNaN(targetMs) || targetMs < 1000 || targetMs > 600000) return null;
+        return { map, targetMs, name, verified: false };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // 1. Valid standard guest challenge
+    const validPch = parseGuestChallenge('?pch=0_38420_ApexDriver');
+    assert.deepEqual(validPch, {
+      map: 0,
+      targetMs: 38420,
+      name: 'ApexDriver',
+      verified: false
+    }, 'Must correctly parse valid guest personal challenge');
+
+    // 2. Valid with prefix m0_t42000
+    const validPrefixed = parseGuestChallenge('?pch=m1_t42000_Vortex');
+    assert.deepEqual(validPrefixed, {
+      map: 1,
+      targetMs: 42000,
+      name: 'Vortex',
+      verified: false
+    });
+
+    // 3. Valid with fallback map:X:t:Y
+    const validColon = parseGuestChallenge('?pch=map:2:t:55120:name:Speedy');
+    assert.deepEqual(validColon, {
+      map: 2,
+      targetMs: 55120,
+      name: 'Speedy',
+      verified: false
+    });
+
+    // 4. Sanitizes XSS characters from name
+    const xssAttempt = parseGuestChallenge('?pch=0_30000_%3Cscript%3EHacker%3C%2Fscript%3E');
+    assert.equal(xssAttempt.name, 'scriptHacker/s', 'Angle brackets must be stripped and length capped');
+
+    // 5. Rejects out-of-bounds map IDs (> 4 or < 0)
+    assert.equal(parseGuestChallenge('?pch=5_38000_Driver'), null, 'Map 5 must be rejected');
+    assert.equal(parseGuestChallenge('?pch=-1_38000_Driver'), null, 'Negative map must be rejected');
+
+    // 6. Rejects out-of-bounds target times (< 1000ms or > 600000ms)
+    assert.equal(parseGuestChallenge('?pch=0_500_Cheater'), null, '500ms target must be rejected');
+    assert.equal(parseGuestChallenge('?pch=0_999999999_Driver'), null, 'Unrealistic huge time must be rejected');
+    assert.equal(parseGuestChallenge('?pch=0_-38000_Driver'), null, 'Negative time must be rejected');
+
+    // 7. Rejects malformed strings
+    assert.equal(parseGuestChallenge('?pch=invalid_random_string'), null);
+    assert.equal(parseGuestChallenge('?pch='), null);
+    assert.equal(parseGuestChallenge(''), null);
+  });
+
+  test('formats actionable result-to-challenge share links with context and prevents bare homepage leaks', () => {
+    function generateSharePayload({ myTime, mapId, racerName, isAuth, authChId }) {
+      const M = (core.MAPS[mapId] || {}).name || 'Circuit';
+      const fmtTime = (s) => {
+        const m = Math.floor(s / 60);
+        const sec = (s % 60).toFixed(2);
+        return `${m}:${sec.padStart(5, '0')}`;
+      };
+      const timeStr = myTime != null ? fmtTime(myTime) : 'DNF';
+      let link;
+
+      if (isAuth && authChId) {
+        link = `https://sridharrush.com/?ch=${authChId}`;
+      } else {
+        const safeName = encodeURIComponent((racerName || 'A RACER').slice(0, 14));
+        const targetMs = myTime ? Math.round(myTime * 1000) : 0;
+        link = `https://sridharrush.com/?pch=${mapId}_${targetMs}_${safeName}`;
+      }
+
+      const msg = `🔥 ${racerName || 'A RACER'} challenged you to beat ${timeStr} on ${M}!\nCan you beat my time? Race now: ${link}`;
+      return { msg, link };
+    }
+
+    // Guest share link test
+    const guestShare = generateSharePayload({ myTime: 38.42, mapId: 0, racerName: 'ApexDriver', isAuth: false });
+    assert.ok(guestShare.msg.includes('ApexDriver challenged you'));
+    assert.ok(guestShare.msg.includes('0:38.42'));
+    assert.ok(guestShare.msg.toLowerCase().includes('highland rush'));
+    assert.ok(guestShare.link.includes('?pch=0_38420_ApexDriver'));
+    assert.notEqual(guestShare.link, 'https://sridharrush.com/', 'Must never share bare homepage URL');
+
+    // Authenticated share link test
+    const authShare = generateSharePayload({ myTime: 38.42, mapId: 0, racerName: 'ApexDriver', isAuth: true, authChId: 77 });
+    assert.ok(authShare.link.includes('?ch=77'));
+    assert.notEqual(authShare.link, 'https://sridharrush.com/');
+  });
+
+  test('translates on-screen mobile solo touch inputs accurately into deterministic 30Hz input frame', () => {
+    function buildInputFrame(keysSet, touchInput, gamepadInput) {
+      let steer = (keysSet.has('ArrowLeft') || keysSet.has('KeyA') || touchInput.l ? -1 : 0) + 
+                  (keysSet.has('ArrowRight') || keysSet.has('KeyD') || touchInput.r ? 1 : 0);
+      let throttle = (keysSet.has('ArrowUp') || keysSet.has('KeyW') || touchInput.u) ? 1 : 0;
+      let brake = (keysSet.has('ArrowDown') || keysSet.has('KeyS') || touchInput.d) ? 1 : 0;
+      let handbrake = keysSet.has('Space'), nitro = keysSet.has('ShiftLeft') || keysSet.has('ShiftRight') || touchInput.nitro;
+
+      if (gamepadInput) {
+        if (gamepadInput.steer) steer = gamepadInput.steer;
+        throttle = Math.max(throttle, gamepadInput.throttle);
+        brake = Math.max(brake, gamepadInput.brake);
+        handbrake = handbrake || gamepadInput.handbrake;
+        nitro = nitro || gamepadInput.nitro;
+      }
+      return { steer, throttle, brake, handbrake, nitro };
+    }
+
+    // 1. Touch steer left + gas
+    const touchLeftGas = buildInputFrame(new Set(), { l: 1, r: 0, u: 1, d: 0, nitro: false }, null);
+    assert.deepEqual(touchLeftGas, { steer: -1, throttle: 1, brake: 0, handbrake: false, nitro: false });
+
+    // 2. Touch steer right + nitro
+    const touchRightNitro = buildInputFrame(new Set(), { l: 0, r: 1, u: 1, d: 0, nitro: true }, null);
+    assert.deepEqual(touchRightNitro, { steer: 1, throttle: 1, brake: 0, handbrake: false, nitro: true });
+
+    // 3. Touch brake
+    const touchBrake = buildInputFrame(new Set(), { l: 0, r: 0, u: 0, d: 1, nitro: false }, null);
+    assert.deepEqual(touchBrake, { steer: 0, throttle: 0, brake: 1, handbrake: false, nitro: false });
+
+    // 4. Desktop keyboard overrides when present
+    const kbDrive = buildInputFrame(new Set(['KeyW', 'KeyD', 'ShiftLeft']), { l: 0, r: 0, u: 0, d: 0, nitro: false }, null);
+    assert.deepEqual(kbDrive, { steer: 1, throttle: 1, brake: 0, handbrake: false, nitro: true });
+  });
 });
+
