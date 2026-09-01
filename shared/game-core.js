@@ -541,8 +541,8 @@
     setBanner(text) { this.banner = { text, seq: ++this.bannerSeq }; }
 
     applyInputs() {
-      const i1 = this.inputs[1] || ZERO_INPUT(), i2 = this.inputs[2] || ZERO_INPUT();
       if (this.mode === 'coop') {
+        const i1 = this.inputs[1] || ZERO_INPUT(), i2 = this.inputs[2] || ZERO_INPUT();
         const s1 = i1.steer, s2 = i2.steer;
         const steer = Math.abs(s1) >= Math.abs(s2) ? s1 : s2;
         this.cars[0].input = {
@@ -554,9 +554,7 @@
         };
       } else {
         for (let s = 1; s <= this.cap; s++) {
-          if (this.cars[s - 1]) {
-            this.cars[s - 1].input = this.inputs[s] || ZERO_INPUT();
-          }
+          if (this.cars[s - 1]) this.cars[s - 1].input = this.inputs[s] || ZERO_INPUT();
         }
       }
     }
