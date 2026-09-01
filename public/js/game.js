@@ -1105,7 +1105,7 @@ let myEq = null; // v75 server-validated equipped loadout (null = guest/local pr
 async function loadEquipped() {
   const acc = window.SRAccount;
   if (!(acc && acc.loggedIn && acc.loggedIn())) { myEq = null; return; }
-  const r = await sbGet('/rest/v1/player_equipped?id=eq.' + acc.uid() + '&select=car,paint,wheels,trail,decal,neon,title');
+  const r = await sbGet('/rest/v1/player_equipped?user_id=eq.' + acc.uid() + '&select=car,paint,wheels,trail,decal,neon,title');
   myEq = (r && r[0]) || null;
 }
 function identityPayload() {
@@ -1366,6 +1366,7 @@ function wireLobbyV2() {
         const M = (CORE.MAPS[ch[0].map] || {}).name || 'a circuit';
         toast('🔥 ' + ch[0].from_name + ' challenges you' + (ch[0].target_ms ? ': beat ' + fmtTime(ch[0].target_ms / 1000) : '') + ' on ' + M + '!');
         selectedMap = ch[0].map;
+        track('ch_accept', ch[0].map, { chId: id });
       }
     })();
   }
@@ -1382,7 +1383,9 @@ async function createChallenge(targetMs, toUid) { // v78: toUid enables friend a
     });
     if (!r.ok) return null;
     const j = await r.json();
-    return j && j[0] ? j[0].id : null;
+    const chId = j && j[0] ? j[0].id : null;
+    if (chId) track('ch_send', selectedMap, { chId, targetMs, toUid: !!toUid });
+    return chId;
   } catch (e) { return null; }
 }
 function copyChallengeLink(id, name, targetMs) {
@@ -1400,7 +1403,7 @@ function openFriends() {
   body.innerHTML = '<div class="p-empty">Loading…</div>';
   (async () => {
     const [mine, reqs] = await Promise.all([
-      sbGet('/rest/v1/friends?or=(from_uid.eq.' + uid + ',to_uid.eq.' + uid + ')&status=eq.accepted&select=from_uid,to_uid'),
+      sbGet('/rest/v1/friends?or=(from_uid.eq.' + uid + ',to_uid.eq.' + uid + ')&status=eq.accepted&select=from_uid,to_uid', tok),
       sbGet('/rest/v1/friends?to_uid=eq.' + uid + '&status=eq.pending&select=id,from_uid', tok),
     ]);
     const fids = [];
@@ -1556,7 +1559,7 @@ function renderRoomLobby(e) {
   const fc = $('friends-close'); if (fc) fc.addEventListener('click', () => { const d = $('friends-dlg'); if (d) d.hidden = true; });
   const cc = document.createElement('button'); cc.id = 'res-challenge'; cc.className = 'ghost sm'; cc.textContent = '⚔️ COPY CHALLENGE';
   const rm2 = $('rematch-btn'); if (rm2 && rm2.parentNode) rm2.parentNode.appendChild(cc);
-  cc.addEventListener('click', async () => { const my = (lastResults || []).find((c) => c.s === mySlot); if (my && my.t != null) { const id = await createChallenge(my.t); if (id) copyChallengeLink(id, (window.SRAccount && SRAccount.name()) || prefs.name, my.t); } });
+  cc.addEventListener('click', async () => { const my = (lastResults || []).find((c) => (c.slot || c.s) === mySlot); if (my && my.t != null) { const id = await createChallenge(my.t); if (id) copyChallengeLink(id, (window.SRAccount && SRAccount.name()) || prefs.name, my.t); } });
 })();
 function showRatingTab() {
   const t = $('board-tab-rate'), l = $('board-tab-time');
@@ -1580,15 +1583,16 @@ const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutor
     const mapName = (CORE.MAPS[mapId] || {}).name || '';
     // v74 shareable result card
     {
-      const my = lastResults.find((c) => c.s === mySlot);
+      const my = lastResults.find((c) => (c.slot || c.s) === mySlot);
       const pos = lastResults.indexOf(my) + 1;
       const row = (pendingSettle || []).find((r) => r.slot === mySlot);
       const card = '🏁 SRIDHAR RUSH\n' + (pos === 1 ? '1st PLACE' : 'P' + pos) + '\nMAP: ' + mapName + '\nTIME: ' + (my && my.t != null ? fmtTime(my.t) : 'DNF') + (row ? '\nRATING: ' + (row.rd > 0 ? '+' : '') + row.rd + '\nXP: +' + row.xp : '') + '\n\nCan you beat me? ' + location.origin + '/';
+      track('share', mapId, { channel: 'card' });
       if (navigator.share) navigator.share({ text: card }).catch(() => {}); else { copyText(card); toast('Result card copied!'); }
       return;
     }
-    const myRow = lastResults.find((c) => c.s === mySlot);
-    const pos = lastResults.findIndex((c) => c.s === mySlot) + 1;
+    const myRow = lastResults.find((c) => (c.slot || c.s) === mySlot);
+    const pos = lastResults.findIndex((c) => (c.slot || c.s) === mySlot) + 1;
     const lines = lastResults.map((r, i) => `${i + 1}. ${r.name || ('P' + r.slot)} — ${r.t != null ? fmtTime(r.t) : 'DNF'}`).join('\n');
     const msg = `🏎️ SRIDHAR RUSH — ${mapName}\n🏁 I finished P${pos} in ${myRow && myRow.t != null ? fmtTime(myRow.t) : 'DNF'}\n${lines}\nRace me: ${location.origin}/?room=${latest ? latest.code : ''}`;
     if (navigator.share) navigator.share({ text: msg }).catch(() => {});
@@ -1606,6 +1610,7 @@ const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutor
       .then((j) => {
         let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
         const msg = `⏱️ BEAT MY TIME on ${(CORE.MAPS[mapId] || {}).name || 'track'}: ${best != null ? fmtTime(best) : '—'}\n👻 Race my ghost: ${location.origin}/?g=${j.id}`;
+        track('share', mapId, { channel: 'ghost' });
         if (navigator.share) navigator.share({ text: msg }).catch(() => {});
         else { copyText(msg); toast('Challenge copied — send it!'); }
       })
@@ -1615,6 +1620,16 @@ const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutor
   // v46: watchable replay link (same ghost upload, spectator page)
   const rpBtn = $('replay-btn');
   if (rpBtn) rpBtn.addEventListener('click', () => {
+    const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+    let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
+    if (!g || !g.length) { toast('Set a best lap first (enable 👻 Ghost in settings)'); return; }
+    rpBtn.disabled = true;
+    fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, data: g }) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('unavailable'))))
+      .then((j) => { track('share', mapId, { channel: 'replay' }); copyText(location.origin + '/replay?g=' + j.id); toast('🎥 Replay link copied!'); })
+      .catch(() => toast('Replays need the Supabase setup'))
+      .finally(() => { rpBtn.disabled = false; });
+  });
     const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
     let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
     if (!g || !g.length) { toast('Set a best lap first (enable 👻 Ghost in settings)'); return; }
@@ -1791,7 +1806,7 @@ function showResults(order) {
   // v65 full result summary: position/time/best lap/PB/rival gap/streak/board rank
   const rs = $('res-summary');
   if (rs && !TT.on) {
-    const my = order.find((c) => c.s === mySlot);
+    const my = order.find((c) => (c.slot || c.s) === mySlot);
     if (my) {
       const p = Pget();
       const pos = order.indexOf(my) + 1;
@@ -1840,8 +1855,8 @@ function showResults(order) {
   try {
     const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
     statBump('races');
-    if (winner && winner.s === mySlot) statBump('wins');
-    const myRow = order.find((c) => c.s === mySlot);
+    if (winner && (winner.slot || winner.s) === mySlot) statBump('wins');
+    const myRow = order.find((c) => (c.slot || c.s) === mySlot);
     if (myRow && myRow.finished && myRow.t != null) {
       let pb = null; try { pb = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
       if (pb == null || myRow.t < pb) {
@@ -1965,7 +1980,7 @@ function paintDailyHeader() {
   box.hidden = false;
   $('daily-title').textContent = (tI18n('daily') || '📅 DAILY CHALLENGE') + ' — ' + (M ? M.name : 'CIRCUIT');
   const b = $('daily-play'); if (b) b.onclick = () => net.send({ type: 'map', map: dailyInfoCache.map });
-  const ds = $('daily-share'); if (ds) ds.onclick = () => { const top = (dailyRowsCache || [])[0]; const msg = `📅 DAILY CHALLENGE — ${(CORE.MAPS[dailyInfoCache.map] || {}).name || ''}\n🎯 ${top ? 'Target ' + fmtTime(top.t) : 'No time yet'}\nBeat it: ${location.origin}/`; if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Daily challenge copied!'); } };
+  const ds = $('daily-share'); if (ds) ds.onclick = () => { track('share', dailyInfoCache && dailyInfoCache.map, { channel: 'daily' }); const top = (dailyRowsCache || [])[0]; const msg = `📅 DAILY CHALLENGE — ${(CORE.MAPS[dailyInfoCache.map] || {}).name || ''}\n🎯 ${top ? 'Target ' + fmtTime(top.t) : 'No time yet'}\nBeat it: ${location.origin}/`; if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Daily challenge copied!'); } };
 }
 let dailyRowsCache = [];
 function renderDailyBoard(rows) {
@@ -2008,7 +2023,14 @@ let lastErrSent = '';
 function track(e, map, m) {
   if (e === 'err') { if (m === lastErrSent) return; lastErrSent = m; } // no beacon loops on repeat errors
   try {
-    fetch(httpBase() + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e, map, m }) }).catch(() => {});
+    const pId = (typeof prefs !== 'undefined' && prefs && prefs.pid) ? prefs.pid : null;
+    let body = { e, map, pid: pId };
+    if (typeof m === 'object' && m !== null) {
+      body = Object.assign(body, m);
+    } else if (m !== undefined) {
+      body.m = m;
+    }
+    fetch(httpBase() + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) }).catch(() => {});
   } catch (err) {}
 }
 track('visit');
@@ -2084,11 +2106,11 @@ function v60OnBestLap(mapId, t) {
 }
 function v60OnResults(order, mapId) {
   const p = Pget();
-  const mine = order.find((c) => c.s === mySlot);
+  const mine = order.find((c) => (c.slot || c.s) === mySlot);
   if (!mine || v60Race.counted || TT.on) return null; // v61: TT/practice don't farm stats
   v60Race.counted = true;
-  const won = order[0] && order[0].s === mySlot && mine.finished;
-  const pod = mine.finished && order.slice(0, 3).some((c) => c.s === mySlot);
+  const won = order[0] && (order[0].slot || order[0].s) === mySlot && mine.finished;
+  const pod = mine.finished && order.slice(0, 3).some((c) => (c.slot || c.s) === mySlot);
   p.races++; p.maps[mapId] = (p.maps[mapId] || 0) + 1;
   p.play += Math.round((performance.now() - v60Race.start) / 1000);
   if (won) { p.wins++; p.streak++; p.streakMax = Math.max(p.streakMax, p.streak); if (!v60Race.crashed) p.cleanWin = 1; }
@@ -2319,6 +2341,7 @@ function renderCup(rows) {
   });
   const cupBtn = $('cup-share');
   if (cupBtn) cupBtn.addEventListener('click', () => {
+    track('share', undefined, { channel: 'cup' });
     const top = $('cup-lb') && $('cup-lb').querySelector('.lb-time');
     const msg = '🏆 Sridhar Rush FOUNDERS CUP this week' + (top ? ' — best: ' + top.textContent : '') + '! Beat it: ' + location.origin + '/';
     window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
@@ -2337,6 +2360,7 @@ function renderCup(rows) {
   phBtn.addEventListener('click', () => {
     try {
       const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+      track('share', mapId, { channel: 'photo' });
       const M = CORE.MAPS[mapId] || CORE.MAPS[0];
       const c = document.createElement('canvas'); c.width = 1080; c.height = 1080;
       const g = c.getContext('2d');
@@ -2412,26 +2436,25 @@ function processEvents(snap) {
     switch (e.type) {
       case 'count': showCount(String(e.n)); beep(392, 0.14, 'square', 0.24); break;
       case 'go': showCount('GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); v60OnGo(); break;
-      case 'crash': onCrashFX(e.x, e.z, e.s); if (e.s === mySlot) v60OnCrashMine(); break;
+      case 'crash': onCrashFX(e.x, e.z, e.s); if (e.slot === mySlot) v60OnCrashMine(); break;
       case 'lap':
-        if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); track('fin'); recordPlayDay(); achCheck({ map: snap.map, lapT: e.t }); }
+        if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); recordPlayDay(); achCheck({ map: snap.map, lapT: e.t }); }
         if (e.slot === mySlot && e.best) v60OnBestLap(snap.map != null ? snap.map : builtMapId, e.t);
         toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
       case 'finallap': toast(`🔥 P${e.slot}: FINAL LAP!`); beep(660, 0.14, 'square', 0.2); break;
       case 'elim': setBanner(`❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
       case 'win':
-        if (e.slot === mySlot) achCheck({ win: true, map: snap.map });
+        if (e.slot === mySlot) {
+          track('fin', snap.map != null ? snap.map : builtMapId);
+          achCheck({ win: true, map: snap.map });
+        }
         setBanner(e.multi ? `🏁 PLAYER ${e.slot} WINS!` : `🏁 FINISH — ${fmtTime(e.t)}`); confetti(); winJingle(); break;
       case 'pu': { const nm = ['⚡ BOOST', '🛡️ SHIELD', '🌀 SLOW'][e.ptype] || 'PU'; toast(`P${e.slot} grabbed ${nm}!`); beep(980, 0.12, 'square', 0.2); break; }
       case 'respawn': if (e.slot === mySlot) { toast('🔄 Back on track'); beep(220, 0.2, 'sawtooth', 0.18); } break;
       case 'rematch': toast(`🔁 Rematch vote ${e.n}/${e.total}`); break;
-      case 'lobby': window.__lastLobby = e.players || []; renderRoomLobby(e); break; // v76
-      case 'need-ready': toast('⚠ ' + (e.msg || 'not ready yet')); break; // v76
-      case 'full': toast('⚠ Room is full (6 max)'); break; // v76
-      case 'joined': if (msg.role === 'spec' && !SPEC_ROOM) { mySlot = 0; document.body.classList.add('spec'); toast('👁️ Race in progress — spectating. Drive the next race!'); } break; // v79 BUG-017
-      case 'settle-warn': toast('⚠ Reward sync delayed — server retrying safely.'); break; // v79 BUG-018
       case 'finished':
         if (e.slot === mySlot) {
+          track('fin', snap.map != null ? snap.map : builtMapId);
           let gb = false;
           if (remoteGhost && remoteGhost.map === (snap.map != null ? snap.map : builtMapId) && remoteGhost.data.length) {
             const gt = remoteGhost.data[remoteGhost.data.length - 1][0];
@@ -2450,11 +2473,6 @@ function processEvents(snap) {
           }
         }
         toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
-      case 'settle': pendingSettle = e.rows || []; break; // v73
-      case 'equipped': myEq = e.eq || myEq; if (typeof sendMeta === 'function') sendMeta(); if (!$('garage-dlg').hidden) openGarage(); toast('🏎️ Loadout equipped'); break; // v75
-      case 'bought': toast('🛍️ Purchased! (' + e.coins + ' coins left)'); if (!$('garage-dlg').hidden) openGarage(); break; // v75
-      case 'buy-err': toast('⚠ ' + (e.msg || 'purchase failed')); break;
-      case 'equip-err': toast('⚠ Locked — keep racing to unlock!'); break;
       case 'results': showResults(e.order); break;
     }
   }
@@ -2512,6 +2530,16 @@ const net = new RoomLink({
   onMessage(msg) {
     switch (msg.type) {
       case 'state': ingestSnapshot(msg); break;
+      case 'lobby': window.__lastLobby = msg.players || []; renderRoomLobby(msg); break;
+      case 'need-ready': toast('⚠ ' + (msg.msg || 'not ready yet')); break;
+      case 'full': toast('⚠ Room is full (6 max)'); break;
+      case 'joined': if (msg.role === 'spec' && !SPEC_ROOM) { mySlot = 0; document.body.classList.add('spec'); toast('👁️ Race in progress — spectating. Drive the next race!'); } break;
+      case 'settle': pendingSettle = msg.rows || []; break;
+      case 'settle-warn': toast('⚠ Reward sync delayed — server retrying safely.'); break;
+      case 'equipped': myEq = msg.eq || myEq; if (typeof sendMeta === 'function') sendMeta(); if (!$('garage-dlg').hidden) openGarage(); toast('🏎️ Loadout equipped'); break;
+      case 'bought': toast('🛍️ Purchased! (' + msg.coins + ' coins left)'); if (!$('garage-dlg').hidden) openGarage(); break;
+      case 'buy-err': toast('⚠ ' + (msg.msg || 'purchase failed')); break;
+      case 'equip-err': toast('⚠ Locked — keep racing to unlock!'); break;
       case 'controller-joined': setConnected(msg.slot, true); toast(`📱 Player ${msg.slot} joystick connected`); break;
       case 'controller-left': setConnected(msg.slot, false); toast(`Player ${msg.slot} joystick disconnected`); break;
       case 'horn': playHorn(); break;
@@ -2550,6 +2578,7 @@ const ttLb = $('tt-lb'); if (ttLb) ttLb.addEventListener('click', () => { $('tt-
 const prx = $('practice-exit'); if (prx) prx.addEventListener('click', () => { const te = $('tt-exit'); if (te) te.click(); });
 const ttShare = $('tt-share'); if (ttShare) ttShare.addEventListener('click', () => {
   const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+  track('share', mapId, { channel: 'tt' });
   let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
   const msg = '⏱️ TIME TRIAL — ' + ((CORE.MAPS[mapId] || {}).name || '') + '\n🏁 ' + (best != null ? fmtTime(best) : '—') + '\nBeat it: ' + location.origin + '/';
   if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Copied!'); }
@@ -3220,7 +3249,16 @@ $('start-btn').addEventListener('click', () => {
   if (TT.on) { net.send({ type: 'bot', bot: false }); net.send({ type: 'record', record: !TT.practice }); }
   else net.send({ type: 'record', record: true });
   net.send({ type: 'start' });
+  const p = Pget();
+  if (p && p.races >= 1) track('second_race', selectedMap);
   track('race', selectedMap);
+  const isMultiplayer = !TT.on && latest && latest.cars && (
+    (latest.cars.filter((c) => c && c.p === 1).length >= 2 && !latest.bot) ||
+    (latest.controllers && Object.values(latest.controllers).filter(Boolean).length >= 2)
+  );
+  if (isMultiplayer) {
+    track('multiplayer', selectedMap);
+  }
   const pb = $('practice-bar'); if (pb) pb.hidden = !TT.practice;
 });
 // ---------------------------------------------------------------------------
@@ -3257,7 +3295,7 @@ function openProfile() {
       sbGet('/rest/v1/player_achievements?user_id=eq.' + uid + '&select=ach,unlocked_at'),
       sbGet('/rest/v1/seasons?order=id.desc&limit=1&select=id,name,end_at'),
       sbGet('/rest/v1/player_seasons?user_id=eq.' + uid + '&select=season_id,rating,xp'),
-      sbGet('/rest/v1/player_equipped?id=eq.' + uid + '&select=car,neon,title'),
+      sbGet('/rest/v1/player_equipped?user_id=eq.' + uid + '&select=car,neon,title'),
     ]);
     const p = (prof && prof[0]) || { username: acc.name() || 'RACER' };
     const st = (stats && stats[0]) || { races: 0, wins: 0, podiums: 0, xp: 0, rating: 1000, peak_rating: 1000, streak: 0 };
@@ -3268,7 +3306,7 @@ function openProfile() {
     const eqCar = (window.SRCos && peq && peq[0]) ? SRCos.findCar(peq[0].car) : null;
     let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + (eqCar ? ' <span class="p-car" style="color:' + SRCos.RARITY[eqCar.rarity] + '">🏎️ ' + eqCar.name + '</span>' : '') + '</div>' +
       '<div class="p-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + st.rating + ' <i>peak ' + st.peak_rating + '</i></div>' +
-      '<div class="p-level">' + tr.name.split(' ')[0] + ' PROGRESS<div class="p-bar"><i style="width:' + (tr.pct || 0) + '%"></i></div><span class="p-xp">' + tr.next ? '' : '' + '</span></div>' +
+      '<div class="p-level">' + tr.name.split(' ')[0] + ' PROGRESS<div class="p-bar"><i style="width:' + (tr.pct || 0) + '%"></i></div></div>' +
       (tr.next ? '<div class="p-xp" style="text-align:center">Next: ' + tr.next + '</div>' : '') +
       (season ? '<div class="p-xp" style="text-align:center">🌞 ' + season.name + ' · ' + (window.SRProg ? SRProg.seasonCountdown(season.end_at) : '') + (mySeason ? ' · season rating ' + mySeason.rating : '') + '</div>' : '') +
       '<div class="p-level">LEVEL ' + lv.level + '<div class="p-bar"><i style="width:' + lv.pct + '%"></i></div><span class="p-xp">' + lv.cur + '/' + lv.span + ' XP</span></div></div>' +
@@ -3312,7 +3350,9 @@ $('rematch-btn').addEventListener('click', () => {
   const humanRival = latest && latest.cars && latest.cars[1] && latest.cars[1].p === 1 && !latest.bot;
   if (humanRival) { net.send({ type: 'rematch' }); toast('🔁 Rematch requested — waiting for rival…'); }
   else net.send({ type: 'start' });
+  track('second_race', selectedMap);
   track('race', selectedMap);
+  if (humanRival) track('multiplayer', selectedMap);
 });
 const rstBtn = $('restart-btn');
 if (rstBtn) rstBtn.addEventListener('click', () => { // v61 quick restart (no reload/reconnect)
@@ -3337,10 +3377,10 @@ document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click'
   const div = $('split-divider'); if (div) div.style.display = splitScreen ? '' : 'none';
 }));
 document.querySelectorAll('.map-btn').forEach((b) => b.addEventListener('click', () => net.send({ type: 'map', map: parseInt(b.dataset.map, 10) })));
-$('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); });
+$('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); track('share', undefined, { channel: 'code' }); });
 const exitBtn = $('exit-btn');
 if (exitBtn) exitBtn.addEventListener('click', () => net.send({ type: 'reset' }));
-$('copy-game-link').addEventListener('click', () => { copyText($('game-link').textContent); toast('Game link copied — send it to your friend!'); });
+$('copy-game-link').addEventListener('click', () => { copyText($('game-link').textContent); toast('Game link copied — send it to your friend!'); track('share', selectedMap, { channel: 'link' }); });
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -3421,6 +3461,7 @@ function frame() {
     bootHidden = true;
     const bs = document.getElementById('boot-splash');
     if (bs) { bs.classList.add('done'); setTimeout(() => bs.remove(), 600); }
+    track('game_start');
   }
 }
 let bootHidden = false;
