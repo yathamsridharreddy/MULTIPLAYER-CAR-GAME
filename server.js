@@ -124,6 +124,22 @@ const LB_FILE = path.join(__dirname, 'leaderboard.json');
 let leaderboard = {};
 try { leaderboard = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); } catch (e) { leaderboard = {}; }
 
+let lbSaveTimer = null;
+let lbSaving = false;
+function scheduleLbSave() {
+  if (lbSaveTimer) return;
+  lbSaveTimer = setTimeout(async () => {
+    lbSaveTimer = null;
+    if (lbSaving) return;
+    lbSaving = true;
+    try {
+      await fs.promises.writeFile(LB_FILE, JSON.stringify(leaderboard, null, 2), 'utf8');
+    } catch (e) {} finally {
+      lbSaving = false;
+    }
+  }, 200);
+}
+
 function lbAdd(mapId, entry) {
   const list = leaderboard[mapId] || (leaderboard[mapId] = []);
   // Account-lite: a returning player (same pid) updates their entry instead of
@@ -140,7 +156,7 @@ function lbAdd(mapId, entry) {
   } else list.push(entry);
   list.sort((a, b) => (a.t == null ? 1e9 : a.t) - (b.t == null ? 1e9 : b.t));
   leaderboard[mapId] = list.slice(0, 20);
-  try { fs.writeFileSync(LB_FILE, JSON.stringify(leaderboard)); } catch (e) {}
+  scheduleLbSave();
 }
 function lbGet(mapId) { return (leaderboard[mapId] || []).slice(0, 5); }
 
@@ -530,14 +546,19 @@ wss.on('connection', (ws) => {
   ws.on('error', drop);
 });
 
-function joinRoom(client, entry, role) {
+function joinRoom(client, entry, role, msg) {
+  if (entry._closeTimer) {
+    clearTimeout(entry._closeTimer);
+    entry._closeTimer = null;
+  }
   const room = entry.room;
   client.entry = entry;
   client.role = role;
+  const m = msg || {};
 
   if (role === 'controller') {
     // v77 BUG-008: one physical phone = one controller slot (pid-keyed; stale socket replaced)
-    const pid = typeof msg.pid === 'string' && msg.pid ? String(msg.pid).slice(0, 24) : null;
+    const pid = typeof m.pid === 'string' && m.pid ? String(m.pid).slice(0, 24) : null;
     if (pid) {
       entry.controllerPids = entry.controllerPids || {};
       const oldWs = entry.controllerPids[pid];
@@ -605,7 +626,7 @@ function handleMessage(client, msg) {
         client.entry = entry; client.role = 'spec'; entry.specs.add(client.ws);
         sendJSON(client.ws, { type: 'joined', role: 'spec', slot: 0 });
       } else {
-        joinRoom(client, entry, msg.role === 'controller' ? 'controller' : 'screen');
+        joinRoom(client, entry, msg.role === 'controller' ? 'controller' : 'screen', msg);
       }
       if (client.role === 'screen' && client.slot) {
         const room = entry.room;
@@ -750,6 +771,13 @@ function handleMessage(client, msg) {
       break;
     }
     case 'start':
+      if (!client.entry && matchQueue.includes(client.ws)) {
+        const idx = matchQueue.indexOf(client.ws);
+        if (idx >= 0) matchQueue.splice(idx, 1);
+        const entry = newRoom('race', 0, 6);
+        entry.room.setBot(true);
+        joinRoom(client, entry, 'screen');
+      }
       if (client.entry && client.role === 'screen') {
         const en = client.entry;
         if (en.screens.size >= 3) {
@@ -823,6 +851,17 @@ function handleMessage(client, msg) {
       break;
     }
 
+    case 'cancel-matchmake': {
+      const idx = matchQueue.indexOf(client.ws);
+      if (idx >= 0) matchQueue.splice(idx, 1);
+      if (!client.entry) {
+        const entry = newRoom('race', 0, 6);
+        joinRoom(client, entry, 'screen');
+      }
+      sendJSON(client.ws, { type: 'matchmake-cancelled' });
+      break;
+    }
+
     case 'ping':
       client.msgs = 0; // v76 rate window reset
       client.lastPing = Date.now(); // v79 BUG-013
@@ -862,9 +901,16 @@ function handleLeave(client) {
   }
 
   const empty = entry.screens.size === 0 && entry.controllers.size === 0 && entry.specs.size === 0;
-  if (empty && Date.now() - entry.room.lastActivity > 60 * 1000) {
-    rooms.delete(entry.room.code);
-    console.log(`[room ${entry.room.code}] closed (empty)`);
+  if (empty) {
+    if (!entry._closeTimer) {
+      entry._closeTimer = setTimeout(() => {
+        const stillEmpty = entry.screens.size === 0 && entry.controllers.size === 0 && entry.specs.size === 0;
+        if (stillEmpty) {
+          rooms.delete(entry.room.code);
+          console.log(`[room ${entry.room.code}] closed (empty)`);
+        }
+      }, 5000);
+    }
   }
 }
 

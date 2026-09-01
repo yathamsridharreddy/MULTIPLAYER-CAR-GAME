@@ -1105,7 +1105,7 @@ let myEq = null; // v75 server-validated equipped loadout (null = guest/local pr
 async function loadEquipped() {
   const acc = window.SRAccount;
   if (!(acc && acc.loggedIn && acc.loggedIn())) { myEq = null; return; }
-  const r = await sbGet('/rest/v1/player_equipped?id=eq.' + acc.uid() + '&select=car,paint,wheels,trail,decal,neon,title');
+  const r = await sbGet('/rest/v1/player_equipped?user_id=eq.' + acc.uid() + '&select=car,paint,wheels,trail,decal,neon,title');
   myEq = (r && r[0]) || null;
 }
 function identityPayload() {
@@ -1406,7 +1406,7 @@ function openFriends() {
     const fids = [];
     (mine || []).forEach((f) => fids.push(f.from_uid === uid ? f.to_uid : f.from_uid));
     let names = {};
-    if (fids.length) { const p = await sbGet('/rest/v1/profiles?' + fids.map((f) => 'id=eq.' + f).join('&') + '&select=id,username'); (p || []).forEach((x) => { names[x.id] = x.username; }); }
+    if (fids.length) { const p = await sbGet('/rest/v1/profiles?id=in.(' + fids.join(',') + ')&select=id,username'); (p || []).forEach((x) => { names[x.id] = x.username; }); }
     let html = '<div class="f-row"><input id="f-search" class="f-in" placeholder="search username…" maxlength="16"/><button id="f-add" class="ghost sm">ADD</button></div>';
     // v78 incoming challenges (accept/decline allowed by RLS "ch answer")
     const week = Date.now() - 7 * 86400000;
@@ -1420,8 +1420,8 @@ function openFriends() {
     }
     if (reqs && reqs.length) {
       html += '<div class="p-sub">REQUESTS</div>';
-      const rids = reqs.map((r) => 'id=eq.' + r.from_uid).join('&');
-      const rp = await sbGet('/rest/v1/profiles?' + rids + '&select=id,username');
+      const rids = reqs.map((r) => r.from_uid).filter(Boolean);
+      const rp = rids.length ? await sbGet('/rest/v1/profiles?id=in.(' + rids.join(',') + ')&select=id,username') : [];
       const rn = {}; (rp || []).forEach((x) => { rn[x.id] = x.username; });
       reqs.forEach((r) => { html += '<div class="f-item"><span>' + escapeHtml(rn[r.from_uid] || 'RACER') + '</span><span><button class="ghost sm f-acc" data-id="' + r.id + '">✔</button> <button class="ghost sm f-rej" data-id="' + r.id + '">✖</button></span></div>'; });
     }
@@ -2425,11 +2425,6 @@ function processEvents(snap) {
       case 'pu': { const nm = ['⚡ BOOST', '🛡️ SHIELD', '🌀 SLOW'][e.ptype] || 'PU'; toast(`P${e.slot} grabbed ${nm}!`); beep(980, 0.12, 'square', 0.2); break; }
       case 'respawn': if (e.slot === mySlot) { toast('🔄 Back on track'); beep(220, 0.2, 'sawtooth', 0.18); } break;
       case 'rematch': toast(`🔁 Rematch vote ${e.n}/${e.total}`); break;
-      case 'lobby': window.__lastLobby = e.players || []; renderRoomLobby(e); break; // v76
-      case 'need-ready': toast('⚠ ' + (e.msg || 'not ready yet')); break; // v76
-      case 'full': toast('⚠ Room is full (6 max)'); break; // v76
-      case 'joined': if (msg.role === 'spec' && !SPEC_ROOM) { mySlot = 0; document.body.classList.add('spec'); toast('👁️ Race in progress — spectating. Drive the next race!'); } break; // v79 BUG-017
-      case 'settle-warn': toast('⚠ Reward sync delayed — server retrying safely.'); break; // v79 BUG-018
       case 'finished':
         if (e.slot === mySlot) {
           let gb = false;
@@ -2450,11 +2445,6 @@ function processEvents(snap) {
           }
         }
         toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
-      case 'settle': pendingSettle = e.rows || []; break; // v73
-      case 'equipped': myEq = e.eq || myEq; if (typeof sendMeta === 'function') sendMeta(); if (!$('garage-dlg').hidden) openGarage(); toast('🏎️ Loadout equipped'); break; // v75
-      case 'bought': toast('🛍️ Purchased! (' + e.coins + ' coins left)'); if (!$('garage-dlg').hidden) openGarage(); break; // v75
-      case 'buy-err': toast('⚠ ' + (e.msg || 'purchase failed')); break;
-      case 'equip-err': toast('⚠ Locked — keep racing to unlock!'); break;
       case 'results': showResults(e.order); break;
     }
   }
@@ -2527,11 +2517,29 @@ const net = new RoomLink({
         break;
       }
       case 'matched': {
+        if (qpTimer) clearTimeout(qpTimer);
         const b = $('quickplay-btn');
         if (b) { b.disabled = false; b.textContent = '⚡ QUICK PLAY — find a rival'; }
         toast('⚡ Match found!');
         break;
       }
+      case 'matchmake-cancelled': {
+        if (qpTimer) clearTimeout(qpTimer);
+        const b = $('quickplay-btn');
+        if (b) { b.disabled = false; b.textContent = '⚡ QUICK PLAY — find a rival'; }
+        break;
+      }
+      case 'lobby': window.__lastLobby = msg.players || []; renderRoomLobby(msg); break; // v76
+      case 'need-ready': toast('⚠ ' + (msg.msg || 'not ready yet')); break; // v76
+      case 'full': toast('⚠ Room is full (6 max)'); break; // v76
+      case 'joined': if (msg.role === 'spec' && !SPEC_ROOM) { mySlot = 0; document.body.classList.add('spec'); toast('👁️ Race in progress — spectating. Drive the next race!'); } break; // v79 BUG-017
+      case 'spec-fallback': if (!SPEC_ROOM) { mySlot = 0; document.body.classList.add('spec'); toast('👁️ Race in progress — spectating. Drive the next race!'); } break;
+      case 'settle': pendingSettle = msg.rows || []; break; // v73
+      case 'settle-warn': toast('⚠ Reward sync delayed — server retrying safely.'); break; // v79 BUG-018
+      case 'equipped': myEq = msg.eq || myEq; if (typeof sendMeta === 'function') sendMeta(); if (!$('garage-dlg').hidden) openGarage(); toast('🏎️ Loadout equipped'); break; // v75
+      case 'bought': toast('🛍️ Purchased! (' + msg.coins + ' coins left)'); if (!$('garage-dlg').hidden) openGarage(); break; // v75
+      case 'buy-err': toast('⚠ ' + (msg.msg || 'purchase failed')); break;
+      case 'equip-err': toast('⚠ Locked — keep racing to unlock!'); break;
       case 'error': if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!'); break;
       case 'disconnected': setNetBanner(false); break;
     }
@@ -2602,15 +2610,21 @@ sendHello();
 
 // Quick-Play matchmaking (additive — existing create/join-by-code flows untouched)
 const qpBtn = $('quickplay-btn');
+let qpTimer = null;
 if (qpBtn) qpBtn.addEventListener('click', () => {
   if (!net.isOpen()) return;
+  if (qpBtn.disabled) return;
   qpBtn.disabled = true; qpBtn.textContent = '🔎 Searching…';
   net.send({ type: 'matchmake' });
-  setTimeout(() => { // v59: never leave players stuck searching
-    if (qpBtn.disabled && latest && latest.state === 'waiting') {
+  if (qpTimer) clearTimeout(qpTimer);
+  qpTimer = setTimeout(() => { // v59: never leave players stuck searching
+    if (qpBtn.disabled && (!latest || latest.state === 'waiting')) {
       toast('No rival found — racing AI 🤖');
-      net.send({ type: 'start' });
+      net.send({ type: 'cancel-matchmake' });
       qpBtn.disabled = false; qpBtn.textContent = '⚡ QUICK PLAY — find a rival';
+      setTimeout(() => {
+        if (latest && latest.state === 'waiting') net.send({ type: 'start' });
+      }, 150);
     }
   }, 8000);
 });
@@ -3257,7 +3271,7 @@ function openProfile() {
       sbGet('/rest/v1/player_achievements?user_id=eq.' + uid + '&select=ach,unlocked_at'),
       sbGet('/rest/v1/seasons?order=id.desc&limit=1&select=id,name,end_at'),
       sbGet('/rest/v1/player_seasons?user_id=eq.' + uid + '&select=season_id,rating,xp'),
-      sbGet('/rest/v1/player_equipped?id=eq.' + uid + '&select=car,neon,title'),
+      sbGet('/rest/v1/player_equipped?user_id=eq.' + uid + '&select=car,neon,title'),
     ]);
     const p = (prof && prof[0]) || { username: acc.name() || 'RACER' };
     const st = (stats && stats[0]) || { races: 0, wins: 0, podiums: 0, xp: 0, rating: 1000, peak_rating: 1000, streak: 0 };
@@ -3268,7 +3282,7 @@ function openProfile() {
     const eqCar = (window.SRCos && peq && peq[0]) ? SRCos.findCar(peq[0].car) : null;
     let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + (eqCar ? ' <span class="p-car" style="color:' + SRCos.RARITY[eqCar.rarity] + '">🏎️ ' + eqCar.name + '</span>' : '') + '</div>' +
       '<div class="p-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + st.rating + ' <i>peak ' + st.peak_rating + '</i></div>' +
-      '<div class="p-level">' + tr.name.split(' ')[0] + ' PROGRESS<div class="p-bar"><i style="width:' + (tr.pct || 0) + '%"></i></div><span class="p-xp">' + tr.next ? '' : '' + '</span></div>' +
+      '<div class="p-level">' + tr.name.split(' ')[0] + ' PROGRESS<div class="p-bar"><i style="width:' + (tr.pct || 0) + '%"></i></div><span class="p-xp">' + (tr.next ? tr.pct + '%' : 'MAX') + '</span></div>' +
       (tr.next ? '<div class="p-xp" style="text-align:center">Next: ' + tr.next + '</div>' : '') +
       (season ? '<div class="p-xp" style="text-align:center">🌞 ' + season.name + ' · ' + (window.SRProg ? SRProg.seasonCountdown(season.end_at) : '') + (mySeason ? ' · season rating ' + mySeason.rating : '') + '</div>' : '') +
       '<div class="p-level">LEVEL ' + lv.level + '<div class="p-bar"><i style="width:' + lv.pct + '%"></i></div><span class="p-xp">' + lv.cur + '/' + lv.span + ' XP</span></div></div>' +
@@ -3301,8 +3315,8 @@ function loadRatingBoard() {
     const c = sbCfg(); if (!c.url) { el.innerHTML = '<div class="p-empty">Accounts offline</div>'; return; }
     const rows = await sbGet('/rest/v1/player_stats?order=rating.desc&limit=10&select=user_id,rating,xp');
     if (!rows || !rows.length) { el.innerHTML = '<div class="p-empty">No rated racers yet — win a 1v1 to claim #1.</div>'; return; }
-    const ids = rows.map((r) => 'id=eq.' + r.user_id).join('&');
-    const prof = await sbGet('/rest/v1/profiles?' + ids + '&select=id,username');
+    const uids = rows.map((r) => r.user_id).filter(Boolean);
+    const prof = uids.length ? await sbGet('/rest/v1/profiles?id=in.(' + uids.join(',') + ')&select=id,username') : [];
     const nm = {}; (prof || []).forEach((p) => { nm[p.id] = p.username; });
     el.innerHTML = rows.map((r, i) => { const lv = window.SRProg ? SRProg.levelFromXp(r.xp).level : 1; const tr = window.SRProg ? SRProg.tier(r.rating) : { col: '#fff' }; return '<div class="lb-row"><span class="lb-rank">' + (i + 1) + '</span><span class="lb-name">' + escapeHtml(nm[r.user_id] || 'RACER') + ' <i>Lv' + lv + '</i></span><b style="color:' + tr.col + '">' + r.rating + '</b></div>'; }).join('');
   })();
