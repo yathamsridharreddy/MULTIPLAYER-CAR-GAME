@@ -2,3 +2,6 @@ node_modules/
 analytics.json
 leaderboard.json
 
+
+public/js/game-core.js
+public/js/config.js
