@@ -232,4 +232,36 @@ describe('Authoritative Multiplayer Simulation & Rooms', () => {
     };
     assert.equal(evaluateIsMultiplayer(twoPhoneControllers), true, 'Dual phone controller duel MUST be classified as multiplayer');
   });
+
+  test('supports up to 6 phone controllers connecting to a 6-player room and rejects the 7th phone controller with full', () => {
+    const entry = newRoom('race', 0, 6);
+    assert.equal(entry.room.cap, 6);
+
+    const screenWs = createMockWS();
+    const screenClient = { ws: screenWs, entry: null, slot: 0, role: null, pid: 'screen-host' };
+    joinRoom(screenClient, entry, 'screen', { pid: 'screen-host' });
+    assert.equal(screenClient.slot, 1);
+
+    const ctlClients = [];
+    for (let slot = 1; slot <= 6; slot++) {
+      const ctlWs = createMockWS();
+      const ctlClient = { ws: ctlWs, entry: null, slot: 0, role: null, pid: `ctl-phone-${slot}` };
+      joinRoom(ctlClient, entry, 'controller', { pid: `ctl-phone-${slot}` });
+      ctlClients.push(ctlClient);
+
+      assert.equal(ctlClient.slot, slot, `Phone controller ${slot} should be assigned slot ${slot}`);
+      assert.equal(entry.room.controllers[slot], true, `Room controller slot ${slot} should be true`);
+      assert.equal(entry.controllers.get(ctlWs), slot);
+    }
+
+    // 7th phone controller should receive 'full'
+    const extraCtlWs = createMockWS();
+    const extraCtlClient = { ws: extraCtlWs, entry: null, slot: 0, role: null, pid: 'ctl-phone-7' };
+    joinRoom(extraCtlClient, entry, 'controller', { pid: 'ctl-phone-7' });
+
+    const fullMsg = extraCtlWs.findSent('full');
+    assert.equal(fullMsg.length, 1, '7th controller should receive full message');
+    assert.equal(extraCtlClient.slot, 0, '7th controller should remain unassigned slot 0');
+    assert.equal(extraCtlClient.entry, null, '7th controller entry should be null');
+  });
 });

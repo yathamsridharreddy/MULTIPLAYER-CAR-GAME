@@ -249,5 +249,30 @@ describe('Social Features, Challenges & Daily Rotations', () => {
     const kbDrive = buildInputFrame(new Set(['KeyW', 'KeyD', 'ShiftLeft']), { l: 0, r: 0, u: 0, d: 0, nitro: false }, null);
     assert.deepEqual(kbDrive, { steer: 1, throttle: 1, brake: 0, handbrake: false, nitro: true });
   });
+
+  test('generates valid WhatsApp and Telegram lobby invite URLs with room parameters', () => {
+    function getLobbyShareUrls({ origin, roomCode, gameLink }) {
+      const link = gameLink || (roomCode ? `${origin}/?room=${roomCode}` : `${origin}/`);
+      const waMsg = `🏎️ Race with me in Sridhar Rush! Join my room here: ${link}`;
+      const waUrl = 'https://wa.me/?text=' + encodeURIComponent(waMsg);
+
+      const tgText = '🏎️ Race with me in Sridhar Rush!';
+      const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(tgText)}`;
+
+      return { waUrl, tgUrl, link };
+    }
+
+    const { waUrl, tgUrl, link } = getLobbyShareUrls({
+      origin: 'https://sridharrush.com',
+      roomCode: 'ALPHA',
+      gameLink: 'https://sridharrush.com/?room=ALPHA&map=2'
+    });
+
+    assert.ok(waUrl.startsWith('https://wa.me/?text='));
+    assert.ok(waUrl.includes(encodeURIComponent('https://sridharrush.com/?room=ALPHA&map=2')));
+    assert.ok(tgUrl.startsWith('https://t.me/share/url?url='));
+    assert.ok(tgUrl.includes(encodeURIComponent('https://sridharrush.com/?room=ALPHA&map=2')));
+    assert.ok(tgUrl.includes(encodeURIComponent('🏎️ Race with me in Sridhar Rush!')));
+  });
 });
 

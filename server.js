@@ -805,7 +805,13 @@ function joinRoom(client, entry, role, msg) {
       }
       entry.controllerPids[pid] = client.ws;
     }
-    const slot = !room.controllers[1] ? 1 : (!room.controllers[2] ? 2 : 0);
+    let slot = 0;
+    for (let s = 1; s <= room.cap; s++) {
+      if (!room.controllers[s]) {
+        slot = s;
+        break;
+      }
+    }
     if (!slot) {
       sendJSON(client.ws, { type: 'full' });
       client.entry = null;
@@ -838,7 +844,7 @@ function joinRoom(client, entry, role, msg) {
     broadcastLobby(entry);
     sendJSON(client.ws, {
       type: 'welcome', role, slot: client.slot, code: room.code, mode: room.mode,
-      controllers: { 1: room.controllers[1], 2: room.controllers[2] },
+      controllers: Object.assign({}, room.controllers),
       snapshot: room.snapshot()
     });
   }

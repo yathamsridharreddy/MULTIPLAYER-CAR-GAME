@@ -3501,6 +3501,26 @@ $('copy-code').addEventListener('click', () => { copyText($('room-code').textCon
 const exitBtn = $('exit-btn');
 if (exitBtn) exitBtn.addEventListener('click', () => net.send({ type: 'reset' }));
 $('copy-game-link').addEventListener('click', () => { copyText($('game-link').textContent); toast('Game link copied — send it to your friend!'); track('share', selectedMap, { channel: 'link' }); });
+
+const waShareBtn = $('wa-share');
+if (waShareBtn) {
+  waShareBtn.addEventListener('click', () => {
+    const link = ($('game-link') && $('game-link').textContent) ? $('game-link').textContent : (roomCode ? `${location.origin}/?room=${roomCode}` : `${location.origin}/`);
+    const msg = `🏎️ Race with me in Sridhar Rush! Join my room here: ${link}`;
+    track('share', selectedMap, { channel: 'wa' });
+    window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+  });
+}
+
+const tgShareBtn = $('tg-share');
+if (tgShareBtn) {
+  tgShareBtn.addEventListener('click', () => {
+    const link = ($('game-link') && $('game-link').textContent) ? $('game-link').textContent : (roomCode ? `${location.origin}/?room=${roomCode}` : `${location.origin}/`);
+    const text = '🏎️ Race with me in Sridhar Rush!';
+    track('share', selectedMap, { channel: 'tg' });
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`, '_blank');
+  });
+}
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
