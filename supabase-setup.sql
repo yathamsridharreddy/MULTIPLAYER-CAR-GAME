@@ -267,3 +267,115 @@ begin
   select coins into v_coins from player_wallet where user_id = p_uid;
   return json_build_object('ok', true, 'coins', v_coins);
 end $$;
+
+-- ----------------------------------------------------------------------------
+-- v80: Competitive Leaderboard & Retention Layer (Daily Cup & Weekly Championship)
+-- ----------------------------------------------------------------------------
+create index if not exists idx_stats_competitive on public.player_stats (rating desc, wins desc, races asc);
+create index if not exists idx_stats_wins on public.player_stats (wins desc, races asc);
+create index if not exists idx_stats_races on public.player_stats (races desc);
+
+create table if not exists public.daily_competition (
+  id          bigint generated always as identity primary key,
+  date_key    text not null,                         -- 'YYYY-MM-DD'
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  map         int not null,
+  best_lap_ms int not null check (best_lap_ms >= 15000),
+  races_today int not null default 1,
+  updated_at  timestamptz not null default now(),
+  unique (date_key, user_id)
+);
+create index if not exists idx_daily_comp_rank on public.daily_competition (date_key, best_lap_ms asc);
+alter table public.daily_competition enable row level security;
+create policy "daily comp read" on public.daily_competition for select using (true);
+
+create table if not exists public.weekly_competition (
+  id          bigint generated always as identity primary key,
+  week_key    text not null,                         -- 'YYYY-WW'
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  points      int not null default 0,
+  races_week  int not null default 0,
+  wins_week   int not null default 0,
+  best_lap_ms int,
+  updated_at  timestamptz not null default now(),
+  unique (week_key, user_id)
+);
+create index if not exists idx_weekly_comp_rank on public.weekly_competition (week_key, points desc, wins_week desc);
+alter table public.weekly_competition enable row level security;
+create policy "weekly comp read" on public.weekly_competition for select using (true);
+
+-- ----------------------------------------------------------------------------
+-- v81: Competitive Retention (Daily Missions & Season Reward Claims)
+-- ----------------------------------------------------------------------------
+create table if not exists public.player_missions (
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  date_key    text not null,                         -- 'YYYY-MM-DD'
+  mission_id  text not null,
+  progress    int not null default 0,
+  completed   boolean not null default false,
+  claimed     boolean not null default false,
+  updated_at  timestamptz not null default now(),
+  primary key (user_id, date_key, mission_id)
+);
+alter table public.player_missions enable row level security;
+create policy "missions own read" on public.player_missions for select using (auth.uid() = user_id);
+
+create table if not exists public.season_rewards_claimed (
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  season_id  text not null,
+  tier       text not null,
+  claimed_at timestamptz not null default now(),
+  primary key (user_id, season_id)
+);
+alter table public.season_rewards_claimed enable row level security;
+create policy "season claim own read" on public.season_rewards_claimed for select using (auth.uid() = user_id);
+
+-- ----------------------------------------------------------------------------
+-- v82: Pro Licenses, Badges, Revenge Targets & Weekly Syndicate Bounties
+-- ----------------------------------------------------------------------------
+create table if not exists public.player_licenses (
+  user_id      uuid not null references auth.users(id) on delete cascade primary key,
+  license_type text not null default 'pro_license',
+  completed_at timestamptz not null default now()
+);
+alter table public.player_licenses enable row level security;
+create policy "licenses own read" on public.player_licenses for select using (auth.uid() = user_id);
+
+create table if not exists public.player_badges (
+  user_id      uuid not null references auth.users(id) on delete cascade,
+  badge_id     text not null,
+  tier_level   int not null default 1,
+  equipped     boolean not null default false,
+  unlocked_at  timestamptz not null default now(),
+  primary key (user_id, badge_id)
+);
+alter table public.player_badges enable row level security;
+create policy "badges own read" on public.player_badges for select using (auth.uid() = user_id);
+
+create table if not exists public.player_revenge (
+  id           bigint generated always as identity primary key,
+  user_id      uuid not null references auth.users(id) on delete cascade,
+  target_id    uuid not null references auth.users(id) on delete cascade,
+  map          int not null default 0,
+  target_time  int,
+  status       text not null default 'open',
+  issued_at    timestamptz not null default now()
+);
+alter table public.player_revenge enable row level security;
+create policy "revenge own read" on public.player_revenge for select using (auth.uid() = user_id);
+
+create table if not exists public.weekly_bounties (
+  user_id      uuid not null references auth.users(id) on delete cascade,
+  week_key     text not null,                         -- 'YYYY-WW'
+  bounty_id    text not null,
+  progress     int not null default 0,
+  completed    boolean not null default false,
+  claimed      boolean not null default false,
+  updated_at   timestamptz not null default now(),
+  primary key (user_id, week_key, bounty_id)
+);
+alter table public.weekly_bounties enable row level security;
+create policy "weekly bounties own read" on public.weekly_bounties for select using (auth.uid() = user_id);
+
+
+

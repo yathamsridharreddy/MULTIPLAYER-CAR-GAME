@@ -42,10 +42,22 @@
   <div id="vignette"></div>
   <div id="speedlines"></div>
   <div id="hitflash"></div>
+  <div id="photo-finish-flash"></div>
+
+  <!-- v83 Photo Finish Replay Highlight Banner -->
+  <div id="photo-finish-banner" class="photo-finish-banner" style="display:none">
+    <div class="pf-content">
+      <span class="pf-badge">⚡ PHOTO FINISH REPLAY ⚡</span>
+      <h3 id="pf-title">SUB-0.60s FINISH MARGIN</h3>
+      <div id="pf-margin" class="pf-margin">+0.042s</div>
+    </div>
+  </div>
 
   <!-- HUD -->
   <div id="tt-hud" style="display:none"></div>
   <div id="gap-chip" class="gap-chip"></div>
+  <div id="ghost-gap-chip" class="ghost-gap-chip" style="display:none"></div>
+  <div id="academy-hint-banner" class="academy-hint-banner" style="display:none"></div>
   <div id="hud">
     <div id="pills">
       <div class="pill" id="pill-p1"><i></i><span>PLAYER 1</span></div>
@@ -55,6 +67,7 @@
     <div id="raceinfo"></div>
 
     <div id="hud-badges">
+      <span id="hud-weather" class="weather-chip">☀️ DRY</span>
       <span id="ping-badge" class="ping">… ms</span>
       <span id="fps-meter" style="display:none">60 FPS</span>
     </div>
@@ -79,6 +92,19 @@
 
     <div id="toast" role="status" aria-live="polite"></div>
     <button id="exit-btn" title="Back to lobby" style="display:none">⏏ EXIT</button>
+  </div>
+
+  <!-- on-screen mobile solo touch controls (active during racing on mobile) -->
+  <div id="touch-controls" style="display:none">
+    <div class="tc-group tc-left">
+      <button id="tc-left" class="tc-btn" aria-label="Steer left">◀</button>
+      <button id="tc-right" class="tc-btn" aria-label="Steer right">▶</button>
+    </div>
+    <div class="tc-group tc-right">
+      <button id="tc-nitro" class="tc-btn tc-nitro" aria-label="Nitro">🔥</button>
+      <button id="tc-brake" class="tc-btn tc-brake" aria-label="Brake / Reverse">▼</button>
+      <button id="tc-gas" class="tc-btn tc-gas" aria-label="Accelerate">▲</button>
+    </div>
   </div>
 
   <div id="slot-badge" class="slot-badge" style="display:none"></div>
@@ -119,15 +145,109 @@
       <div id="res-ceremony" class="ceremony" hidden></div>
       <div id="podium-line" class="pb-note" hidden></div>
       <div id="motiv-line" class="daily-meta"></div>
+      <div id="res-rank-card" class="rank-movement-card" hidden>
+        <div class="rmc-header">
+          <span class="rmc-title">🏆 RANKED MOVEMENT</span>
+          <span id="rmc-tier-badge" class="tier-badge">GOLD I</span>
+        </div>
+        <div class="rmc-body">
+          <div class="rmc-col"><span class="rmc-lbl">GLOBAL RANK</span><b id="rmc-rank">#--</b><em id="rmc-rank-delta" class="rank-up">—</em></div>
+          <div class="rmc-col"><span class="rmc-lbl">RATING</span><b id="rmc-rating">1000</b><em id="rmc-rating-delta">+0</em></div>
+          <div class="rmc-col"><span class="rmc-lbl">WEEKLY PTS</span><b id="rmc-pts">+0</b></div>
+        </div>
+        <div class="rmc-progress"><div id="rmc-prog-fill" class="rmc-fill" style="width:0%"></div></div>
+        <div id="rmc-next-txt" class="rmc-sub">Progression to next division</div>
+      </div>
+
+      <!-- v81 Rival Overtaken / Next Target Card -->
+      <div id="res-rival-card" class="res-retention-card" hidden>
+        <div class="rrc-head">
+          <span class="rrc-tag" id="res-rival-tag">⚔️ NEXT TARGET</span>
+          <span class="rrc-badge" id="res-rival-gap">8 PTS AHEAD</span>
+        </div>
+        <div class="rrc-body" id="res-rival-text">Beat RacerX (#41) to take #41 globally.</div>
+      </div>
+
+      <!-- v81 Ghost Comparison Card -->
+      <div id="res-ghost-card" class="res-retention-card ghost-card" hidden>
+        <div class="rrc-head">
+          <span class="rrc-tag">👻 GHOST TIME ATTACK</span>
+          <span class="rrc-badge" id="res-ghost-delta">-0.42s FASTER</span>
+        </div>
+        <div class="rrc-body" id="res-ghost-text">You beat your Personal Best ghost on this circuit!</div>
+      </div>
+
+      <!-- v81 Daily Missions Updates -->
+      <div id="res-missions-card" class="res-retention-card missions-card" hidden>
+        <div class="rrc-head">
+          <span class="rrc-tag">🎯 DAILY MISSIONS</span>
+          <span class="rrc-badge" id="res-missions-status">0/3 DONE</span>
+        </div>
+        <div id="res-missions-list" class="res-mission-items"></div>
+      </div>
+
+      <!-- v81 Daily Streak & Season Division Promo -->
+      <div id="res-streak-promo-row" class="res-streak-row" hidden>
+        <div id="res-streak-pill" class="streak-pill">🔥 1-Day Streak</div>
+        <div id="res-promo-pill" class="promo-pill" hidden>🎖️ PROMOTED TO GOLD II!</div>
+      </div>
+
+      <!-- v82 Revenge Match / Victory Card -->
+      <div id="res-revenge-card" class="res-retention-card revenge-card" hidden>
+        <div class="rrc-head">
+          <span class="rrc-tag" id="res-revenge-tag">⚔️ REVENGE OPPORTUNITY</span>
+          <span class="rrc-badge" id="res-revenge-badge">+50% BOUNTY</span>
+        </div>
+        <div class="rrc-body" id="res-revenge-text">You were defeated by RacerX. Claim revenge next race!</div>
+      </div>
+
+      <!-- v82 Weekly Syndicate Bounties Progress -->
+      <div id="res-bounties-card" class="res-retention-card bounties-card" hidden>
+        <div class="rrc-head">
+          <span class="rrc-tag">🏆 WEEKLY BOUNTIES</span>
+          <span class="rrc-badge" id="res-bounties-status">0/3 DONE</span>
+        </div>
+        <div id="res-bounties-list" class="res-mission-items"></div>
+      </div>
+
+      <!-- v83 Racing Syndicate Crew Contribution -->
+      <div id="res-crew-card" class="res-retention-card crew-card" hidden>
+        <div class="rrc-head">
+          <span class="rrc-tag" id="res-crew-tag">🏁 SYNDICATE MILEAGE</span>
+          <span class="rrc-badge" id="res-crew-contrib">+800m / +110 PTS</span>
+        </div>
+        <div class="rrc-body" id="res-crew-text">Contributed to Syndicate weekly mileage pool!</div>
+      </div>
+
+      <!-- v82 Polished Progression Reward Breakdown -->
+      <div id="res-rewards-breakdown" class="rewards-breakdown-card" hidden>
+        <div class="rb-title">🎁 RACE REWARDS &amp; LEVEL PROGRESS</div>
+        <div class="rb-grid">
+          <div class="rb-item"><span class="rb-lbl">TOTAL XP</span><b id="rb-xp-val" class="rb-val-xp">+0 XP</b></div>
+          <div class="rb-item"><span class="rb-lbl">RUSH COINS</span><b id="rb-coins-val" class="rb-val-coins">🪙 +0</b></div>
+        </div>
+        <div class="rb-level-row">
+          <span id="rb-level-lbl">LEVEL 1</span>
+          <div class="rb-bar-wrap"><div id="rb-bar-fill" class="rb-bar-fill" style="width:0%"></div></div>
+          <span id="rb-xp-next">0/100 XP</span>
+        </div>
+      </div>
+
       <div class="results-btns">
-        <button id="rematch-btn">🔁 REMATCH</button>
-        <button id="share-btn" class="ghost">📤 SHARE</button>
-        <button id="ghost-share-btn" class="ghost" hidden>👻 RACE MY GHOST</button>
-        <button id="beat-btn" class="ghost" hidden>⏱️ BEAT MY TIME</button>
-        <button id="replay-btn" class="ghost" hidden>🎥 REPLAY LINK</button>
-        <button id="photo-btn" class="ghost" hidden>📸 SAVE PHOTO</button>
-        <button id="track-btn" class="ghost">🗺️ CHANGE TRACK</button>
-        <button id="menu-btn" class="ghost">LOBBY</button>
+        <button id="rematch-btn" class="res-btn-primary">🔁 REMATCH <span id="rematch-timer" class="rematch-timer">(10s)</span></button>
+        <button id="res-challenge-btn" class="res-btn-secondary">🔥 CHALLENGE A FRIEND</button>
+        <div class="res-btn-row">
+          <button id="track-btn" class="ghost sm">🗺️ CHANGE CIRCUIT</button>
+          <button id="menu-btn" class="ghost sm">🚪 LOBBY</button>
+          <button id="more-opts-btn" class="ghost sm">⋯ MORE OPTIONS</button>
+        </div>
+        <div id="res-more-wrap" class="res-more-drawer" hidden>
+          <button id="share-btn" class="ghost sm">📄 COPY RESULT CARD</button>
+          <button id="ghost-share-btn" class="ghost sm" hidden>👻 RACE MY GHOST</button>
+          <button id="beat-btn" class="ghost sm" hidden>⏱️ BEAT MY TIME</button>
+          <button id="replay-btn" class="ghost sm" hidden>🎥 REPLAY LINK</button>
+          <button id="photo-btn" class="ghost sm" hidden>📸 SAVE PHOTO</button>
+        </div>
       </div>
     </div>
   </div>
@@ -162,10 +282,47 @@
           </div>
           <div id="lobby-conn">🟡 connecting…</div>
         </div>
+
+        <!-- challenge invitation banner (authenticated or guest) -->
+        <div id="challenge-banner" class="challenge-banner" style="display:none">
+          <span class="ch-badge" id="ch-badge">🔥 CHALLENGE</span>
+          <div class="ch-msg" id="ch-msg"></div>
+          <div class="ch-note" id="ch-note"></div>
+          <button id="ch-accept-btn" class="big-cta ch-cta">🏁 ACCEPT &amp; RACE</button>
+        </div>
+
+        <!-- v82 Revenge Match banner -->
+        <div id="revenge-banner" class="revenge-banner" style="display:none">
+          <span class="rev-badge">⚔️ REVENGE MATCH (+50% BOUNTY)</span>
+          <div class="rev-msg" id="rev-msg">Settle the score against your rival!</div>
+          <button id="rev-accept-btn" class="big-cta rev-cta">⚔️ ACCEPT REVENGE</button>
+        </div>
+
+        <!-- v82 Dynamic Prioritized Next Best Action Hero -->
+        <div id="next-action-hero" class="next-action-card">
+          <div class="nah-left">
+            <span id="nah-badge" class="nah-badge">RECOMMENDED</span>
+            <b id="nah-title">Complete Driving Academy</b>
+            <span id="nah-desc" class="nah-sub">Earn your official Pro License + 200 starter Coins &amp; 200 XP!</span>
+          </div>
+          <button id="nah-btn" class="nah-btn">🎓 START ACADEMY</button>
+        </div>
+
+        <!-- mobile mode selection bar -->
+        <div id="mob-choice-bar" class="mobile-prompt-bar" style="display:none">
+          <span class="mob-prompt-txt">📱 Playing on phone:</span>
+          <button id="mob-play-solo" class="mob-choice-btn active">🏎️ PLAY ON THIS PHONE</button>
+          <a id="mob-use-ctrl" href="/controller.html" class="mob-choice-btn">📱 USE AS CONTROLLER</a>
+        </div>
+
         <p id="lobby-status">Waiting for joysticks…</p>
         <div id="recent-line" class="recent-line" hidden></div>
         <div id="account-line" class="account-line" hidden>
           <span id="account-chip">👤 guest</span><span id="streak-badge" hidden></span>
+          <button id="academy-btn" class="ghost sm">🎓 ACADEMY</button>
+          <button id="crew-btn" class="ghost sm">🏁 CREWS</button>
+          <button id="badges-btn" class="ghost sm">🎖️ BADGES</button>
+          <button id="bounties-btn" class="ghost sm">🏆 BOUNTIES</button>
           <button id="friends-btn" class="ghost sm" hidden>👥 FRIENDS</button>
           <button id="garage-btn" class="ghost sm">🏎️ GARAGE</button>
           <div id="ach-row" class="ach-row"></div>
@@ -174,6 +331,49 @@
         </div>
         <p id="room-error" style="display:none"></p>
         <button id="quickplay-btn" class="big-cta" style="margin:10px 0 2px" data-i18n="quickplay">⚡ QUICK PLAY — find a rival</button>
+
+        <!-- v81 Competitive Retention: Rivals, Missions, Streak, Ghost -->
+        <div class="lobby-comp-grid">
+          <!-- Next Rival Card -->
+          <div id="lobby-rival-card" class="lcomp-card rival-card">
+            <div class="lcomp-head">
+              <span class="lcomp-title">⚔️ NEXT RIVAL</span>
+              <span id="lcomp-rival-rank" class="lcomp-tag">#--</span>
+            </div>
+            <div class="lcomp-main">
+              <b id="lcomp-rival-name">Finding competitor…</b>
+              <span id="lcomp-rival-gap" class="lcomp-sub">0 rating pts ahead</span>
+            </div>
+            <button id="lcomp-rival-btn" class="lcomp-btn">⚡ RACE RIVAL</button>
+          </div>
+
+          <!-- Daily Missions Card -->
+          <div id="lobby-missions-card" class="lcomp-card missions-card">
+            <div class="lcomp-head">
+              <span class="lcomp-title">🎯 DAILY MISSIONS</span>
+              <span id="lcomp-missions-count" class="lcomp-tag">0/3</span>
+            </div>
+            <div id="lcomp-missions-list" class="lcomp-list">
+              <div class="lcomp-m-row">Loading missions…</div>
+            </div>
+          </div>
+
+          <!-- Daily Streak & Ghost Quick-Actions -->
+          <div class="lcomp-card streak-ghost-card">
+            <div class="lcomp-head">
+              <span class="lcomp-title">🔥 RACING STREAK</span>
+              <span id="lcomp-streak-badge" class="lcomp-tag">DAY 1</span>
+            </div>
+            <div class="lcomp-main">
+              <div id="lcomp-streak-txt" class="lcomp-sub">🏁 Race today to maintain streak</div>
+              <div id="lcomp-streak-milestone" class="lcomp-milestone">Next: 3-Day Milestone</div>
+            </div>
+            <div class="lcomp-actions">
+              <button id="lobby-ghost-toggle-btn" class="lcomp-ghost-btn">👻 GHOST: PB (ON)</button>
+              <button id="lobby-season-btn" class="lcomp-season-btn">🏆 S1 LADDER</button>
+            </div>
+          </div>
+        </div>
 
         <div class="cols">
           <div class="col">
@@ -194,7 +394,7 @@
             </ul>
           </div>
           <div class="col">
-            <h2>📱 Joysticks (1–2 phones)</h2>
+            <h2>📱 Joysticks (up to 6 phones)</h2>
             <div class="qr-wrap">
               <canvas id="qr-canvas"></canvas>
               <div class="qr-side">
@@ -231,15 +431,44 @@
               <label class="toggle-line"><input type="checkbox" id="set-cb"/> 🎨 Colorblind-friendly UI</label>
               <label class="toggle-line"><input type="checkbox" id="set-ar" checked/> ⚙️ Adaptive resolution</label>
               <label class="toggle-line"><input type="checkbox" id="set-ghost"/> 👻 Ghost (race your best lap)</label>
+              <label class="toggle-line"><input type="checkbox" id="set-racing-line" checked/> 🏎️ Racing Line (Apex Spline)</label>
               <label class="toggle-line"><input type="checkbox" id="set-fx" checked/> 💡 Glow FX (neon bloom)</label>
               <label class="toggle-line"><input type="checkbox" id="set-hd" checked/> 🖼️ HD lobby art</label>
             </div>
-            <div class="lsec">
-              <div class="lsec-title" data-i18n="leaderboard">LEADERBOARD — TOP 5</div>
-              <div class="board-tabs"><button id="board-tab-time" class="btab active">BEST LAPS</button><button id="board-tab-rate" class="btab">GLOBAL RATING</button></div>
+            <div class="lsec" id="comp-hub">
+              <div class="lsec-title" data-i18n="leaderboard">🏆 COMPETITIVE HUB</div>
+              <div class="board-tabs">
+                <button id="board-tab-rate" class="btab active">👑 GLOBAL RATING</button>
+                <button id="board-tab-time" class="btab">⏱️ TRACK RECORDS</button>
+                <button id="board-tab-daily" class="btab">📅 DAILY CUP</button>
+                <button id="board-tab-weekly" class="btab">🏆 FOUNDERS CUP</button>
+              </div>
+              <div id="comp-filters" class="comp-filter-row">
+                <div class="scope-toggle">
+                  <button id="scope-top" class="scope-btn active">TOP 20</button>
+                  <button id="scope-nearby" class="scope-btn">NEARBY (YOU ±3)</button>
+                </div>
+                <div id="map-filter-wrap" class="map-filter-pills" hidden>
+                  <button class="mf-pill active" data-map="0">HIGHLAND</button>
+                  <button class="mf-pill" data-map="1">NEON</button>
+                  <button class="mf-pill" data-map="2">ISLAND</button>
+                  <button class="mf-pill" data-map="3">CANYON</button>
+                  <button class="mf-pill" data-map="4">HAIRPIN</button>
+                </div>
+              </div>
+              <div id="comp-user-bar" class="comp-user-card" hidden>
+                <div class="cub-left"><span id="cub-rank">#--</span><span id="cub-name">YOU</span></div>
+                <div class="cub-right"><span id="cub-tier" class="tier-badge">BRONZE</span><b id="cub-val">1000</b></div>
+              </div>
               <div id="leaderboard" class="leaderboard"></div>
-              <div id="rate-board" class="leaderboard" hidden></div>
+              <div id="rate-board" class="leaderboard"></div>
+              <div id="daily-board-view" class="leaderboard" hidden></div>
+              <div id="weekly-board-view" class="leaderboard" hidden></div>
               <div id="lb-motiv" class="daily-meta"></div>
+              <div class="share-row comp-share-row" style="margin-top:8px">
+                <button id="comp-wa-share" class="ghost sm">🟢 SHARE RANK ON WA</button>
+                <button id="comp-tg-share" class="ghost sm">✈️ TELEGRAM</button>
+              </div>
             </div>
             <div class="lsec" id="daily-box" hidden>
               <div class="lsec-title" id="daily-title">📅 DAILY CHALLENGE</div>
@@ -299,6 +528,17 @@
             <button class="map-card" data-map="2"><img src="img/map-island.webp" alt="Island"/><div class="mc-name">ISLAND MOTORFEST</div><div class="mc-sub">Sunset · volcano &amp; ocean</div></button>
             <button class="map-card" data-map="3"><img src="img/map-canyon.webp" alt="Canyon"/><div class="mc-name">CANYON CHICANE</div><div class="mc-sub">Desert · S-curves &amp; chicanes</div></button>
             <button class="map-card" data-map="4"><img src="img/map-snow.webp" alt="Hairpin"/><div class="mc-name">HAIRPIN GP</div><div class="mc-sub">Snow · alpine hairpins</div></button>
+          </div>
+        </div>
+
+        <!-- step 1.5 : dynamic track weather & surface conditions -->
+        <div class="wiz-sec" id="wiz-weather">
+          <div class="lsec-title">DYNAMIC WEATHER &amp; SURFACE CONDITIONS</div>
+          <div class="weather-row" id="weather-cards">
+            <button class="weather-btn active" data-weather="dry">☀️ DRY ASPHALT<span>1.00x Grip · Optimal Track Pace</span></button>
+            <button class="weather-btn" data-weather="wet">🌧️ WET RAIN<span>0.92x Grip · Water Spray &amp; Puddles</span></button>
+            <button class="weather-btn" data-weather="night">🌃 MIDNIGHT NEON<span>1.00x Grip · Glowing Cyber Luminescence</span></button>
+            <button class="weather-btn" data-weather="blizzard">❄️ ALPINE BLIZZARD<span>0.88x Grip · Icy Snow Swirls</span></button>
           </div>
         </div>
 
@@ -362,6 +602,45 @@
       <h2>🏎️ MY GARAGE</h2>
       <div id="garage-body" class="profile-body"></div>
       <button id="garage-close" class="big-cta">CLOSE</button>
+    </div>
+  </div>
+  <div id="academy-dlg" class="dlg" hidden>
+    <div class="dlg-box wide">
+      <h2>🎓 DRIVING ACADEMY &amp; PRO LICENSE</h2>
+      <p class="dlg-sub">Master fundamental driving mechanics to earn your official Pro Racing License + 200 starter Coins &amp; 200 XP!</p>
+      <div id="academy-body" class="academy-body"></div>
+      <button id="academy-close" class="big-cta">CLOSE</button>
+    </div>
+  </div>
+  <div id="badges-dlg" class="dlg" hidden>
+    <div class="dlg-box wide">
+      <h2>🎖️ MILESTONE BADGES &amp; SHOWCASE</h2>
+      <p class="dlg-sub">Unlock prestigious tiered badges to display on your player banner and leaderboard profile.</p>
+      <div id="badges-body" class="badges-body"></div>
+      <button id="badges-close" class="big-cta">CLOSE</button>
+    </div>
+  </div>
+  <div id="bounties-dlg" class="dlg" hidden>
+    <div class="dlg-box">
+      <h2>🏆 WEEKLY SYNDICATE BOUNTIES</h2>
+      <p class="dlg-sub">Complete weekly syndicate goals to earn exclusive Founders Cup points, XP, and Rush Coins.</p>
+      <div id="bounties-body" class="profile-body"></div>
+      <button id="bounties-close" class="big-cta">CLOSE</button>
+    </div>
+  </div>
+  <div id="crew-dlg" class="dlg" hidden>
+    <div class="dlg-box wide crew-dlg-box">
+      <div class="crew-head">
+        <h2>🏁 RACING SYNDICATE CREWS</h2>
+        <div class="crew-tabs">
+          <button id="ctab-my" class="ctab active">MY SYNDICATE</button>
+          <button id="ctab-join" class="ctab">JOIN CREW</button>
+          <button id="ctab-create" class="ctab">CREATE CREW</button>
+          <button id="ctab-board" class="ctab">GRAND PRIX LEADERBOARD</button>
+        </div>
+      </div>
+      <div id="crew-body" class="crew-modal-body"></div>
+      <button id="crew-close" class="big-cta">CLOSE</button>
     </div>
   </div>
   <div id="friends-dlg" class="dlg" hidden>

@@ -4,7 +4,8 @@
   "private": true,
   "description": "Sridhar Rush — online multiplayer 3D racing; phones as joysticks.",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "NODE_PATH=./node_modules node --test test/*.test.js"
   },
   "engines": {
     "node": ">=18"

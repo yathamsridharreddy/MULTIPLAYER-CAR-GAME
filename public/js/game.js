@@ -192,49 +192,82 @@ function setEnvironment(night) {
 }
 
 // ---------------------------------------------------------------------------
-// textures
+// v80 zero-lag textures & memory management
 // ---------------------------------------------------------------------------
-function grassTexture(base) {
-  const c = document.createElement('canvas'); c.width = c.height = 256;
-  const g = c.getContext('2d');
-  g.fillStyle = base; g.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 9000; i++) {
-    g.fillStyle = `rgba(${30 + Math.random() * 60},${80 + Math.random() * 80},${28 + Math.random() * 40},0.3)`;
-    g.fillRect(Math.random() * 256, Math.random() * 256, 1.5, 2.5);
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(150, 150); tex.anisotropy = 4; tex.encoding = THREE.sRGBEncoding;
+const _texCache = {};
+function getCachedTexture(key, createFn) {
+  if (_texCache[key]) return _texCache[key];
+  const tex = createFn();
+  tex._cached = true;
+  _texCache[key] = tex;
   return tex;
+}
+
+function grassTexture(base) {
+  return getCachedTexture('grass_' + base, () => {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const g = c.getContext('2d');
+    g.fillStyle = base; g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 9000; i++) {
+      g.fillStyle = `rgba(${30 + Math.random() * 60},${80 + Math.random() * 80},${28 + Math.random() * 40},0.3)`;
+      g.fillRect(Math.random() * 256, Math.random() * 256, 1.5, 2.5);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(150, 150); tex.anisotropy = 4; tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  });
 }
 function asphaltTexture(col) {
-  const c = document.createElement('canvas'); c.width = c.height = 256;
-  const g = c.getContext('2d');
-  g.fillStyle = col; g.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 5200; i++) {
-    const v = 28 + Math.random() * 46;
-    g.fillStyle = `rgba(${v},${v},${v + 3},0.5)`;
-    g.fillRect(Math.random() * 256, Math.random() * 256, 1.4, 1.4);
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(0.1, 0.1); tex.anisotropy = 8; tex.encoding = THREE.sRGBEncoding;
-  return tex;
+  return getCachedTexture('asphalt_' + col, () => {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const g = c.getContext('2d');
+    g.fillStyle = col; g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 5200; i++) {
+      const v = 28 + Math.random() * 46;
+      g.fillStyle = `rgba(${v},${v},${v + 3},0.5)`;
+      g.fillRect(Math.random() * 256, Math.random() * 256, 1.4, 1.4);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(0.1, 0.1); tex.anisotropy = 8; tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  });
 }
 function buildingTexture(seed, night) {
-  const c = document.createElement('canvas'); c.width = 64; c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = night ? ['#141a26', '#1a1626', '#10141f'][seed % 3] : ['#22303e', '#2c2a33', '#3a3f47'][seed % 3];
-  g.fillRect(0, 0, 64, 128);
-  for (let y = 6; y < 122; y += 10) for (let x = 5; x < 58; x += 10) {
-    const r = Math.random();
-    g.fillStyle = night
-      ? (r < 0.5 ? (r < 0.2 ? '#ff4fd8' : '#39d5ff') : (r < 0.7 ? '#ffd97a' : '#0a0e18'))
-      : (r < 0.24 ? '#ffd97a' : (r < 0.55 ? '#5f7488' : '#1b2530'));
-    g.fillRect(x, y, 6, 7);
-  }
-  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
-  return tex;
+  return getCachedTexture(`bldg_${seed % 3}_${night ? 1 : 0}`, () => {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = night ? ['#141a26', '#1a1626', '#10141f'][seed % 3] : ['#22303e', '#2c2a33', '#3a3f47'][seed % 3];
+    g.fillRect(0, 0, 64, 128);
+    for (let y = 6; y < 122; y += 10) for (let x = 5; x < 58; x += 10) {
+      const r = Math.random();
+      g.fillStyle = night
+        ? (r < 0.5 ? (r < 0.2 ? '#ff4fd8' : '#39d5ff') : (r < 0.7 ? '#ffd97a' : '#0a0e18'))
+        : (r < 0.24 ? '#ffd97a' : (r < 0.55 ? '#5f7488' : '#1b2530'));
+      g.fillRect(x, y, 6, 7);
+    }
+    const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  });
+}
+
+function disposeHierarchy(obj) {
+  if (!obj) return;
+  obj.traverse((child) => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) {
+        child.material.forEach((m) => {
+          if (m.map && !m.map._cached) m.map.dispose();
+          m.dispose();
+        });
+      } else {
+        if (child.material.map && !child.material.map._cached) child.material.map.dispose();
+        child.material.dispose();
+      }
+    }
+  });
 }
 
 function ellipseRing(rIn, rOut, segments) {
@@ -424,8 +457,12 @@ function buildWorld(map) {
   const T = themeSettings(map.theme);
   const W = map.world;
 
-  // clear previous world
-  while (worldGroup.children.length) worldGroup.remove(worldGroup.children[0]);
+  // v80 clear and properly dispose previous world GPU resources (prevents memory leak & map lag)
+  while (worldGroup.children.length) {
+    const child = worldGroup.children[0];
+    worldGroup.remove(child);
+    disposeHierarchy(child);
+  }
   puMeshes.length = 0;
   if (CORE.pickupSpots) { // v59: visible power-ups at the SAME deterministic spots as the server
     CORE.pickupSpots(map).forEach((sp) => {
@@ -562,38 +599,85 @@ function buildWorld(map) {
     }
   }
 
-  // trees: pines (highland) vs palms (island) vs sparse (neon)
+  // trees: batch with InstancedMesh for zero-lag rendering (pines vs palms)
   {
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2c, roughness: 1 });
     const leafMat = new THREE.MeshStandardMaterial({ color: T.night ? 0x1d4d2a : 0x2e6b34, roughness: 1, flatShading: true });
     const leafMat2 = new THREE.MeshStandardMaterial({ color: T.night ? 0x256b3a : 0x3d8040, roughness: 1, flatShading: true });
-    const cone1 = new THREE.ConeGeometry(1.9, 4.4, 7);
-    const cone2 = new THREE.ConeGeometry(1.35, 3.1, 7);
-    const frondGeo = new THREE.PlaneGeometry(2.6, 0.6);
-    const frondMat = new THREE.MeshStandardMaterial({ color: 0x2f8f3a, roughness: 1, side: THREE.DoubleSide, flatShading: true });
-    for (const tr of W.trees) {
-      const grp = new THREE.Group();
+    const count = (W.trees && W.trees.length) || 0;
+
+    if (count > 0) {
       if (T.palms) {
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.24, 4.8, 6), trunkMat);
-        trunk.position.y = 2.4; trunk.rotation.z = 0.1; trunk.castShadow = true;
-        grp.add(trunk);
-        for (let f = 0; f < 7; f++) {
-          const fr = new THREE.Mesh(frondGeo, frondMat);
-          fr.position.y = 4.8; fr.rotation.y = (f / 7) * PI2; fr.rotation.x = 0.75;
-          fr.translateZ(1.2); fr.castShadow = true;
-          grp.add(fr);
-        }
+        const trunkGeo = new THREE.CylinderGeometry(0.14, 0.24, 4.8, 6);
+        const frondGeo = new THREE.PlaneGeometry(2.6, 0.6);
+        const frondMat = new THREE.MeshStandardMaterial({ color: 0x2f8f3a, roughness: 1, side: THREE.DoubleSide, flatShading: true });
+
+        const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
+        const frondInst = new THREE.InstancedMesh(frondGeo, frondMat, count * 7);
+        trunkInst.castShadow = true;
+        frondInst.castShadow = true;
+
+        const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), S = new THREE.Vector3(), P = new THREE.Vector3();
+        let frondIdx = 0;
+
+        W.trees.forEach((tr, i) => {
+          Q.setFromAxisAngle(UP, tr.rot);
+          S.set(tr.s, tr.s, tr.s);
+          P.set(tr.x, 2.4 * tr.s, tr.z);
+          M.compose(P, Q, S);
+          trunkInst.setMatrixAt(i, M);
+
+          for (let f = 0; f < 7; f++) {
+            const fYaw = tr.rot + (f / 7) * PI2;
+            const fPitch = 0.75;
+            const fDist = 1.2 * tr.s;
+            const fx = tr.x + Math.sin(fYaw) * fDist;
+            const fz = tr.z + Math.cos(fYaw) * fDist;
+            const fy = 4.8 * tr.s;
+
+            const fRot = new THREE.Euler(fPitch, fYaw, 0, 'YXZ');
+            const fQ = new THREE.Quaternion().setFromEuler(fRot);
+            M.compose(new THREE.Vector3(fx, fy, fz), fQ, S);
+            frondInst.setMatrixAt(frondIdx++, M);
+          }
+        });
+        trunkInst.instanceMatrix.needsUpdate = true;
+        frondInst.instanceMatrix.needsUpdate = true;
+        worldGroup.add(trunkInst, frondInst);
       } else {
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, 1.7, 6), trunkMat); trunk.position.y = 0.85;
-        const l1 = new THREE.Mesh(cone1, tr.variant ? leafMat : leafMat2); l1.position.y = 3.4;
-        const l2 = new THREE.Mesh(cone2, leafMat); l2.position.y = 5.3;
-        grp.add(trunk, l1, l2);
-        grp.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+        const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 1.7, 6);
+        const cone1Geo = new THREE.ConeGeometry(1.9, 4.4, 7);
+        const cone2Geo = new THREE.ConeGeometry(1.35, 3.1, 7);
+
+        const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
+        const cone1Inst = new THREE.InstancedMesh(cone1Geo, leafMat, count);
+        const cone2Inst = new THREE.InstancedMesh(cone2Geo, leafMat2, count);
+        trunkInst.castShadow = true;
+        cone1Inst.castShadow = true;
+        cone2Inst.castShadow = true;
+
+        const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), S = new THREE.Vector3(), P = new THREE.Vector3();
+        W.trees.forEach((tr, i) => {
+          Q.setFromAxisAngle(UP, tr.rot);
+          S.set(tr.s, tr.s, tr.s);
+
+          P.set(tr.x, 0.85 * tr.s, tr.z);
+          M.compose(P, Q, S);
+          trunkInst.setMatrixAt(i, M);
+
+          P.set(tr.x, 3.4 * tr.s, tr.z);
+          M.compose(P, Q, S);
+          cone1Inst.setMatrixAt(i, M);
+
+          P.set(tr.x, 5.3 * tr.s, tr.z);
+          M.compose(P, Q, S);
+          cone2Inst.setMatrixAt(i, M);
+        });
+        trunkInst.instanceMatrix.needsUpdate = true;
+        cone1Inst.instanceMatrix.needsUpdate = true;
+        cone2Inst.instanceMatrix.needsUpdate = true;
+        worldGroup.add(trunkInst, cone1Inst, cone2Inst);
       }
-      grp.scale.setScalar(tr.s);
-      grp.position.set(tr.x, 0, tr.z);
-      grp.rotation.y = tr.rot;
-      worldGroup.add(grp);
     }
   }
 
@@ -712,6 +796,129 @@ function buildWorld(map) {
   }
 
   if (!T.night) addClouds();
+  buildRacingLine(map);
+  applyWeather(currentWeather);
+}
+
+// v83 Dynamic Visual Ghost Racing Line Spline
+let racingLineMesh = null;
+function buildRacingLine(map) {
+  if (racingLineMesh) {
+    worldGroup.remove(racingLineMesh);
+    disposeHierarchy(racingLineMesh);
+    racingLineMesh = null;
+  }
+  if (prefs && prefs.racingLine === false) return;
+
+  const points = [];
+  const colors = [];
+  const numSamples = 256;
+
+  for (let i = 0; i <= numSamples; i++) {
+    const u = i / numSamples;
+    let x = 0, z = 0, curvature = 0;
+    if (map && map.type === 'spline' && map.ptAt) {
+      const th = u * PI2;
+      const p = map.ptAt(th);
+      const pPrev = map.ptAt((th - 0.05 + PI2) % PI2);
+      const pNext = map.ptAt((th + 0.05) % PI2);
+      x = p.x; z = p.z;
+      const dx1 = p.x - pPrev.x, dz1 = p.z - pPrev.z;
+      const dx2 = pNext.x - p.x, dz2 = pNext.z - p.z;
+      const a1 = Math.atan2(dx1, dz1), a2 = Math.atan2(dx2, dz2);
+      let da = Math.abs(a2 - a1); if (da > Math.PI) da = PI2 - da;
+      curvature = da / 0.1;
+    } else if (map) {
+      const th = u * PI2;
+      x = map.a * Math.cos(th);
+      z = map.b * Math.sin(th);
+      const a = map.a, b = map.b;
+      curvature = (a * b) / Math.pow(Math.pow(a * Math.sin(th), 2) + Math.pow(b * Math.cos(th), 2), 1.5) * 50;
+    }
+
+    points.push(new THREE.Vector3(x, 0.065, z));
+
+    const color = new THREE.Color();
+    if (curvature > 1.2) {
+      color.setHex(0xff2a4d); // Hard Braking Zone (Red)
+    } else if (curvature > 0.6) {
+      color.setHex(0xffd479); // Apex Entry / Turn In (Gold)
+    } else if (curvature < 0.25) {
+      color.setHex(0x00e5ff); // Nitro Surge Straightaway (Cyan)
+    } else {
+      color.setHex(0x00ff66); // Apex Exit Acceleration (Green)
+    }
+    colors.push(color.r, color.g, color.b);
+  }
+
+  const ribbonGeo = new THREE.BufferGeometry();
+  const verts = [];
+  const ribbonColors = [];
+  const width = 0.45;
+
+  for (let i = 0; i < points.length; i++) {
+    const p0 = points[i];
+    const pNext = points[(i + 1) % points.length];
+    const dx = pNext.x - p0.x, dz = pNext.z - p0.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const nx = -dz / len * width, nz = dx / len * width;
+
+    verts.push(p0.x - nx, p0.y, p0.z - nz);
+    verts.push(p0.x + nx, p0.y, p0.z + nz);
+
+    const r = colors[i * 3], g = colors[i * 3 + 1], b = colors[i * 3 + 2];
+    ribbonColors.push(r, g, b);
+    ribbonColors.push(r, g, b);
+  }
+
+  const indices = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const base = i * 2;
+    indices.push(base, base + 1, base + 2);
+    indices.push(base + 1, base + 3, base + 2);
+  }
+  ribbonGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  ribbonGeo.setAttribute('color', new THREE.Float32BufferAttribute(ribbonColors, 3));
+  ribbonGeo.setIndex(indices);
+
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.65,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+
+  racingLineMesh = new THREE.Mesh(ribbonGeo, mat);
+  worldGroup.add(racingLineMesh);
+}
+
+// v83 Dynamic Weather Visuals
+let currentWeather = 'dry';
+function applyWeather(weatherId) {
+  currentWeather = weatherId || 'dry';
+  const cond = (CORE.WEATHER_CONDITIONS && CORE.WEATHER_CONDITIONS[currentWeather]) || {
+    name: 'Dry Asphalt', gripMod: 1.0, icon: '☀️'
+  };
+
+  const wChip = $('hud-weather');
+  if (wChip) {
+    wChip.className = 'weather-chip ' + currentWeather;
+    if (currentWeather === 'wet') {
+      wChip.textContent = '🌧️ WET (0.92x GRIP)';
+    } else if (currentWeather === 'blizzard') {
+      wChip.textContent = '❄️ BLIZZARD (0.88x GRIP)';
+    } else if (currentWeather === 'night') {
+      wChip.textContent = '🌃 MIDNIGHT NEON';
+    } else {
+      wChip.textContent = '☀️ DRY ASPHALT';
+    }
+  }
+
+  const wBtns = document.querySelectorAll('.weather-btn');
+  wBtns.forEach(b => {
+    b.classList.toggle('active', b.dataset.weather === currentWeather);
+  });
 }
 
 // initial world
@@ -937,14 +1144,20 @@ function ensureGhost() {
 }
 function loadGhost(mapId) {
   ghostData = null;
-  try { const g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); if (g && g.length) ghostData = g; } catch (e) {}
+  const mode = localStorage.getItem('sr_ghost_mode') || 'pb';
+  if (mode === 'off') return;
+  try {
+    const g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null');
+    if (g && g.length) ghostData = g;
+  } catch (e) {}
 }
 let ghostIdx = 0; // v66
 function ghostStart(mapId) {
-  ghostRec = []; ghostRecT = 0; ghostRecOn = !!prefs.ghost || TT.on; // v61: TT always records
+  const mode = localStorage.getItem('sr_ghost_mode') || 'pb';
+  ghostRec = []; ghostRecT = 0; ghostRecOn = (mode !== 'off' && (!!prefs.ghost || TT.on)); // v61: TT always records
   loadGhost(mapId);
   if (remoteGhost && remoteGhost.map === mapId) ghostData = remoteGhost.data; // friend's ghost wins over local
-  const show = !!ghostData && (!!prefs.ghost || !!remoteGhost || (TT.on && !TT.practice)); // v61 PB ghost in TT
+  const show = mode !== 'off' && !!ghostData && (!!prefs.ghost || !!remoteGhost || (TT.on && !TT.practice)); // v61 PB ghost in TT
   if (show) ensureGhost(); // lazy-create the ghost car (fix: it was never created before)
   if (ghostGroup) ghostGroup.visible = show;
   if (show) buildGhostCum(); // v61
@@ -961,14 +1174,40 @@ function ghostSave(mapId, isBest) {
   ghostRecOn = false;
 }
 function ghostUpdate(raceTime) {
-  if (!ghostGroup) return;
-  if (!ghostData || (!prefs.ghost && !remoteGhost)) { ghostGroup.visible = false; return; }
+  const chip = $('ghost-gap-chip');
+  if (!ghostGroup) {
+    if (chip) chip.style.display = 'none';
+    return;
+  }
+  if (!ghostData || (!prefs.ghost && !remoteGhost)) {
+    ghostGroup.visible = false;
+    if (chip) chip.style.display = 'none';
+    return;
+  }
   ghostGroup.visible = true;
   // v66 moving index: O(1) amortized instead of full scan per frame
   if (ghostIdx >= ghostData.length || ghostData[ghostIdx][0] > raceTime) ghostIdx = 0;
   while (ghostIdx < ghostData.length - 1 && ghostData[ghostIdx + 1][0] < raceTime) ghostIdx++;
   const s = ghostData[ghostIdx][0] <= raceTime ? ghostData[ghostIdx] : ghostData[ghostData.length - 1];
   ghostGroup.position.set(s[1], 0, s[2]); ghostGroup.rotation.y = s[3];
+
+  // Live in-race ghost delta indicator
+  if (chip && latest && latest.cars) {
+    const mine = latest.cars.find((c) => (c.slot || c.s) === mySlot);
+    if (mine && ghostCum) {
+      const d = ghostDelta((mine.lap || 0) + (mine.pr || 0), raceTime);
+      if (d != null && Math.abs(d) < 40 && latest.state === 'racing') {
+        chip.style.display = 'block';
+        const ahead = d < 0;
+        chip.className = 'ghost-gap-chip ' + (ahead ? 'ahead' : 'behind');
+        chip.textContent = '👻 GHOST: ' + (ahead ? '-' : '+') + Math.abs(d).toFixed(2) + 's ' + (ahead ? '⚡' : '🔻');
+      } else {
+        chip.style.display = 'none';
+      }
+    } else {
+      chip.style.display = 'none';
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1025,6 +1264,66 @@ function spawnFlame(wp) {
   p.life = 0.14 + Math.random() * 0.08;
   p.spr.position.copy(wp); p.spr.scale.setScalar(0.5 + Math.random() * 0.5); p.spr.visible = true;
 }
+
+// v83 Weather particles: water spray, snow spray, falling rain, blizzard snow
+const waterSprayPool = [];
+for (let i = 0; i < 50; i++) {
+  const mat = new THREE.SpriteMaterial({ map: softTex, transparent: true, opacity: 0, depthWrite: false, color: 0x88d4f5 });
+  const spr = new THREE.Sprite(mat); spr.visible = false; scene.add(spr);
+  waterSprayPool.push({ spr, mat, life: 0, maxLife: 0.5, vx: 0, vy: 0, vz: 0 });
+}
+function spawnWaterSpray(x, z, vx, vz) {
+  const p = waterSprayPool.find((q) => q.life <= 0); if (!p) return;
+  p.life = p.maxLife = 0.35 + Math.random() * 0.25;
+  p.spr.position.set(x + (Math.random() - 0.5) * 0.3, 0.2, z + (Math.random() - 0.5) * 0.3);
+  p.vx = vx * 0.15 + (Math.random() - 0.5) * 2.2; p.vz = vz * 0.15 + (Math.random() - 0.5) * 2.2;
+  p.vy = 1.2 + Math.random() * 1.8;
+  p.spr.scale.setScalar(0.7 + Math.random() * 0.5); p.spr.visible = true;
+}
+
+const snowSprayPool = [];
+for (let i = 0; i < 50; i++) {
+  const mat = new THREE.SpriteMaterial({ map: softTex, transparent: true, opacity: 0, depthWrite: false, color: 0xeef5fc });
+  const spr = new THREE.Sprite(mat); spr.visible = false; scene.add(spr);
+  snowSprayPool.push({ spr, mat, life: 0, maxLife: 0.6, vx: 0, vy: 0, vz: 0 });
+}
+function spawnSnowSpray(x, z, vx, vz) {
+  const p = snowSprayPool.find((q) => q.life <= 0); if (!p) return;
+  p.life = p.maxLife = 0.45 + Math.random() * 0.3;
+  p.spr.position.set(x + (Math.random() - 0.5) * 0.3, 0.2, z + (Math.random() - 0.5) * 0.3);
+  p.vx = vx * 0.1 + (Math.random() - 0.5) * 1.8; p.vz = vz * 0.1 + (Math.random() - 0.5) * 1.8;
+  p.vy = 0.8 + Math.random() * 1.4;
+  p.spr.scale.setScalar(0.6 + Math.random() * 0.5); p.spr.visible = true;
+}
+
+const RAIN_COUNT = 250;
+const rainGeo = new THREE.BufferGeometry();
+const rainPos = new Float32Array(RAIN_COUNT * 3);
+for (let i = 0; i < RAIN_COUNT; i++) {
+  rainPos[i * 3] = (Math.random() - 0.5) * 120;
+  rainPos[i * 3 + 1] = Math.random() * 40;
+  rainPos[i * 3 + 2] = (Math.random() - 0.5) * 120;
+}
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rainMat = new THREE.PointsMaterial({ color: 0x90caf9, size: 0.4, transparent: true, opacity: 0.75, depthWrite: false });
+const rainParticles = new THREE.Points(rainGeo, rainMat);
+rainParticles.visible = false;
+scene.add(rainParticles);
+
+const SNOW_COUNT = 300;
+const snowGeo = new THREE.BufferGeometry();
+const snowPos = new Float32Array(SNOW_COUNT * 3);
+for (let i = 0; i < SNOW_COUNT; i++) {
+  snowPos[i * 3] = (Math.random() - 0.5) * 120;
+  snowPos[i * 3 + 1] = Math.random() * 35;
+  snowPos[i * 3 + 2] = (Math.random() - 0.5) * 120;
+}
+snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
+const snowMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.55, transparent: true, opacity: 0.85, depthWrite: false });
+const snowParticles = new THREE.Points(snowGeo, snowMat);
+snowParticles.visible = false;
+scene.add(snowParticles);
+
 function updateParticles(dt) {
   for (const p of smokePool) {
     if (p.life <= 0) continue;
@@ -1049,6 +1348,61 @@ function updateParticles(dt) {
     p.life -= dt;
     if (p.life <= 0) { p.spr.visible = false; p.mat.opacity = 0; continue; }
     p.mat.opacity = Math.min(1, p.life * 9);
+  }
+  for (const p of waterSprayPool) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.spr.visible = false; p.mat.opacity = 0; continue; }
+    p.spr.position.x += p.vx * dt; p.spr.position.y += p.vy * dt; p.spr.position.z += p.vz * dt;
+    p.vy -= 9.8 * dt;
+    p.spr.scale.addScalar(dt * 2.0);
+    p.mat.opacity = 0.45 * (p.life / p.maxLife);
+  }
+  for (const p of snowSprayPool) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.spr.visible = false; p.mat.opacity = 0; continue; }
+    p.spr.position.x += p.vx * dt; p.spr.position.y += p.vy * dt; p.spr.position.z += p.vz * dt;
+    p.vy -= 4.2 * dt;
+    p.spr.scale.addScalar(dt * 1.5);
+    p.mat.opacity = 0.5 * (p.life / p.maxLife);
+  }
+
+  // Update weather rain/snow relative to camera
+  if (currentWeather === 'wet') {
+    rainParticles.visible = true;
+    snowParticles.visible = false;
+    const pos = rainGeo.attributes.position.array;
+    const cx = camera.position.x, cz = camera.position.z;
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      pos[i * 3 + 1] -= dt * 48;
+      if (pos[i * 3 + 1] < 0) {
+        pos[i * 3] = cx + (Math.random() - 0.5) * 90;
+        pos[i * 3 + 1] = 28 + Math.random() * 10;
+        pos[i * 3 + 2] = cz + (Math.random() - 0.5) * 90;
+      }
+    }
+    rainGeo.attributes.position.needsUpdate = true;
+  } else if (currentWeather === 'blizzard') {
+    rainParticles.visible = false;
+    snowParticles.visible = true;
+    const pos = snowGeo.attributes.position.array;
+    const cx = camera.position.x, cz = camera.position.z;
+    const t = performance.now() * 0.001;
+    for (let i = 0; i < SNOW_COUNT; i++) {
+      pos[i * 3] += Math.sin(t + i) * dt * 4 - dt * 6;
+      pos[i * 3 + 1] -= dt * 14;
+      pos[i * 3 + 2] += Math.cos(t + i) * dt * 3;
+      if (pos[i * 3 + 1] < 0) {
+        pos[i * 3] = cx + (Math.random() - 0.5) * 90;
+        pos[i * 3 + 1] = 25 + Math.random() * 10;
+        pos[i * 3 + 2] = cz + (Math.random() - 0.5) * 90;
+      }
+    }
+    snowGeo.attributes.position.needsUpdate = true;
+  } else {
+    rainParticles.visible = false;
+    snowParticles.visible = false;
   }
 }
 const SKID_MAX = 1000;
@@ -1085,9 +1439,9 @@ const CAR_NAMES = [
 function loadPrefs() {
   try { return Object.assign({
     name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, fx: true, lang: 'en', hdLobby: true
+    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: 'en', hdLobby: true
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
-  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false }; }
+  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true }; }
 }
 let prefs = loadPrefs();
 function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
@@ -1105,7 +1459,7 @@ let myEq = null; // v75 server-validated equipped loadout (null = guest/local pr
 async function loadEquipped() {
   const acc = window.SRAccount;
   if (!(acc && acc.loggedIn && acc.loggedIn())) { myEq = null; return; }
-  const r = await sbGet('/rest/v1/player_equipped?id=eq.' + acc.uid() + '&select=car,paint,wheels,trail,decal,neon,title');
+  const r = await sbGet('/rest/v1/player_equipped?user_id=eq.' + acc.uid() + '&select=car,paint,wheels,trail,decal,neon,title');
   myEq = (r && r[0]) || null;
 }
 function identityPayload() {
@@ -1124,7 +1478,7 @@ function identityPayload() {
     cos = { decal: myEq.decal || 0, wheels: myEq.wheels || 0, trail: myEq.trail || 0, neon: myEq.neon || 0, sp: car.sp };
     title = myEq.title || title;
   }
-  return { name, pid, color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, cos, title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined, chid: window.__chId || undefined }; // v73/v74
+  return { name, pid, color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, weather: currentWeather, cos, title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined, chid: window.__chId || undefined }; // v73/v74/v83
 }
 
 function applyQuality(q) {
@@ -1308,12 +1662,62 @@ function wireLobbyV2() {
   const rmEl = $('set-rm'); if (rmEl) { rmEl.checked = !!prefs.rm; rmEl.addEventListener('change', () => { prefs.rm = rmEl.checked; savePrefs(); }); }
   const cbEl = $('set-cb'); if (cbEl) { cbEl.checked = !!prefs.cb; cbEl.addEventListener('change', () => { prefs.cb = cbEl.checked; savePrefs(); }); }
   const arEl = $('set-ar'); if (arEl) { arEl.checked = !!prefs.ar; arEl.addEventListener('change', () => { prefs.ar = arEl.checked; savePrefs(); }); }
-  const ghEl = $('set-ghost'); if (ghEl) { ghEl.checked = !!prefs.ghost; ghEl.addEventListener('change', () => { prefs.ghost = ghEl.checked; savePrefs(); if (prefs.ghost) ensureGhost(); if (ghostGroup) ghostGroup.visible = false; }); }
+  const ghEl = $('set-ghost'); if (ghEl) { ghEl.checked = !!prefs.ghost; ghEl.addEventListener('change', () => { prefs.ghost = ghEl.checked; savePrefs(); if (prefs.ghost) ensureGhost(); if (ghostGroup) ghostGroup.visible = false; updateLobbyGhostBtn(); }); }
+  const rlEl = $('set-racing-line'); if (rlEl) { rlEl.checked = prefs.racingLine !== false; rlEl.addEventListener('change', () => { prefs.racingLine = rlEl.checked; savePrefs(); if (curMap) buildRacingLine(curMap); toast(prefs.racingLine ? '🏎️ Racing Line Spline ON' : '🏎️ Racing Line Spline OFF'); }); }
   const fxEl = $('set-fx'); if (fxEl) { fxEl.checked = prefs.fx !== false; fxEl.addEventListener('change', () => { prefs.fx = fxEl.checked; savePrefs(); }); }
   // v57 HD lobby: pure CSS skin inside the (race-hidden) lobby overlay; the art
   // file lazy-loads 1.2 s after window.load so it never competes with boot/race.
   const hdEl = $('set-hd');
   if (hdEl) { hdEl.checked = prefs.hdLobby !== false; hdEl.addEventListener('change', () => { prefs.hdLobby = hdEl.checked; savePrefs(); applyHD(); }); }
+
+  // v83 Weather Selection in Wizard
+  document.querySelectorAll('.weather-btn').forEach((b) => {
+    b.addEventListener('click', () => {
+      const w = b.dataset.weather;
+      applyWeather(w);
+      net.send({ type: 'weather', weather: w });
+      toast(`Weather set to: ${w.toUpperCase()}`);
+    });
+  });
+
+  // v83 Racing Syndicate Crews button & modal wiring
+  const crewBtn = $('crew-btn');
+  if (crewBtn) crewBtn.addEventListener('click', () => openCrewModal('my'));
+  const crewClose = $('crew-close');
+  if (crewClose) crewClose.addEventListener('click', () => { $('crew-dlg').hidden = true; });
+  ['my', 'join', 'create', 'board'].forEach((t) => {
+    const cTabBtn = $(`ctab-${t}`);
+    if (cTabBtn) cTabBtn.addEventListener('click', () => openCrewModal(t));
+  });
+
+  // v81 Competitive Retention lobby buttons
+  const rivalBtn = $('lcomp-rival-btn');
+  if (rivalBtn) rivalBtn.addEventListener('click', () => { const qb = $('quickplay-btn'); if (qb) qb.click(); });
+  const ghTogBtn = $('lobby-ghost-toggle-btn');
+  function updateLobbyGhostBtn() {
+    if (ghTogBtn) ghTogBtn.textContent = prefs.ghost ? '👻 GHOST: ON' : '👻 GHOST: OFF';
+    const sGh = $('set-ghost'); if (sGh) sGh.checked = !!prefs.ghost;
+  }
+  if (ghTogBtn) {
+    updateLobbyGhostBtn();
+    ghTogBtn.addEventListener('click', () => {
+      prefs.ghost = !prefs.ghost;
+      savePrefs();
+      updateLobbyGhostBtn();
+      if (prefs.ghost) ensureGhost();
+      if (ghostGroup) ghostGroup.visible = false;
+      toast(prefs.ghost ? '👻 Ghost enabled for Time Attack' : '👻 Ghost disabled');
+    });
+  }
+  const s1Btn = $('lobby-season-btn');
+  if (s1Btn) {
+    s1Btn.addEventListener('click', () => {
+      const wTab = $('board-tab-weekly');
+      if (wTab) wTab.click();
+      const hub = $('comp-hub');
+      if (hub) hub.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
 
   // ---- optional racer account (Supabase, v37) — purely additive ------------
   (function () {
@@ -1353,26 +1757,81 @@ function wireLobbyV2() {
     $('acc-login').addEventListener('click', () => doIt((e, p) => SRAccount.login(e, p)));
   })();
   // ---------------------------------------------------------------------------
-// v74 — friends, challenges, shareable results, profile league/achievements
+// v74/v80 — friends, challenges, shareable results, profile league/achievements
 // ---------------------------------------------------------------------------
-(function () { // challenge link deep-read (?ch=ID)
-  const m = String(location.search.match(/[?&]ch=(\d+)/) || '');
-  const id = (location.search.match(/[?&]ch=(\d+)/) || [])[1];
-  if (id) {
-    window.__chId = id;
+function parseGuestChallenge(urlSearch = location.search) {
+  try {
+    const u = new URLSearchParams(urlSearch);
+    const pch = u.get('pch') || (u.get('ch') && !/^\d+$/.test(u.get('ch')) ? u.get('ch') : null);
+    if (!pch) return null;
+    let m = pch.match(/^(?:m)?([0-4])_(?:t)?(\d{3,7})_(.+)$/i);
+    if (!m) m = pch.match(/(?:map:)?([0-4]):(?:t:)?(\d{3,7}):(?:name:)?(.+)/i);
+    if (!m) return null;
+    const map = parseInt(m[1], 10);
+    const targetMs = parseInt(m[2], 10);
+    const name = decodeURIComponent(m[3]).replace(/[<>]/g, '').trim().slice(0, 14) || 'A RACER';
+    if (isNaN(map) || map < 0 || map > 4) return null;
+    if (isNaN(targetMs) || targetMs < 1000 || targetMs > 600000) return null;
+    return { map, targetMs, name, verified: false };
+  } catch (e) {
+    return null;
+  }
+}
+
+function renderChallengeBanner(ch) {
+  const b = $('challenge-banner');
+  if (!b || !ch) return;
+  const badge = $('ch-badge'), msg = $('ch-msg'), note = $('ch-note'), cta = $('ch-accept-btn');
+  const M = (CORE.MAPS[ch.map] || {}).name || 'Circuit';
+  const tStr = ch.targetMs ? fmtTime(ch.targetMs / 1000) : null;
+
+  if (ch.verified) {
+    if (badge) { badge.textContent = '🏆 VERIFIED CHALLENGE'; badge.className = 'ch-badge'; }
+    if (msg) msg.textContent = `🔥 ${ch.name} challenges you${tStr ? ' to beat ' + tStr : ''} on ${M}!`;
+    if (note) note.textContent = 'Official Supabase challenge • Win to claim rating & record';
+  } else {
+    if (badge) { badge.textContent = '🔥 PERSONAL CHALLENGE'; badge.className = 'ch-badge unverified'; }
+    if (msg) msg.textContent = `⚔️ ${ch.name} wants you to beat ${tStr || 'their time'} on ${M}`;
+    if (note) note.textContent = 'Personal challenge • Not a verified leaderboard result';
+  }
+  b.style.display = '';
+  if (cta) {
+    cta.onclick = () => {
+      b.style.display = 'none';
+      selectedMap = ch.map;
+      const sb = $('start-btn'); if (sb) sb.click();
+    };
+  }
+}
+
+(function () {
+  const numId = (location.search.match(/[?&]ch=(\d+)/) || [])[1];
+  if (numId) {
+    window.__chId = numId;
     (async () => {
-      const ch = await sbGet('/rest/v1/challenges?id=eq.' + id + '&select=from_name,map,mode,laps,target_ms,status');
+      const ch = await sbGet('/rest/v1/challenges?id=eq.' + numId + '&select=from_name,map,mode,laps,target_ms,status');
       if (ch && ch[0] && ch[0].status === 'open') {
-        const M = (CORE.MAPS[ch[0].map] || {}).name || 'a circuit';
-        toast('🔥 ' + ch[0].from_name + ' challenges you' + (ch[0].target_ms ? ': beat ' + fmtTime(ch[0].target_ms / 1000) : '') + ' on ' + M + '!');
         selectedMap = ch[0].map;
+        window.__activeChallenge = { map: ch[0].map, targetMs: ch[0].target_ms, name: ch[0].from_name, verified: true };
+        renderChallengeBanner(window.__activeChallenge);
+        track('ch_accept', ch[0].map, { chId: numId });
       }
     })();
+    return;
+  }
+
+  const guestCh = parseGuestChallenge(location.search);
+  if (guestCh) {
+    window.__guestChallenge = guestCh;
+    window.__activeChallenge = guestCh;
+    selectedMap = guestCh.map;
+    renderChallengeBanner(guestCh);
+    track('ch_accept', guestCh.map, { guest: true });
   }
 })();
 async function createChallenge(targetMs, toUid) { // v78: toUid enables friend accept/decline
   const acc = window.SRAccount;
-  if (!(acc && acc.loggedIn())) { toast('Sign in to create challenges'); const b = $('account-btn'); if (b) b.click(); return null; }
+  if (!(acc && acc.loggedIn())) { toast('Sign in to create verified challenges'); const b = $('account-btn'); if (b) b.click(); return null; }
   const c = sbCfg(); if (!c.url) return null;
   try {
     const r = await fetch(c.url + '/rest/v1/challenges', {
@@ -1382,8 +1841,23 @@ async function createChallenge(targetMs, toUid) { // v78: toUid enables friend a
     });
     if (!r.ok) return null;
     const j = await r.json();
-    return j && j[0] ? j[0].id : null;
+    const chId = j && j[0] ? j[0].id : null;
+    if (chId) track('ch_send', selectedMap, { chId, targetMs, toUid: !!toUid });
+    return chId;
   } catch (e) { return null; }
+}
+async function generateShareLink(myTime) {
+  const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+  const acc = window.SRAccount;
+  if (acc && acc.loggedIn() && myTime) {
+    try {
+      const id = await createChallenge(myTime);
+      if (id) return { link: `${location.origin}/?ch=${id}`, verified: true };
+    } catch (e) {}
+  }
+  const safeName = encodeURIComponent((prefs.name || 'A RACER').slice(0, 14));
+  const targetMs = myTime ? Math.round(myTime * 1000) : 0;
+  return { link: `${location.origin}/?pch=${mapId}_${targetMs}_${safeName}`, verified: false };
 }
 function copyChallengeLink(id, name, targetMs) {
   const M = (CORE.MAPS[selectedMap] || {}).name || 'a circuit';
@@ -1400,7 +1874,7 @@ function openFriends() {
   body.innerHTML = '<div class="p-empty">Loading…</div>';
   (async () => {
     const [mine, reqs] = await Promise.all([
-      sbGet('/rest/v1/friends?or=(from_uid.eq.' + uid + ',to_uid.eq.' + uid + ')&status=eq.accepted&select=from_uid,to_uid'),
+      sbGet('/rest/v1/friends?or=(from_uid.eq.' + uid + ',to_uid.eq.' + uid + ')&status=eq.accepted&select=from_uid,to_uid', tok),
       sbGet('/rest/v1/friends?to_uid=eq.' + uid + '&status=eq.pending&select=id,from_uid', tok),
     ]);
     const fids = [];
@@ -1532,99 +2006,121 @@ function renderRoomLobby(e) {
   const el = $('room-players'); if (!el) return;
   const ps = e.players || [];
   $('room-count') && ($('room-count').textContent = ps.length + ' / ' + (e.cap || 6) + ' PLAYERS');
-  el.innerHTML = ps.map((p) =>
-    '<div class="rp-row' + (p.slot === mySlot ? ' me' : '') + '"><span class="rp-slot">' + p.slot + '</span>' +
-    '<span class="rp-name">' + escapeHtml(p.name) + (p.host ? ' 👑' : '') + '</span>' +
-    '<span class="rp-rating">' + (p.rating != null ? p.rating : '—') + '</span>' +
-    '<span class="rp-ready ' + (p.ready ? 'on' : '') + '">' + (p.ready ? 'READY' : 'NOT READY') + '</span></div>').join('') +
+  el.innerHTML = ps.map((p) => {
+    const crewBadge = p.crewTag ? `<span class="syndicate-tag">[${escapeHtml(p.crewTag)}]</span> ` : '';
+    return '<div class="rp-row' + (p.slot === mySlot ? ' me' : '') + '"><span class="rp-slot">' + p.slot + '</span>' +
+      '<span class="rp-name">' + crewBadge + escapeHtml(p.name) + (p.host ? ' 👑' : '') + '</span>' +
+      '<span class="rp-rating">' + (p.rating != null ? p.rating : '—') + '</span>' +
+      '<span class="rp-ready ' + (p.ready ? 'on' : '') + '">' + (p.ready ? 'READY' : 'NOT READY') + '</span></div>';
+  }).join('') +
     (ps.length < (e.cap || 6) ? '<div class="rp-row empty"><span class="rp-slot">·</span><span class="rp-name dim">open slot — share the code</span></div>' : '');
   const rb = $('ready-btn');
   if (rb) { rb.hidden = ps.length < 3; rb.textContent = iAmReady ? '✅ READY' : '🏁 READY UP'; }
 }
 // v73 wiring: profile / ratings access points
 (function () {
-  const rp = document.createElement('button'); rp.id = 'res-profile'; rp.className = 'ghost sm'; rp.textContent = '👤 PROFILE';
-  const rb = document.createElement('button'); rb.id = 'res-board'; rb.className = 'ghost sm'; rb.textContent = '🏆 RANKINGS';
-  const rm = $('rematch-btn'); if (rm && rm.parentNode) { rm.parentNode.appendChild(rp); rm.parentNode.appendChild(rb); }
-  rp.addEventListener('click', () => { const r = $('results'); if (r) r.classList.add('hidden'); openProfile(); });
-  rb.addEventListener('click', () => { const r = $('results'); if (r) r.classList.add('hidden'); showRatingTab(); });
   const pc = $('profile-close'); if (pc) pc.addEventListener('click', () => { const d = $('profile-dlg'); if (d) d.hidden = true; });
   const fb = $('friends-btn'); if (fb) fb.addEventListener('click', openFriends);
   const gb = $('garage-btn'); if (gb) gb.addEventListener('click', openGarage);
   const rbtn = $('ready-btn'); if (rbtn) rbtn.addEventListener('click', () => { iAmReady = !iAmReady; net.send({ type: 'ready', on: iAmReady }); renderRoomLobby({ players: window.__lastLobby || [], cap: 6 }); });
   const gc = $('garage-close'); if (gc) gc.addEventListener('click', () => { const d = $('garage-dlg'); if (d) d.hidden = true; });
   const fc = $('friends-close'); if (fc) fc.addEventListener('click', () => { const d = $('friends-dlg'); if (d) d.hidden = true; });
-  const cc = document.createElement('button'); cc.id = 'res-challenge'; cc.className = 'ghost sm'; cc.textContent = '⚔️ COPY CHALLENGE';
-  const rm2 = $('rematch-btn'); if (rm2 && rm2.parentNode) rm2.parentNode.appendChild(cc);
-  cc.addEventListener('click', async () => { const my = (lastResults || []).find((c) => c.s === mySlot); if (my && my.t != null) { const id = await createChallenge(my.t); if (id) copyChallengeLink(id, (window.SRAccount && SRAccount.name()) || prefs.name, my.t); } });
 })();
 function showRatingTab() {
-  const t = $('board-tab-rate'), l = $('board-tab-time');
-  if (t) t.classList.add('active'); if (l) l.classList.remove('active');
-  const lb = $('leaderboard'), rt = $('rate-board');
-  if (lb) lb.hidden = true; if (rt) rt.hidden = false;
-  loadRatingBoard();
+  compActiveTab = 'rate';
+  loadCompetitiveHub();
   const setup = $('setup'); if (setup) setup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
-(function () {
-  const t = $('board-tab-time'), r = $('board-tab-rate');
-  if (!t || !r) return;
-  t.addEventListener('click', () => { t.classList.add('active'); r.classList.remove('active'); const lb = $('leaderboard'), rt = $('rate-board'); if (lb) lb.hidden = false; if (rt) rt.hidden = true; });
-  r.addEventListener('click', showRatingTab);
-})();
 const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutorial').style.display = 'none'; try { localStorage.setItem('sr_tut', '1'); } catch (e) {} });
-  const shareEl = $('share-btn');
-  if (shareEl) shareEl.addEventListener('click', () => {
-    if (!lastResults) return;
-    const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
-    const mapName = (CORE.MAPS[mapId] || {}).name || '';
-    // v74 shareable result card
-    {
-      const my = lastResults.find((c) => c.s === mySlot);
-      const pos = lastResults.indexOf(my) + 1;
-      const row = (pendingSettle || []).find((r) => r.slot === mySlot);
-      const card = '🏁 SRIDHAR RUSH\n' + (pos === 1 ? '1st PLACE' : 'P' + pos) + '\nMAP: ' + mapName + '\nTIME: ' + (my && my.t != null ? fmtTime(my.t) : 'DNF') + (row ? '\nRATING: ' + (row.rd > 0 ? '+' : '') + row.rd + '\nXP: +' + row.xp : '') + '\n\nCan you beat me? ' + location.origin + '/';
-      if (navigator.share) navigator.share({ text: card }).catch(() => {}); else { copyText(card); toast('Result card copied!'); }
-      return;
-    }
-    const myRow = lastResults.find((c) => c.s === mySlot);
-    const pos = lastResults.findIndex((c) => c.s === mySlot) + 1;
-    const lines = lastResults.map((r, i) => `${i + 1}. ${r.name || ('P' + r.slot)} — ${r.t != null ? fmtTime(r.t) : 'DNF'}`).join('\n');
-    const msg = `🏎️ SRIDHAR RUSH — ${mapName}\n🏁 I finished P${pos} in ${myRow && myRow.t != null ? fmtTime(myRow.t) : 'DNF'}\n${lines}\nRace me: ${location.origin}/?room=${latest ? latest.code : ''}`;
-    if (navigator.share) navigator.share({ text: msg }).catch(() => {});
-    else { copyText(msg); toast('Result copied — paste it anywhere!'); }
+
+async function shareChallengeAction(channel = 'challenge') {
+  if (!lastResults) return;
+  const my = lastResults.find((c) => (c.slot || c.s) === mySlot);
+  const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+  const mapName = (CORE.MAPS[mapId] || {}).name || 'Circuit';
+  const myTime = (my && my.t != null) ? my.t : null;
+  const timeStr = myTime != null ? fmtTime(myTime) : 'DNF';
+
+  const { link, verified } = await generateShareLink(myTime);
+  const rName = (prefs.name || 'A RACER').slice(0, 14);
+  const msg = `🔥 ${rName} challenged you to beat ${timeStr} on ${mapName}!\nCan you beat my time? Race now: ${link}`;
+
+  track('share', mapId, { channel, verified });
+  if (navigator.share) {
+    navigator.share({ text: msg }).catch(() => {});
+  } else {
+    copyText(msg);
+    toast('⚔️ Challenge link copied — send it to a friend!');
+  }
+}
+
+async function shareResultCardAction() {
+  if (!lastResults) return;
+  const my = lastResults.find((c) => (c.slot || c.s) === mySlot);
+  const pos = lastResults.indexOf(my) + 1;
+  const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+  const mapName = (CORE.MAPS[mapId] || {}).name || 'Circuit';
+  const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+  const myTime = (my && my.t != null) ? my.t : null;
+  const { link } = await generateShareLink(myTime);
+
+  const card = '🏁 SRIDHAR RUSH\n' + (pos === 1 ? '1st PLACE' : 'P' + pos) +
+               '\nMAP: ' + mapName +
+               '\nTIME: ' + (myTime != null ? fmtTime(myTime) : 'DNF') +
+               (row ? '\nRATING: ' + (row.rd > 0 ? '+' : '') + row.rd + '\nXP: +' + row.xp : '') +
+               '\n\nCan you beat me? ' + link;
+  track('share', mapId, { channel: 'card' });
+  if (navigator.share) navigator.share({ text: card }).catch(() => {});
+  else { copyText(card); toast('Result card copied!'); }
+}
+
+const chalBtn = $('res-challenge-btn');
+if (chalBtn) chalBtn.addEventListener('click', () => shareChallengeAction('challenge_btn'));
+
+const moreOptsBtn = $('more-opts-btn'), moreWrap = $('res-more-wrap');
+if (moreOptsBtn && moreWrap) {
+  moreOptsBtn.addEventListener('click', () => {
+    moreWrap.hidden = !moreWrap.hidden;
+    moreOptsBtn.textContent = moreWrap.hidden ? '⋯ MORE OPTIONS' : '▲ LESS OPTIONS';
   });
-  // v59 BEAT MY TIME challenge (ghost link + target time)
-  const btBtn = $('beat-btn');
-  if (btBtn) btBtn.addEventListener('click', () => {
-    const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
-    let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
-    if (!g || !g.length) { toast('Enable 👻 Ghost & set a best lap first'); return; }
-    btBtn.disabled = true;
-    fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, data: g }) })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('x'))))
-      .then((j) => {
-        let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
-        const msg = `⏱️ BEAT MY TIME on ${(CORE.MAPS[mapId] || {}).name || 'track'}: ${best != null ? fmtTime(best) : '—'}\n👻 Race my ghost: ${location.origin}/?g=${j.id}`;
-        if (navigator.share) navigator.share({ text: msg }).catch(() => {});
-        else { copyText(msg); toast('Challenge copied — send it!'); }
-      })
-      .catch(() => toast('Needs the Supabase setup'))
-      .finally(() => { btBtn.disabled = false; });
-  });
-  // v46: watchable replay link (same ghost upload, spectator page)
-  const rpBtn = $('replay-btn');
-  if (rpBtn) rpBtn.addEventListener('click', () => {
-    const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
-    let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
-    if (!g || !g.length) { toast('Set a best lap first (enable 👻 Ghost in settings)'); return; }
-    rpBtn.disabled = true;
-    fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, data: g }) })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('unavailable'))))
-      .then((j) => { copyText(location.origin + '/replay?g=' + j.id); toast('🎥 Replay link copied!'); })
-      .catch(() => toast('Replays need the Supabase setup'))
-      .finally(() => { rpBtn.disabled = false; });
-  });
+}
+
+const shareEl = $('share-btn');
+if (shareEl) shareEl.addEventListener('click', shareResultCardAction);
+
+// v59 BEAT MY TIME challenge (ghost link + target time)
+const btBtn = $('beat-btn');
+if (btBtn) btBtn.addEventListener('click', () => {
+  const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+  let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
+  if (!g || !g.length) { toast('Enable 👻 Ghost & set a best lap first'); return; }
+  btBtn.disabled = true;
+  fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, data: g }) })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error('x'))))
+    .then((j) => {
+      let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
+      const msg = `⏱️ BEAT MY TIME on ${(CORE.MAPS[mapId] || {}).name || 'track'}: ${best != null ? fmtTime(best) : '—'}\n👻 Race my ghost: ${location.origin}/?g=${j.id}`;
+      track('share', mapId, { channel: 'ghost' });
+      if (navigator.share) navigator.share({ text: msg }).catch(() => {});
+      else { copyText(msg); toast('Challenge copied — send it!'); }
+    })
+    .catch(() => toast('Needs the Supabase setup'))
+    .finally(() => { btBtn.disabled = false; });
+});
+
+// v46: watchable replay link (same ghost upload, spectator page)
+const rpBtn = $('replay-btn');
+if (rpBtn) rpBtn.addEventListener('click', () => {
+  const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+  let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
+  if (!g || !g.length) { toast('Set a best lap first (enable 👻 Ghost in settings)'); return; }
+  rpBtn.disabled = true;
+  fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, data: g }) })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error('unavailable'))))
+    .then((j) => { track('share', mapId, { channel: 'replay' }); copyText(location.origin + '/replay?g=' + j.id); toast('🎥 Replay link copied!'); })
+    .catch(() => toast('Replays need the Supabase setup'))
+    .finally(() => { rpBtn.disabled = false; });
+});
   // v46: community links (configured via env; hidden otherwise)
   (function () {
     const row = $('community-row'); if (!row) return;
@@ -1773,6 +2269,16 @@ function showCount(txt) {
 let pendingSettle = []; // v73 server-settled XP/rating rows
 function showResults(order) {
   if (TT.on) return; // v61: TT/practice use their own overlay
+  if (currentAcademyLesson) {
+    try {
+      const les = JSON.parse(localStorage.getItem('sr_academy_lessons') || '{}');
+      les[currentAcademyLesson] = true;
+      localStorage.setItem('sr_academy_lessons', JSON.stringify(les));
+      toast('🎓 Academy Lesson Completed!');
+    } catch (e) {}
+    currentAcademyLesson = null;
+    const hEl = $('academy-hint-banner'); if (hEl) hEl.style.display = 'none';
+  }
   lastResults = order;
   const rows = $('results-rows'); rows.innerHTML = '';
   const medals = ['🥇', '🥈', ''];
@@ -1791,7 +2297,7 @@ function showResults(order) {
   // v65 full result summary: position/time/best lap/PB/rival gap/streak/board rank
   const rs = $('res-summary');
   if (rs && !TT.on) {
-    const my = order.find((c) => c.s === mySlot);
+    const my = order.find((c) => (c.slot || c.s) === mySlot);
     if (my) {
       const p = Pget();
       const pos = order.indexOf(my) + 1;
@@ -1811,9 +2317,11 @@ function showResults(order) {
   const pf = $('photo-finish');
   if (pf) {
     const f = order.filter((c) => c.finished);
-    if (f.length >= 2 && (f[1].t - f[0].t) <= 0.5) {
+    if (f.length >= 2 && f[0].t != null && f[1].t != null && (f[1].t - f[0].t) <= 0.60) {
+      const margin = f[1].t - f[0].t;
       pf.hidden = false;
-      pf.innerHTML = '📸 PHOTO FINISH — ' + escapeHtml(f[0].name || 'P' + f[0].slot) + ' ' + fmtTime(f[0].t) + ' vs ' + escapeHtml(f[1].name || 'P' + f[1].slot) + ' ' + fmtTime(f[1].t) + ' · margin <b>' + (f[1].t - f[0].t).toFixed(3) + 's</b>';
+      pf.innerHTML = '⚡ PHOTO FINISH — ' + escapeHtml(f[0].name || 'P' + f[0].slot) + ' ' + fmtTime(f[0].t) + ' vs ' + escapeHtml(f[1].name || 'P' + f[1].slot) + ' ' + fmtTime(f[1].t) + ' · margin <b>+' + margin.toFixed(3) + 's</b>';
+      triggerPhotoFinish(margin, f[0].name || 'P' + f[0].slot, f[1].name || 'P' + f[1].slot);
     } else pf.hidden = true;
   }
   // v73 ranked ceremony: server-settled XP / rating / level / PR
@@ -1836,12 +2344,207 @@ function showResults(order) {
         '<div class="c-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + row.ratingNew + '</div>';
     } else if (cer) cer.hidden = true;
   }
+  // v80 Ranked Movement Card in results modal
+  const rkCard = $('res-rank-card');
+  if (rkCard) {
+    const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+    if (row && row.ratingNew) {
+      rkCard.hidden = false;
+      const tr = window.SRProg ? SRProg.tier(row.ratingNew) : { name: 'BRONZE III', col: '#d09a6a', pct: 50 };
+      const tb = $('rmc-tier-badge'); if (tb) { tb.textContent = tr.name; tb.style.color = tr.col; tb.style.borderColor = tr.col; }
+      const rr = $('rmc-rank'); if (rr) rr.textContent = row.rankAfter ? '#' + row.rankAfter : '#--';
+      const rdEl = $('rmc-rank-delta');
+      if (rdEl) {
+        if (row.rankDelta > 0) { rdEl.textContent = '▲ +' + row.rankDelta; rdEl.className = 'rank-up'; }
+        else if (row.rankDelta < 0) { rdEl.textContent = '▼ ' + row.rankDelta; rdEl.className = 'rank-down'; }
+        else { rdEl.textContent = '='; rdEl.className = ''; }
+      }
+      const rVal = $('rmc-rating'); if (rVal) rVal.textContent = row.ratingNew;
+      const rDelta = $('rmc-rating-delta');
+      if (rDelta) {
+        rDelta.textContent = (row.rd > 0 ? '+' : '') + (row.rd || 0);
+        rDelta.className = row.rd > 0 ? 'rank-up' : (row.rd < 0 ? 'rank-down' : '');
+      }
+      const rPts = $('rmc-pts'); if (rPts) rPts.textContent = '+' + (row.weeklyPts || 0);
+      const rFill = $('rmc-prog-fill'); if (rFill) rFill.style.width = (tr.pct || 0) + '%';
+      const rNext = $('rmc-next-txt');
+      if (rNext) {
+        rNext.textContent = (tr.next ? `${tr.pct}% to ${tr.next}` : 'Master League') + (row.percentile ? ` · Top ${row.percentile}% Globally` : '');
+      }
+    } else {
+      rkCard.hidden = true;
+    }
+  }
+
+  // v81 Rival Overtaken / Next Target Card
+  const rivCard = $('res-rival-card');
+  if (rivCard) {
+    const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+    if (row && row.overtakenRival) {
+      rivCard.hidden = false;
+      const rTag = $('res-rival-tag'); if (rTag) rTag.textContent = '🎉 RIVAL OVERTAKEN!';
+      const rGap = $('res-rival-gap'); if (rGap) rGap.textContent = `+#${row.rankDelta || 1} RANKS`;
+      const rTxt = $('res-rival-text'); if (rTxt) rTxt.textContent = `You overtook ${escapeHtml(row.overtakenRival.rivalName)} (#${row.overtakenRival.previousRivalRank}) on the global ladder!`;
+    } else if (row && row.rankAfter) {
+      rivCard.hidden = false;
+      const rTag = $('res-rival-tag'); if (rTag) rTag.textContent = '⚔️ CURRENT STANDING';
+      const rGap = $('res-rival-gap'); if (rGap) rGap.textContent = `#${row.rankAfter}`;
+      const rTxt = $('res-rival-text'); if (rTxt) rTxt.textContent = `Rating: ${row.ratingNew} (${row.rd >= 0 ? '+' : ''}${row.rd}) · Global Rank #${row.rankAfter}`;
+    } else {
+      rivCard.hidden = true;
+    }
+  }
+
+  // v81 Ghost Comparison Card
+  const ghCard = $('res-ghost-card');
+  if (ghCard) {
+    const myRow = order.find((c) => (c.slot || c.s) === mySlot);
+    const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+    let pb = null; try { pb = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
+    if (myRow && myRow.finished && myRow.t != null && pb != null) {
+      ghCard.hidden = false;
+      const delta = myRow.t - pb;
+      const gDeltaEl = $('res-ghost-delta');
+      const gTxtEl = $('res-ghost-text');
+      if (delta < 0) {
+        if (gDeltaEl) gDeltaEl.textContent = `${Math.abs(delta).toFixed(2)}s FASTER`;
+        if (gTxtEl) gTxtEl.textContent = `⚡ Personal Best smashed! New circuit record: ${fmtTime(myRow.t)}`;
+      } else {
+        if (gDeltaEl) gDeltaEl.textContent = `+${delta.toFixed(2)}s vs PB`;
+        if (gTxtEl) gTxtEl.textContent = `Ghost target: ${fmtTime(pb)} · You were ${delta.toFixed(2)}s off your best.`;
+      }
+    } else {
+      ghCard.hidden = true;
+    }
+  }
+
+  // v81 Daily Missions Updates
+  const misCard = $('res-missions-card');
+  if (misCard) {
+    const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+    if (row && row.missionUpdates && row.missionUpdates.length) {
+      misCard.hidden = false;
+      const doneCount = row.missionUpdates.filter(m => m.completed).length;
+      const mStatus = $('res-missions-status'); if (mStatus) mStatus.textContent = `${doneCount}/${row.missionUpdates.length} DONE`;
+      const mList = $('res-missions-list');
+      if (mList) {
+        mList.innerHTML = row.missionUpdates.map(m => `
+          <div class="res-mission-item ${m.completed ? 'completed' : ''}">
+            <span>${m.icon || '🎯'} ${escapeHtml(m.title)} (${m.progress}/${m.goal})</span>
+            <span>${m.justCompleted ? '🎉 COMPLETED! +' + m.xpAwarded + ' XP' : (m.completed ? '✅ Done' : '+' + (m.goal - m.progress) + ' to go')}</span>
+          </div>
+        `).join('');
+      }
+    } else {
+      misCard.hidden = true;
+    }
+  }
+
+  // v81 Daily Streak & Season Division Promo
+  const strRow = $('res-streak-promo-row');
+  if (strRow) {
+    const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+    if (row && (row.streak || (row.divisionChange && row.divisionChange.changed))) {
+      strRow.hidden = false;
+      const sPill = $('res-streak-pill');
+      if (sPill) sPill.textContent = `🔥 ${row.streak || 1}-Day Streak`;
+      const pPill = $('res-promo-pill');
+      if (pPill) {
+        if (row.divisionChange && row.divisionChange.promoted) {
+          pPill.hidden = false;
+          pPill.textContent = `🎖️ PROMOTED TO ${row.divisionChange.toTier.toUpperCase()}!`;
+        } else {
+          pPill.hidden = true;
+        }
+      }
+    } else {
+      strRow.hidden = true;
+    }
+  }
+
+  // v82 Revenge Match / Victory Card
+  const revResCard = $('res-revenge-card');
+  if (revResCard) {
+    const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+    if (row && row.revengeAwarded) {
+      revResCard.hidden = false;
+      const rTag = $('res-revenge-tag'); if (rTag) rTag.textContent = '🎉 REVENGE VICTORY!';
+      const rBadge = $('res-revenge-badge'); if (rBadge) rBadge.textContent = `+${row.revengeAwarded.xpBonus} XP · +${row.revengeAwarded.coinsBonus} 🪙`;
+      const rTxt = $('res-revenge-text'); if (rTxt) rTxt.textContent = 'You defeated your rival and claimed the +50% Revenge Bounty!';
+    } else if (row && row.pos > 1 && order.length > 1 && !latest.bot) {
+      revResCard.hidden = false;
+      const rTag = $('res-revenge-tag'); if (rTag) rTag.textContent = '⚔️ REVENGE OPPORTUNITY';
+      const rBadge = $('res-revenge-badge'); if (rBadge) rBadge.textContent = '+50% BOUNTY';
+      const rivalName = (order[0] && order[0].name) ? order[0].name : 'your rival';
+      const rTxt = $('res-revenge-text'); if (rTxt) rTxt.textContent = `Defeated by ${escapeHtml(rivalName)}. Instant rematch to claim Revenge Bounty!`;
+    } else {
+      revResCard.hidden = true;
+    }
+  }
+
+  // v82 Weekly Bounties Progress Card
+  const bntResCard = $('res-bounties-card');
+  if (bntResCard) {
+    const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+    if (row && row.bountyUpdates && row.bountyUpdates.length) {
+      bntResCard.hidden = false;
+      const doneCount = row.bountyUpdates.filter(b => b.completed).length;
+      const bStatus = $('res-bounties-status'); if (bStatus) bStatus.textContent = `${doneCount}/${row.bountyUpdates.length} DONE`;
+      const bList = $('res-bounties-list');
+      if (bList) {
+        bList.innerHTML = row.bountyUpdates.map(b => `
+          <div class="res-mission-item ${b.completed ? 'completed' : ''}">
+            <span>${b.icon || '🏆'} ${escapeHtml(b.title)} (${b.progress}/${b.goal})</span>
+            <span>${b.justCompleted ? '🎉 COMPLETED! +' + b.xpAwarded + ' XP' : (b.completed ? '✅ Done' : '+' + (b.goal - b.progress) + ' to go')}</span>
+          </div>
+        `).join('');
+      }
+    } else {
+      bntResCard.hidden = true;
+    }
+  }
+
+  // v83 Racing Syndicate Crew Contribution Card in results modal
+  const crewResCard = $('res-crew-card');
+  if (crewResCard) {
+    const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+    if (row && row.crew) {
+      crewResCard.hidden = false;
+      const cTag = $('res-crew-tag'); if (cTag) cTag.textContent = `🏁 [${row.crew.tag}] SYNDICATE MILEAGE`;
+      const cContrib = $('res-crew-contrib'); if (cContrib) cContrib.textContent = `+${row.crew.contribMeters}m / +${row.crew.contribPoints} PTS`;
+      const cTxt = $('res-crew-text'); if (cTxt) cTxt.textContent = `Contributed +${row.crew.contribMeters}m (+${row.crew.contribPoints} Pts) to ${row.crew.name} weekly pool! Total: ${row.crew.totalWeeklyKm} km.`;
+    } else {
+      crewResCard.hidden = true;
+    }
+  }
+
+  // v82 Polished Progression Reward Breakdown
+  const rwdCard = $('res-rewards-breakdown');
+  if (rwdCard) {
+    const row = (pendingSettle || []).find((r) => r.slot === mySlot);
+    if (row) {
+      rwdCard.hidden = false;
+      const xpVal = $('rb-xp-val'); if (xpVal) xpVal.textContent = `+${row.xp || 50} XP`;
+      const coinVal = $('rb-coins-val'); if (coinVal) coinVal.textContent = `🪙 +${row.coins || 10}`;
+      if (window.SRProg && row.levelNew) {
+        const lvlInfo = SRProg.levelFromXp((Pget ? Pget().xp : 0) + (row.xp || 50));
+        const lvlLbl = $('rb-level-lbl'); if (lvlLbl) lvlLbl.textContent = `LEVEL ${lvlInfo.level}`;
+        const xpNext = $('rb-xp-next'); if (xpNext) xpNext.textContent = `${lvlInfo.currentXpInLevel}/${lvlInfo.xpForNextLevel} XP`;
+        const barFill = $('rb-bar-fill'); if (barFill) barFill.style.width = `${Math.min(100, Math.round(lvlInfo.progressPct * 100))}%`;
+      }
+    } else {
+      rwdCard.hidden = true;
+    }
+  }
+
+  // v82 Auto Rematch 10s Countdown Timer
+  startAutoRematchTimer();
   // v59 progression + personal-best celebration
   try {
     const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
     statBump('races');
-    if (winner && winner.s === mySlot) statBump('wins');
-    const myRow = order.find((c) => c.s === mySlot);
+    if (winner && (winner.slot || winner.s) === mySlot) statBump('wins');
+    const myRow = order.find((c) => (c.slot || c.s) === mySlot);
     if (myRow && myRow.finished && myRow.t != null) {
       let pb = null; try { pb = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
       if (pb == null || myRow.t < pb) {
@@ -1887,6 +2590,11 @@ function updateLobby(snap) {
   if (snap.controllers[2]) parts.push('📱 P2 joystick');
   if (snap.bot) parts.push('🤖 AI driver');
   $('lobby-status').textContent = parts.length ? 'Connected: ' + parts.join(' · ') : 'Waiting for joysticks (or drive with keyboard)…';
+  const isTouchDev = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
+  const mobBar = $('mob-choice-bar');
+  if (mobBar && isTouchDev && !wantedRoom && !SPEC_ROOM) {
+    mobBar.style.display = 'flex';
+  }
   renderLeaderboard(snap);
   if (!lobbyWired) { lobbyWired = true; wireLobbyV2(); }
 }
@@ -1949,6 +2657,650 @@ async function pollLobbyExtras() {
     const lb = await fetch(base + '/lb?map=' + dailyInfoCache.map + '&daily=1');
     if (lb.ok) renderDailyBoard(await lb.json());
   } catch (e) {}
+  fetchAndRenderRetention().catch(() => {});
+}
+
+let autoRematchTimerId = null;
+let autoRematchSeconds = 10;
+function clearAutoRematchTimer() {
+  if (autoRematchTimerId) {
+    clearInterval(autoRematchTimerId);
+    autoRematchTimerId = null;
+  }
+  const tEl = $('rematch-timer');
+  if (tEl) tEl.textContent = '';
+}
+
+function startAutoRematchTimer() {
+  clearAutoRematchTimer();
+  autoRematchSeconds = 10;
+  const tEl = $('rematch-timer');
+  if (tEl) tEl.textContent = `(${autoRematchSeconds}s)`;
+  autoRematchTimerId = setInterval(() => {
+    autoRematchSeconds--;
+    if (autoRematchSeconds <= 0) {
+      clearAutoRematchTimer();
+      const rBtn = $('rematch-btn');
+      if (rBtn && !$('results').classList.contains('hidden')) {
+        rBtn.click();
+      }
+    } else {
+      if (tEl) tEl.textContent = `(${autoRematchSeconds}s)`;
+    }
+  }, 1000);
+}
+
+let retentionPollBusy = false;
+async function fetchAndRenderRetention() {
+  if (retentionPollBusy) return;
+  retentionPollBusy = true;
+  const base = httpBase();
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  try {
+    const [rivRes, misRes, strRes, seaRes, nahRes, revRes] = await Promise.all([
+      fetch(`${base}/api/player/rivals?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
+      fetch(`${base}/api/player/missions?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
+      fetch(`${base}/api/player/streak?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
+      fetch(`${base}/api/season?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
+      fetch(`${base}/api/player/next-action?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
+      fetch(`${base}/api/player/revenge?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null)
+    ]);
+
+    // 0. Next Best Action hero
+    const nahCard = $('next-action-hero');
+    if (nahCard && nahRes && nahRes.ok && nahRes.action) {
+      const act = nahRes.action;
+      const bTitle = $('nah-title'); if (bTitle) bTitle.textContent = act.title;
+      const bDesc = $('nah-desc'); if (bDesc) bDesc.textContent = act.desc;
+      const bBtn = $('nah-btn');
+      if (bBtn) {
+        bBtn.textContent = act.cta;
+        bBtn.onclick = () => {
+          if (act.actionKey === 'academy') {
+            const ab = $('academy-btn'); if (ab) ab.click();
+          } else if (act.actionKey === 'daily' || act.actionKey === 'streak') {
+            const dp = $('daily-play'); if (dp) dp.click();
+            const sb = $('start-btn'); if (sb) sb.click();
+          } else if (act.actionKey === 'revenge') {
+            const ra = $('rev-accept-btn'); if (ra) ra.click();
+          } else {
+            const qp = $('quickplay-btn'); if (qp) qp.click();
+          }
+        };
+      }
+      nahCard.style.display = '';
+    }
+
+    // 0.5 Active Revenge match banner
+    const revBanner = $('revenge-banner');
+    if (revBanner && revRes && revRes.ok && revRes.targets && revRes.targets.length) {
+      const topRev = revRes.targets[0];
+      const rMsg = $('rev-msg');
+      if (rMsg) rMsg.textContent = `Settle the score against ${escapeHtml(topRev.targetName || 'Rival')} on ${((CORE.MAPS[topRev.map] || {}).name || 'Circuit')} (+50% XP & Coins)!`;
+      const rBtn = $('rev-accept-btn');
+      if (rBtn) {
+        rBtn.onclick = () => {
+          selectedMap = topRev.map || 0;
+          net.send({ type: 'map', map: selectedMap });
+          revBanner.style.display = 'none';
+          const sb = $('start-btn'); if (sb) sb.click();
+        };
+      }
+      revBanner.style.display = '';
+    } else if (revBanner) {
+      revBanner.style.display = 'none';
+    }
+
+    // 1. Rivals card
+    const rivCard = $('lobby-rival-card');
+    if (rivCard && rivRes && rivRes.ok && rivRes.rivals) {
+      const nr = rivRes.rivals.nextRival;
+      const cr = rivRes.rivals.chaserRival;
+      const nrRank = $('lcomp-rival-rank');
+      const nrName = $('lcomp-rival-name');
+      const nrGap = $('lcomp-rival-gap');
+      if (nr) {
+        if (nrRank) nrRank.textContent = `#${nr.rank}`;
+        if (nrName) nrName.textContent = nr.name;
+        if (nrGap) nrGap.textContent = `${nr.ratingGap} rating pts ahead`;
+      } else if (cr) {
+        if (nrRank) nrRank.textContent = `#${cr.rank}`;
+        if (nrName) nrName.textContent = cr.name;
+        if (nrGap) nrGap.textContent = `${cr.ratingGap} rating pts behind`;
+      } else {
+        if (nrRank) nrRank.textContent = `#1`;
+        if (nrName) nrName.textContent = 'Ladder Leader';
+        if (nrGap) nrGap.textContent = 'Defend your rank';
+      }
+    }
+
+    // 2. Daily Missions card
+    const misCard = $('lobby-missions-card');
+    if (misCard && misRes && misRes.ok && misRes.missions) {
+      const doneCount = misRes.missions.filter(m => m.completed).length;
+      const mCount = $('lcomp-missions-count');
+      if (mCount) mCount.textContent = `${doneCount}/${misRes.missions.length}`;
+      const mList = $('lcomp-missions-list');
+      if (mList) {
+        mList.innerHTML = misRes.missions.map(m => {
+          const pct = Math.min(100, Math.round((m.progress / m.goal) * 100));
+          return `
+            <div class="lcomp-m-row">
+              <div class="lcomp-m-header">
+                <span>${m.icon || '🎯'} ${escapeHtml(m.title)}</span>
+                <span>${m.progress}/${m.goal} ${m.completed ? '✅' : ''}</span>
+              </div>
+              <div class="lcomp-m-bar">
+                <div class="lcomp-m-fill ${m.completed ? 'done' : ''}" style="width:${pct}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // 3. Streak & Milestones
+    if (strRes && strRes.ok) {
+      const sBadge = $('lcomp-streak-badge');
+      if (sBadge) sBadge.textContent = `DAY ${strRes.currentStreak || 1}`;
+      const sTxt = $('lcomp-streak-txt');
+      if (sTxt) sTxt.textContent = strRes.racedToday ? '🔥 Streak maintained today!' : '🏁 Race today to maintain streak';
+      const sMs = $('lcomp-streak-milestone');
+      if (sMs && strRes.milestoneInfo) {
+        sMs.textContent = strRes.milestoneInfo.nextMilestone ? `Next: ${strRes.milestoneInfo.nextMilestone}-Day Milestone (+${strRes.milestoneInfo.rewardXp} XP)` : 'Max milestone achieved!';
+      }
+    }
+
+    // 4. Season info
+    if (seaRes && seaRes.ok && seaRes.season) {
+      const sBtn = $('lobby-season-btn');
+      if (sBtn) sBtn.textContent = `🏆 S${seaRes.season.seasonId} LADDER`;
+    }
+  } catch (e) {
+  } finally {
+    retentionPollBusy = false;
+  }
+}
+
+// v82 Driving Academy Modal Controller
+let currentAcademyLesson = null;
+async function openDrivingAcademy() {
+  const dlg = $('academy-dlg');
+  if (!dlg) return;
+  const body = $('academy-body');
+  if (!body) return;
+  dlg.hidden = false;
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  let completed = false;
+  try {
+    const res = await fetch(`${httpBase()}/api/player/badges?uid=${encodeURIComponent(uid)}`).then(r => r.json());
+    if (res && res.ok && res.badges) {
+      const lp = res.badges.find(b => b.id === 'pro_license' || b.badgeId === 'pro_license');
+      if (lp && lp.tierLevel >= 1) completed = true;
+    }
+  } catch (e) {}
+
+  const lessons = (window.SRProg && SRProg.ACADEMY_LESSONS) ? SRProg.ACADEMY_LESSONS : [
+    { id: 'lesson_1_steering', title: 'Apex & Precision Steering', desc: 'Master the racing line: steer smoothly around apexes without hitting outer barriers.' },
+    { id: 'lesson_2_nitro', title: 'Nitro Exit Acceleration', desc: 'Trigger Nitro boosts out of high-speed turns to reach top straightaway velocity.' },
+    { id: 'lesson_3_drafting', title: 'Slipstream & Clean Overtake', desc: 'Follow the target car in its aerodynamic slipstream draft and execute a clean pass.' }
+  ];
+
+  let completedLessons = {};
+  try { completedLessons = JSON.parse(localStorage.getItem('sr_academy_lessons') || '{}'); } catch (e) {}
+  const allLessonsDone = lessons.every(l => completedLessons[l.id] || completed);
+
+  let html = lessons.map((les, idx) => {
+    const isDone = completed || completedLessons[les.id];
+    return `
+      <div class="academy-lesson-card ${isDone ? 'completed' : ''}">
+        <div class="alc-info">
+          <span class="alc-title">${idx + 1}. ${les.icon || '🎯'} ${escapeHtml(les.title)}</span>
+          <span class="alc-desc">${escapeHtml(les.desc)}</span>
+          <span class="alc-reward">Reward: +${les.rewardXp || 50} XP · +${les.rewardCoins || 50} 🪙</span>
+        </div>
+        <button class="alc-btn" onclick="startAcademyLesson('${les.id}')">${isDone ? '✅ COMPLETED' : 'START LESSON'}</button>
+      </div>
+    `;
+  }).join('');
+
+  if (completed) {
+    html += `
+      <div class="license-cert-card">
+        <div class="lcc-title">🎖️ OFFICIAL PRO RACER LICENSE</div>
+        <div class="lcc-sub">Certified Driver · Ready for Competitive Ranked, Revenge Duels &amp; Founders Cup</div>
+      </div>
+    `;
+  } else {
+    html += `
+      <div class="license-cert-card">
+        <div class="lcc-title">🎓 PRO LICENSE EXAMINATION</div>
+        <div class="lcc-sub">Complete all 3 lessons to earn your official Pro Racing License + 200 Rush Coins &amp; 200 XP!</div>
+        <button id="academy-claim-btn" class="big-cta" ${allLessonsDone ? '' : ''}>🏆 CLAIM PRO RACING LICENSE</button>
+      </div>
+    `;
+  }
+  body.innerHTML = html;
+  const cBtn = $('academy-claim-btn');
+  if (cBtn) {
+    cBtn.onclick = async () => {
+      cBtn.disabled = true;
+      cBtn.textContent = 'Claiming…';
+      try {
+        const res = await fetch(`${httpBase()}/api/player/license/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid })
+        }).then(r => r.json());
+        if (res && res.ok) {
+          toast('🎉 PRO RACING LICENSE EARNED! +200 Rush Coins & +200 XP!');
+          openDrivingAcademy();
+          fetchAndRenderRetention();
+        } else {
+          toast(res.msg || 'License claimed!');
+        }
+      } catch (e) {
+        toast('Connection error claiming license.');
+      }
+    };
+  }
+}
+
+window.startAcademyLesson = function(lessonId) {
+  const dlg = $('academy-dlg'); if (dlg) dlg.hidden = true;
+  currentAcademyLesson = lessonId;
+  selectedMap = 0;
+  net.send({ type: 'map', map: 0 });
+  const hintEl = $('academy-hint-banner');
+  if (hintEl) {
+    hintEl.style.display = '';
+    if (lessonId === 'lesson_1_steering') hintEl.textContent = '🎓 LESSON 1: Apex Steering — Steer smoothly through turns using WASD / Left Joystick!';
+    else if (lessonId === 'lesson_2_nitro') hintEl.textContent = '🎓 LESSON 2: Nitro Exit — Tap Nitro / Shift out of hairpins to reach 180+ km/h!';
+    else hintEl.textContent = '🎓 LESSON 3: Race Speed — Complete a clean fast lap without barrier collisions!';
+  }
+  toast(`🎓 Starting Academy Lesson! Follow the track guide.`);
+  const sb = $('start-btn'); if (sb) sb.click();
+};
+
+// v82 Milestone Badges Modal Controller
+async function openBadgesShowcase() {
+  const dlg = $('badges-dlg');
+  if (!dlg) return;
+  const body = $('badges-body');
+  if (!body) return;
+  dlg.hidden = false;
+  body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:20px;">Loading badges…</div>';
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  try {
+    const res = await fetch(`${httpBase()}/api/player/badges?uid=${encodeURIComponent(uid)}`).then(r => r.json());
+    if (res && res.ok && res.badges) {
+      body.innerHTML = `
+        <div class="badges-grid">
+          ${res.badges.map(b => {
+            const unlocked = b.tierLevel > 0;
+            const pct = Math.min(100, Math.round((b.progress / Math.max(1, b.target)) * 100));
+            return `
+              <div class="badge-card ${unlocked ? 'unlocked' : ''}">
+                <div class="bc-icon">${b.icon || '🎖️'}</div>
+                <div class="bc-title">${escapeHtml(b.title)}</div>
+                <div class="bc-tier">${unlocked ? 'Tier ' + b.tierLevel + ' (' + b.tierName + ')' : 'Locked'}</div>
+                <div class="bc-desc">${escapeHtml(b.desc)}</div>
+                <div class="bc-bar-wrap"><div class="bc-bar-fill" style="width:${pct}%"></div></div>
+                <div style="font-size:10px; color:#8b93a8;">${b.progress}/${b.target}</div>
+                ${unlocked ? `<button class="bc-btn ${b.equipped ? 'active' : ''}" onclick="equipMilestoneBadge('${b.badgeId}')">${b.equipped ? '⭐ EQUIPPED' : 'EQUIP'}</button>` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+  } catch (e) {
+    body.innerHTML = '<div style="color:#ff5252; text-align:center; padding:20px;">Failed to load badges.</div>';
+  }
+}
+
+window.equipMilestoneBadge = async function(badgeId) {
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  try {
+    const res = await fetch(`${httpBase()}/api/player/badge/equip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, badgeId })
+    }).then(r => r.json());
+    if (res && res.ok) {
+      toast(`🎖️ Equipped badge: ${badgeId}!`);
+      openBadgesShowcase();
+    }
+  } catch (e) {}
+};
+
+// v82 Weekly Syndicate Bounties Modal Controller
+async function openBountiesModal() {
+  const dlg = $('bounties-dlg');
+  if (!dlg) return;
+  const body = $('bounties-body');
+  if (!body) return;
+  dlg.hidden = false;
+  body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:20px;">Loading bounties…</div>';
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  try {
+    const res = await fetch(`${httpBase()}/api/competitions/weekly/bounties?uid=${encodeURIComponent(uid)}`).then(r => r.json());
+    if (res && res.ok && res.bounties) {
+      body.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          ${res.bounties.map(b => {
+            const pct = Math.min(100, Math.round((b.progress / b.goal) * 100));
+            return `
+              <div class="res-mission-item ${b.completed ? 'completed' : ''}" style="padding:10px;">
+                <div style="display:flex; flex-direction:column; gap:4px; text-align:left;">
+                  <b style="font-size:13px; color:#fff;">${b.icon || '🏆'} ${escapeHtml(b.title)}</b>
+                  <span style="font-size:11px; color:#8b93a8;">${escapeHtml(b.desc)}</span>
+                  <div class="lcomp-m-bar" style="width:180px;"><div class="lcomp-m-fill ${b.completed ? 'done' : ''}" style="width:${pct}%"></div></div>
+                  <span style="font-size:10.5px; color:#ffd479;">Rewards: +${b.xpReward} XP · +${b.coinReward} 🪙 · +${b.ptsReward} Pts</span>
+                </div>
+                <div>
+                  ${b.completed && !b.claimed ? `<button class="alc-btn" onclick="claimWeeklyBountyReward('${b.id}')">🎁 CLAIM</button>` : (b.claimed ? '<span style="color:#7ee78a; font-weight:800;">CLAIMED</span>' : `<span style="color:#cfd6dd;">${b.progress}/${b.goal}</span>`)}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+  } catch (e) {
+    body.innerHTML = '<div style="color:#ff5252; text-align:center; padding:20px;">Failed to load bounties.</div>';
+  }
+}
+
+window.claimWeeklyBountyReward = async function(bountyId) {
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  try {
+    const res = await fetch(`${httpBase()}/api/competitions/weekly/bounties/claim`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, bountyId })
+    }).then(r => r.json());
+    if (res && res.ok) {
+      toast(`🏆 Bounty claimed! +${res.xpAwarded} XP · +${res.coinsAwarded} Coins!`);
+      openBountiesModal();
+      fetchAndRenderRetention();
+    }
+  } catch (e) {
+    toast('Error claiming bounty.');
+  }
+};
+
+// v83 Racing Syndicate Crews Modal Controller
+async function openCrewModal(tab = 'my') {
+  const dlg = $('crew-dlg');
+  if (!dlg) return;
+  const body = $('crew-body');
+  if (!body) return;
+  dlg.hidden = false;
+
+  ['my', 'join', 'create', 'board'].forEach(t => {
+    const btn = $(`ctab-${t}`);
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+
+  body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:30px;">Loading Syndicate…</div>';
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+
+  if (tab === 'my') {
+    try {
+      const res = await fetch(`${httpBase()}/api/player/crew?uid=${encodeURIComponent(uid)}`).then(r => r.json());
+      if (res && res.ok && res.hasCrew && res.crew) {
+        const c = res.crew;
+        body.innerHTML = `
+          <div class="crew-hero-card" style="border-color:${c.color || '#00e5ff'};">
+            <div class="chc-header">
+              <div class="chc-title">
+                <span class="syndicate-tag" style="background:${c.color || '#ff3366'};">[${escapeHtml(c.tag)}]</span>
+                <span class="chc-name">${c.badge || '⚡'} ${escapeHtml(c.name)}</span>
+              </div>
+              <span style="font:800 11px Orbitron; color:#ffd479;">${c.isLeader ? '👑 LEADER' : 'MEMBER'}</span>
+            </div>
+            <div class="chc-motto">"${escapeHtml(c.motto || 'Speed is our only law')}"</div>
+            <div class="chc-stats">
+              <div class="chc-stat-col"><span>WEEKLY MILEAGE</span><b>${c.weeklyKm} km</b></div>
+              <div class="chc-stat-col"><span>GRAND PRIX PTS</span><b>${c.weeklyPoints}</b></div>
+              <div class="chc-stat-col"><span>TOTAL MILEAGE</span><b>${c.totalKm} km</b></div>
+            </div>
+          </div>
+
+          <div class="crew-milestone-track">
+            <div class="cmt-header">
+              <span>WEEKLY SYNDICATE MILESTONES (TIER ${c.currentTier}/5)</span>
+              <span>${c.progressPct}% TO NEXT</span>
+            </div>
+            <div class="cmt-bar-wrap"><div class="cmt-bar-fill" style="width:${c.progressPct}%;"></div></div>
+            <div class="cmt-list">
+              ${c.milestones.map(m => `
+                <div class="cmt-item ${m.completed ? 'completed' : ''}">
+                  <b>T${m.tier} · ${m.reqKm}km</b>
+                  <span>+${m.reward.xp} XP · +${m.reward.coins} 🪙</span>
+                  ${m.canClaim ? `<button class="cmt-claim-btn" onclick="claimCrewMilestoneReward(${m.tier})">CLAIM</button>` : (m.claimed ? '<span class="cmt-claim-btn claimed">CLAIMED</span>' : `<span>${m.completed ? '✅ REACHED' : m.reqKm + 'km'}</span>`)}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <div style="font:800 12px Orbitron; color:#fff; margin-bottom:8px;">👥 CREW ROSTER (${c.members.length} RACERS)</div>
+            <table class="crew-lb-table">
+              <thead><tr><th>RACER</th><th>ROLE</th><th>WEEKLY DISTANCE</th><th>POINTS</th></tr></thead>
+              <tbody>
+                ${c.members.map(m => `
+                  <tr>
+                    <td><b>${escapeHtml(m.name)}</b> ${m.uid === uid ? '<span style="color:#00e5ff;">(YOU)</span>' : ''}</td>
+                    <td><span style="color:${m.role === 'leader' ? '#ffd479' : '#8b93a8'}; font-weight:700;">${m.role.toUpperCase()}</span></td>
+                    <td class="clb-km">${(m.weeklyMeters / 1000).toFixed(1)} km</td>
+                    <td style="color:#ffd479; font-weight:700;">+${m.weeklyPoints || 0}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      } else {
+        body.innerHTML = `
+          <div style="text-align:center; padding:30px 10px;">
+            <div style="font-size:36px; margin-bottom:10px;">🏁</div>
+            <h3 style="font:800 16px Orbitron; color:#fff; margin-bottom:6px;">NO RACING SYNDICATE YET</h3>
+            <p style="font-size:12px; color:#8b93a8; max-width:400px; margin:0 auto 18px;">Join a top racing syndicate to pool weekly mileage, unlock exclusive team milestone rewards, and compete in the Syndicate Grand Prix!</p>
+            <div style="display:flex; justify-content:center; gap:10px;">
+              <button class="big-cta" onclick="openCrewModal('join')">⚡ JOIN A SYNDICATE</button>
+              <button class="ghost" onclick="openCrewModal('create')">➕ CREATE CREW</button>
+            </div>
+          </div>
+        `;
+      }
+    } catch (e) {
+      body.innerHTML = '<div style="color:#ff5252; text-align:center; padding:20px;">Failed to load crew.</div>';
+    }
+  } else if (tab === 'join') {
+    try {
+      const res = await fetch(`${httpBase()}/api/crews`).then(r => r.json());
+      const crews = (res && res.crews) || [];
+      body.innerHTML = `
+        <div style="margin-bottom:12px; font:700 12px Orbitron; color:#7ee7ff;">SELECT A PUBLIC SYNDICATE TO JOIN:</div>
+        <div class="crew-preset-grid">
+          ${crews.map(cr => `
+            <div class="crew-preset-card" style="border-color:${cr.color || 'rgba(255,255,255,0.1)'};">
+              <div class="cpc-head">
+                <span class="syndicate-tag" style="background:${cr.color || '#ff3366'};">[${escapeHtml(cr.tag)}]</span>
+                <span class="cpc-name">${cr.badge || '⚡'} ${escapeHtml(cr.name)}</span>
+              </div>
+              <div class="cpc-motto">"${escapeHtml(cr.motto)}"</div>
+              <div class="cpc-stats">👥 ${cr.memberCount} Racers · ${cr.weeklyKm} km this week</div>
+              <button class="cpc-btn" onclick="joinCrewAction('${cr.id}')">JOIN [${escapeHtml(cr.tag)}]</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    } catch (e) {
+      body.innerHTML = '<div style="color:#ff5252; text-align:center; padding:20px;">Failed to load syndicates.</div>';
+    }
+  } else if (tab === 'create') {
+    body.innerHTML = `
+      <form class="crew-form" id="crew-create-form" onsubmit="handleCreateCrewSubmit(event)">
+        <label>
+          SYNDICATE NAME (3-20 characters):
+          <input id="cf-name" class="name-input" maxlength="20" placeholder="e.g. Velocity Phantoms" required />
+        </label>
+        <label>
+          CREW TAG (2-5 uppercase letters/numbers):
+          <input id="cf-tag" class="name-input" maxlength="5" placeholder="e.g. PHNTM" style="text-transform:uppercase;" required />
+        </label>
+        <label>
+          MOTTO / SLOGAN:
+          <input id="cf-motto" class="name-input" maxlength="50" placeholder="e.g. Masters of the Apex" />
+        </label>
+        <label>
+          BADGE ICON:
+          <select id="cf-badge" class="name-input" style="background:#141c30; color:#fff;">
+            <option value="⚡">⚡ Lightning</option>
+            <option value="🌀">🌀 Vortex</option>
+            <option value="🐍">🐍 Viper</option>
+            <option value="🛡️">🛡️ Shield</option>
+            <option value="👻">👻 Phantom</option>
+            <option value="🔥">🔥 Flame</option>
+            <option value="👑">👑 Crown</option>
+          </select>
+        </label>
+        <label>
+          SYNDICATE THEME COLOR:
+          <input id="cf-color" type="color" value="#00e5ff" style="width:100%; height:38px; background:none; border:none; cursor:pointer;" />
+        </label>
+        <p id="cf-err" style="color:#ff5252; font-size:11px; margin:0;"></p>
+        <button type="submit" class="big-cta" style="margin-top:10px;">🚀 CREATE RACING SYNDICATE</button>
+      </form>
+    `;
+  } else if (tab === 'board') {
+    try {
+      const res = await fetch(`${httpBase()}/api/crews/leaderboard`).then(r => r.json());
+      const crews = (res && res.crews) || [];
+      body.innerHTML = `
+        <div style="margin-bottom:10px; font:700 12px Orbitron; color:#ffd479;">🏆 WEEKLY SYNDICATE GRAND PRIX STANDINGS</div>
+        <table class="crew-lb-table">
+          <thead><tr><th>RANK</th><th>SYNDICATE</th><th>RACERS</th><th>WEEKLY DISTANCE</th><th>POINTS</th></tr></thead>
+          <tbody>
+            ${crews.map(cr => `
+              <tr>
+                <td class="clb-rank">#${cr.rank}</td>
+                <td class="clb-crew">
+                  <span class="syndicate-tag" style="background:${cr.color || '#ff3366'};">[${escapeHtml(cr.tag)}]</span>
+                  <b>${cr.badge || '⚡'} ${escapeHtml(cr.name)}</b>
+                </td>
+                <td>👥 ${cr.memberCount}</td>
+                <td class="clb-km">${cr.weeklyKm} km</td>
+                <td style="color:#ffd479; font-weight:800;">${cr.weeklyPoints}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) {
+      body.innerHTML = '<div style="color:#ff5252; text-align:center; padding:20px;">Failed to load leaderboard.</div>';
+    }
+  }
+}
+
+window.claimCrewMilestoneReward = async function(tier) {
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  try {
+    const res = await fetch(`${httpBase()}/api/player/crew/claim-milestone`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, tier })
+    }).then(r => r.json());
+    if (res && res.ok) {
+      toast(`🎉 Tier ${tier} Milestone Claimed! +${res.xpAwarded} XP · +${res.coinsAwarded} Coins!`);
+      openCrewModal('my');
+      fetchAndRenderRetention();
+    } else {
+      toast(res.error || 'Could not claim milestone');
+    }
+  } catch (e) {
+    toast('Error claiming crew milestone');
+  }
+};
+
+window.joinCrewAction = async function(crewId) {
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const name = prefs.name || 'RACER';
+  try {
+    const res = await fetch(`${httpBase()}/api/player/crew/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, name, crewId })
+    }).then(r => r.json());
+    if (res && res.ok) {
+      toast(`🏁 Joined [${res.tag}] ${res.name}!`);
+      openCrewModal('my');
+    } else {
+      toast(res.error || 'Failed to join crew');
+    }
+  } catch (e) {
+    toast('Error joining crew');
+  }
+};
+
+window.handleCreateCrewSubmit = async function(e) {
+  e.preventDefault();
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const name = prefs.name || 'RACER';
+  const crewName = $('cf-name').value.trim();
+  const tag = $('cf-tag').value.trim().toUpperCase();
+  const motto = $('cf-motto').value.trim();
+  const badge = $('cf-badge').value;
+  const color = $('cf-color').value;
+
+  try {
+    const res = await fetch(`${httpBase()}/api/player/crew/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, name, crewName, tag, motto, badge, color })
+    }).then(r => r.json());
+    if (res && res.ok) {
+      toast(`🏁 Syndicate [${res.crew.tag}] ${res.crew.name} Created!`);
+      openCrewModal('my');
+    } else {
+      const errEl = $('cf-err');
+      if (errEl) errEl.textContent = res.error === 'tag_taken' ? 'Tag is already taken!' : (res.error || 'Validation error');
+    }
+  } catch (e) {
+    const errEl = $('cf-err');
+    if (errEl) errEl.textContent = 'Connection error creating crew.';
+  }
+};
+
+// Wire up modal openers and close buttons
+const acadBtn = $('academy-btn'); if (acadBtn) acadBtn.addEventListener('click', openDrivingAcademy);
+const acadClose = $('academy-close'); if (acadClose) acadClose.addEventListener('click', () => { $('academy-dlg').hidden = true; });
+const bdgBtn = $('badges-btn'); if (bdgBtn) bdgBtn.addEventListener('click', openBadgesShowcase);
+const bdgClose = $('badges-close'); if (bdgClose) bdgClose.addEventListener('click', () => { $('badges-dlg').hidden = true; });
+const bntBtn = $('bounties-btn'); if (bntBtn) bntBtn.addEventListener('click', openBountiesModal);
+const bntClose = $('bounties-close'); if (bntClose) bntClose.addEventListener('click', () => { $('bounties-dlg').hidden = true; });
+
+// Wire up Ghost selector cycling
+const GHOST_MODES = ['pb', 'rival', 'record', 'off'];
+let currentGhostModeIdx = 0;
+const ghostToggleBtn = $('lobby-ghost-toggle-btn');
+if (ghostToggleBtn) {
+  ghostToggleBtn.addEventListener('click', () => {
+    currentGhostModeIdx = (currentGhostModeIdx + 1) % GHOST_MODES.length;
+    const mode = GHOST_MODES[currentGhostModeIdx];
+    try { localStorage.setItem('sr_ghost_mode', mode); } catch (e) {}
+    const labels = {
+      pb: '👻 GHOST: PB (ON)',
+      rival: '👻 GHOST: RIVAL',
+      record: '👑 GHOST: RECORD',
+      off: '🚫 GHOST: OFF'
+    };
+    ghostToggleBtn.textContent = labels[mode] || '👻 GHOST: PB';
+    toast(`Ghost target set to: ${mode.toUpperCase()}`);
+  });
 }
 function renderRecent(rows) {
   const el = $('recent-line'); if (!el) return;
@@ -1965,7 +3317,7 @@ function paintDailyHeader() {
   box.hidden = false;
   $('daily-title').textContent = (tI18n('daily') || '📅 DAILY CHALLENGE') + ' — ' + (M ? M.name : 'CIRCUIT');
   const b = $('daily-play'); if (b) b.onclick = () => net.send({ type: 'map', map: dailyInfoCache.map });
-  const ds = $('daily-share'); if (ds) ds.onclick = () => { const top = (dailyRowsCache || [])[0]; const msg = `📅 DAILY CHALLENGE — ${(CORE.MAPS[dailyInfoCache.map] || {}).name || ''}\n🎯 ${top ? 'Target ' + fmtTime(top.t) : 'No time yet'}\nBeat it: ${location.origin}/`; if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Daily challenge copied!'); } };
+  const ds = $('daily-share'); if (ds) ds.onclick = () => { track('share', dailyInfoCache && dailyInfoCache.map, { channel: 'daily' }); const top = (dailyRowsCache || [])[0]; const msg = `📅 DAILY CHALLENGE — ${(CORE.MAPS[dailyInfoCache.map] || {}).name || ''}\n🎯 ${top ? 'Target ' + fmtTime(top.t) : 'No time yet'}\nBeat it: ${location.origin}/`; if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Daily challenge copied!'); } };
 }
 let dailyRowsCache = [];
 function renderDailyBoard(rows) {
@@ -2008,7 +3360,14 @@ let lastErrSent = '';
 function track(e, map, m) {
   if (e === 'err') { if (m === lastErrSent) return; lastErrSent = m; } // no beacon loops on repeat errors
   try {
-    fetch(httpBase() + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e, map, m }) }).catch(() => {});
+    const pId = (typeof prefs !== 'undefined' && prefs && prefs.pid) ? prefs.pid : null;
+    let body = { e, map, pid: pId };
+    if (typeof m === 'object' && m !== null) {
+      body = Object.assign(body, m);
+    } else if (m !== undefined) {
+      body.m = m;
+    }
+    fetch(httpBase() + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) }).catch(() => {});
   } catch (err) {}
 }
 track('visit');
@@ -2084,11 +3443,11 @@ function v60OnBestLap(mapId, t) {
 }
 function v60OnResults(order, mapId) {
   const p = Pget();
-  const mine = order.find((c) => c.s === mySlot);
+  const mine = order.find((c) => (c.slot || c.s) === mySlot);
   if (!mine || v60Race.counted || TT.on) return null; // v61: TT/practice don't farm stats
   v60Race.counted = true;
-  const won = order[0] && order[0].s === mySlot && mine.finished;
-  const pod = mine.finished && order.slice(0, 3).some((c) => c.s === mySlot);
+  const won = order[0] && (order[0].slot || order[0].s) === mySlot && mine.finished;
+  const pod = mine.finished && order.slice(0, 3).some((c) => (c.slot || c.s) === mySlot);
   p.races++; p.maps[mapId] = (p.maps[mapId] || 0) + 1;
   p.play += Math.round((performance.now() - v60Race.start) / 1000);
   if (won) { p.wins++; p.streak++; p.streakMax = Math.max(p.streakMax, p.streak); if (!v60Race.crashed) p.cleanWin = 1; }
@@ -2319,6 +3678,7 @@ function renderCup(rows) {
   });
   const cupBtn = $('cup-share');
   if (cupBtn) cupBtn.addEventListener('click', () => {
+    track('share', undefined, { channel: 'cup' });
     const top = $('cup-lb') && $('cup-lb').querySelector('.lb-time');
     const msg = '🏆 Sridhar Rush FOUNDERS CUP this week' + (top ? ' — best: ' + top.textContent : '') + '! Beat it: ' + location.origin + '/';
     window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
@@ -2337,6 +3697,7 @@ function renderCup(rows) {
   phBtn.addEventListener('click', () => {
     try {
       const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+      track('share', mapId, { channel: 'photo' });
       const M = CORE.MAPS[mapId] || CORE.MAPS[0];
       const c = document.createElement('canvas'); c.width = 1080; c.height = 1080;
       const g = c.getContext('2d');
@@ -2412,26 +3773,25 @@ function processEvents(snap) {
     switch (e.type) {
       case 'count': showCount(String(e.n)); beep(392, 0.14, 'square', 0.24); break;
       case 'go': showCount('GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); v60OnGo(); break;
-      case 'crash': onCrashFX(e.x, e.z, e.s); if (e.s === mySlot) v60OnCrashMine(); break;
+      case 'crash': onCrashFX(e.x, e.z, e.s); if (e.slot === mySlot) v60OnCrashMine(); break;
       case 'lap':
-        if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); track('fin'); recordPlayDay(); achCheck({ map: snap.map, lapT: e.t }); }
+        if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); recordPlayDay(); achCheck({ map: snap.map, lapT: e.t }); }
         if (e.slot === mySlot && e.best) v60OnBestLap(snap.map != null ? snap.map : builtMapId, e.t);
         toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
       case 'finallap': toast(`🔥 P${e.slot}: FINAL LAP!`); beep(660, 0.14, 'square', 0.2); break;
       case 'elim': setBanner(`❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
       case 'win':
-        if (e.slot === mySlot) achCheck({ win: true, map: snap.map });
+        if (e.slot === mySlot) {
+          track('fin', snap.map != null ? snap.map : builtMapId);
+          achCheck({ win: true, map: snap.map });
+        }
         setBanner(e.multi ? `🏁 PLAYER ${e.slot} WINS!` : `🏁 FINISH — ${fmtTime(e.t)}`); confetti(); winJingle(); break;
       case 'pu': { const nm = ['⚡ BOOST', '🛡️ SHIELD', '🌀 SLOW'][e.ptype] || 'PU'; toast(`P${e.slot} grabbed ${nm}!`); beep(980, 0.12, 'square', 0.2); break; }
       case 'respawn': if (e.slot === mySlot) { toast('🔄 Back on track'); beep(220, 0.2, 'sawtooth', 0.18); } break;
       case 'rematch': toast(`🔁 Rematch vote ${e.n}/${e.total}`); break;
-      case 'lobby': window.__lastLobby = e.players || []; renderRoomLobby(e); break; // v76
-      case 'need-ready': toast('⚠ ' + (e.msg || 'not ready yet')); break; // v76
-      case 'full': toast('⚠ Room is full (6 max)'); break; // v76
-      case 'joined': if (msg.role === 'spec' && !SPEC_ROOM) { mySlot = 0; document.body.classList.add('spec'); toast('👁️ Race in progress — spectating. Drive the next race!'); } break; // v79 BUG-017
-      case 'settle-warn': toast('⚠ Reward sync delayed — server retrying safely.'); break; // v79 BUG-018
       case 'finished':
         if (e.slot === mySlot) {
+          track('fin', snap.map != null ? snap.map : builtMapId);
           let gb = false;
           if (remoteGhost && remoteGhost.map === (snap.map != null ? snap.map : builtMapId) && remoteGhost.data.length) {
             const gt = remoteGhost.data[remoteGhost.data.length - 1][0];
@@ -2450,11 +3810,6 @@ function processEvents(snap) {
           }
         }
         toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
-      case 'settle': pendingSettle = e.rows || []; break; // v73
-      case 'equipped': myEq = e.eq || myEq; if (typeof sendMeta === 'function') sendMeta(); if (!$('garage-dlg').hidden) openGarage(); toast('🏎️ Loadout equipped'); break; // v75
-      case 'bought': toast('🛍️ Purchased! (' + e.coins + ' coins left)'); if (!$('garage-dlg').hidden) openGarage(); break; // v75
-      case 'buy-err': toast('⚠ ' + (e.msg || 'purchase failed')); break;
-      case 'equip-err': toast('⚠ Locked — keep racing to unlock!'); break;
       case 'results': showResults(e.order); break;
     }
   }
@@ -2463,6 +3818,16 @@ function processEvents(snap) {
 
 const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
+
+// Route mobile phone/touch devices opening a room link to the mobile controller pad
+(function () {
+  if (typeof window === 'undefined') return;
+  const isTouchPhone = ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0))
+    && (window.innerWidth <= 768 || window.innerHeight <= 500 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+  if (wantedRoom && isTouchPhone && !SPEC_ROOM && !urlParam('ch') && !urlParam('g') && !urlParam('screen')) {
+    location.replace('/controller.html?room=' + encodeURIComponent(wantedRoom));
+  }
+})();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
 const BUILD = 'v78';
@@ -2512,6 +3877,18 @@ const net = new RoomLink({
   onMessage(msg) {
     switch (msg.type) {
       case 'state': ingestSnapshot(msg); break;
+      case 'lobby': window.__lastLobby = msg.players || []; renderRoomLobby(msg); break;
+      case 'weather': if (msg.weather != null) applyWeather(msg.weather); break;
+      case 'photo-finish': if (msg.margin != null) triggerPhotoFinish(msg.margin, msg.winnerName, msg.runnerUpName); break;
+      case 'need-ready': toast('⚠ ' + (msg.msg || 'not ready yet')); break;
+      case 'full': toast('⚠ Room is full (6 max)'); break;
+      case 'joined': if (msg.role === 'spec' && !SPEC_ROOM) { mySlot = 0; document.body.classList.add('spec'); toast('👁️ Race in progress — spectating. Drive the next race!'); } break;
+      case 'settle': pendingSettle = msg.rows || []; break;
+      case 'settle-warn': toast('⚠ Reward sync delayed — server retrying safely.'); break;
+      case 'equipped': myEq = msg.eq || myEq; if (typeof sendMeta === 'function') sendMeta(); if (!$('garage-dlg').hidden) openGarage(); toast('🏎️ Loadout equipped'); break;
+      case 'bought': toast('🛍️ Purchased! (' + msg.coins + ' coins left)'); if (!$('garage-dlg').hidden) openGarage(); break;
+      case 'buy-err': toast('⚠ ' + (msg.msg || 'purchase failed')); break;
+      case 'equip-err': toast('⚠ Locked — keep racing to unlock!'); break;
       case 'controller-joined': setConnected(msg.slot, true); toast(`📱 Player ${msg.slot} joystick connected`); break;
       case 'controller-left': setConnected(msg.slot, false); toast(`Player ${msg.slot} joystick disconnected`); break;
       case 'horn': playHorn(); break;
@@ -2550,6 +3927,7 @@ const ttLb = $('tt-lb'); if (ttLb) ttLb.addEventListener('click', () => { $('tt-
 const prx = $('practice-exit'); if (prx) prx.addEventListener('click', () => { const te = $('tt-exit'); if (te) te.click(); });
 const ttShare = $('tt-share'); if (ttShare) ttShare.addEventListener('click', () => {
   const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
+  track('share', mapId, { channel: 'tt' });
   let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
   const msg = '⏱️ TIME TRIAL — ' + ((CORE.MAPS[mapId] || {}).name || '') + '\n🏁 ' + (best != null ? fmtTime(best) : '—') + '\nBeat it: ' + location.origin + '/';
   if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Copied!'); }
@@ -2646,6 +4024,11 @@ function ingestSnapshot(snap) {
     lookTarget.set(A - 2.8, 1, 0);
   }
 
+  // v83 Dynamic weather synchronization from snapshot
+  if (snap.weather != null && snap.weather !== currentWeather) {
+    applyWeather(snap.weather);
+  }
+
   if (exitBtn) exitBtn.style.display = snap.state === 'waiting' ? 'none' : '';
   const overlay = $('overlay');
   if (snap.state === 'waiting') {
@@ -2692,6 +4075,24 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 let kbAccum = 0;
+
+// v80 mobile solo on-screen touch controls
+const touchInput = { l: 0, r: 0, u: 0, d: 0, nitro: false };
+function wireTouchBtn(id, downFn, upFn) {
+  const el = $(id);
+  if (!el) return;
+  const down = (e) => { e.preventDefault(); el.classList.add('active'); downFn(); };
+  const up = (e) => { e.preventDefault(); el.classList.remove('active'); upFn(); };
+  el.addEventListener('pointerdown', down);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+}
+wireTouchBtn('tc-left', () => { touchInput.l = 1; }, () => { touchInput.l = 0; });
+wireTouchBtn('tc-right', () => { touchInput.r = 1; }, () => { touchInput.r = 0; });
+wireTouchBtn('tc-gas', () => { touchInput.u = 1; }, () => { touchInput.u = 0; });
+wireTouchBtn('tc-brake', () => { touchInput.d = 1; }, () => { touchInput.d = 0; });
+wireTouchBtn('tc-nitro', () => { touchInput.nitro = true; }, () => { touchInput.nitro = false; });
+
 // USB/BT gamepad (additive — only used when a pad is connected, keyboard still works)
 function readGamepad() {
   if (!navigator.getGamepads) return null;
@@ -2712,14 +4113,14 @@ function maybeSendKeyboard(dt) {
   if (SPEC_ROOM) return; // v64 spectators never send input
   if (!latest || !net.isOpen()) return;
   if (latest.state !== 'racing' && latest.state !== 'countdown') return;
-  if (latest.controllers[mySlot]) return;
+  if (latest.controllers && latest.controllers[mySlot]) return;
   kbAccum += dt;
   if (kbAccum < 0.033) return;
   kbAccum = 0;
-  let steer = (keys.has('ArrowLeft') || keys.has('KeyA') ? -1 : 0) + (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0);
-  let throttle = (keys.has('ArrowUp') || keys.has('KeyW')) ? 1 : 0;
-  let brake = (keys.has('ArrowDown') || keys.has('KeyS')) ? 1 : 0;
-  let handbrake = keys.has('Space'), nitro = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  let steer = (keys.has('ArrowLeft') || keys.has('KeyA') || touchInput.l ? -1 : 0) + (keys.has('ArrowRight') || keys.has('KeyD') || touchInput.r ? 1 : 0);
+  let throttle = (keys.has('ArrowUp') || keys.has('KeyW') || touchInput.u) ? 1 : 0;
+  let brake = (keys.has('ArrowDown') || keys.has('KeyS') || touchInput.d) ? 1 : 0;
+  let handbrake = keys.has('Space'), nitro = keys.has('ShiftLeft') || keys.has('ShiftRight') || touchInput.nitro;
   const gp = readGamepad();
   if (gp) {
     if (gp.steer) steer = gp.steer;
@@ -2760,7 +4161,41 @@ function renderSplit(dt) {
   renderer.render(scene, camera);
   renderer.setScissorTest(false);
 }
+let photoFinishActive = false;
+let photoFinishTimer = 0;
+function triggerPhotoFinish(margin, winnerName, runnerUpName) {
+  photoFinishActive = true;
+  photoFinishTimer = 3.2;
+
+  const flash = $('photo-finish-flash');
+  if (flash) {
+    flash.classList.add('flash');
+    setTimeout(() => flash.classList.remove('flash'), 120);
+  }
+
+  const banner = $('photo-finish-banner');
+  if (banner) {
+    banner.style.display = 'block';
+    const mEl = $('pf-margin');
+    if (mEl) mEl.textContent = '+' + margin.toFixed(3) + 's';
+    const tEl = $('pf-title');
+    if (tEl) tEl.textContent = `${escapeHtml(winnerName || 'P1')} VS ${escapeHtml(runnerUpName || 'P2')}`;
+    setTimeout(() => { banner.style.display = 'none'; }, 3200);
+  }
+}
+
 function updateCamera(dt, mine, rival) {
+  if (photoFinishActive && photoFinishTimer > 0) {
+    photoFinishTimer -= dt;
+    if (photoFinishTimer <= 0) photoFinishActive = false;
+    const finishPos = (curMap && curMap.points) ? curMap.points[0] : { x: A, z: 0 };
+    const pfCamPos = new THREE.Vector3(finishPos.x + 6.5, 1.8, finishPos.z - 4.2);
+    const pfLookTarget = new THREE.Vector3(finishPos.x, 0.6, finishPos.z);
+    camera.position.lerp(pfCamPos, 1 - Math.exp(-6 * dt));
+    lookTarget.lerp(pfLookTarget, 1 - Math.exp(-8 * dt));
+    camera.lookAt(lookTarget);
+    return;
+  }
   if (!mine) return;
   // follow the SAME smoothed positions the car meshes use, so camera and
   // car never fight each other (that fight reads as shaking)
@@ -3090,6 +4525,22 @@ function placeCar(slot, cs, dt) {
       spawnSkid(wx, wz, cs.h);
     }
   }
+  // v83 Weather tire spray (rain water spray / blizzard snow kickup)
+  if (Math.abs(cs.v) > 7) {
+    if (currentWeather === 'wet' && Math.random() < 0.6) {
+      for (const side of [-0.98, 0.98]) {
+        const wx = v.netX + side * Math.cos(v.netH) - 1.45 * Math.sin(v.netH);
+        const wz = v.netZ - side * Math.sin(v.netH) - 1.45 * Math.cos(v.netH);
+        spawnWaterSpray(wx, wz, Math.sin(cs.h) * cs.v, Math.cos(cs.h) * cs.v);
+      }
+    } else if (currentWeather === 'blizzard' && Math.random() < 0.6) {
+      for (const side of [-0.98, 0.98]) {
+        const wx = v.netX + side * Math.cos(v.netH) - 1.45 * Math.sin(v.netH);
+        const wz = v.netZ - side * Math.sin(v.netH) - 1.45 * Math.cos(v.netH);
+        spawnSnowSpray(wx, wz, Math.sin(cs.h) * cs.v, Math.cos(cs.h) * cs.v);
+      }
+    }
+  }
   if (cs.n === 1) {
     for (const sx of [-0.55, 0.55]) {
       const fx = cs.x + sx * Math.cos(cs.h) - 2.45 * Math.sin(cs.h);
@@ -3202,6 +4653,9 @@ function updateHUD(mine, rival) {
   hHTML(hEl('lap-p1'), ord2.map((c, i) => `<b style="color:${rankCols[i % 6]}">${i + 1}</b> ${c.s === mySlot ? 'YOU' : escapeHtml(c.nm || ('P' + c.s))} <span class="dim">L${Math.min(c.lap + 1, CFG.totalLaps)}</span>`).join('<br>'));
   hStyle(hEl('lap-p2'), 'display', 'none');
   hStyle(hEl('speedlines'), 'opacity', String(prefs.rm ? 0 : clamp((Math.abs(mine.v) - 26) / 34, 0, 0.6)));
+  const isTouchDev = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
+  const showTouch = isTouchDev && latest && (latest.state === 'racing' || latest.state === 'countdown') && (!latest.controllers || !latest.controllers[mySlot]) && !SPEC_ROOM;
+  hStyle(hEl('touch-controls'), 'display', showTouch ? 'flex' : 'none');
   frameFlip = !frameFlip; if (frameFlip) drawMinimap(mine, rival); // v66: half-rate minimap
 }
 function updateCountdownVisual() {
@@ -3220,7 +4674,16 @@ $('start-btn').addEventListener('click', () => {
   if (TT.on) { net.send({ type: 'bot', bot: false }); net.send({ type: 'record', record: !TT.practice }); }
   else net.send({ type: 'record', record: true });
   net.send({ type: 'start' });
+  const p = Pget();
+  if (p && p.races >= 1) track('second_race', selectedMap);
   track('race', selectedMap);
+  const isMultiplayer = !TT.on && latest && latest.cars && (
+    (latest.cars.filter((c) => c && c.p === 1).length >= 2 && !latest.bot) ||
+    (latest.controllers && Object.values(latest.controllers).filter(Boolean).length >= 2)
+  );
+  if (isMultiplayer) {
+    track('multiplayer', selectedMap);
+  }
   const pb = $('practice-bar'); if (pb) pb.hidden = !TT.practice;
 });
 // ---------------------------------------------------------------------------
@@ -3257,7 +4720,7 @@ function openProfile() {
       sbGet('/rest/v1/player_achievements?user_id=eq.' + uid + '&select=ach,unlocked_at'),
       sbGet('/rest/v1/seasons?order=id.desc&limit=1&select=id,name,end_at'),
       sbGet('/rest/v1/player_seasons?user_id=eq.' + uid + '&select=season_id,rating,xp'),
-      sbGet('/rest/v1/player_equipped?id=eq.' + uid + '&select=car,neon,title'),
+      sbGet('/rest/v1/player_equipped?user_id=eq.' + uid + '&select=car,neon,title'),
     ]);
     const p = (prof && prof[0]) || { username: acc.name() || 'RACER' };
     const st = (stats && stats[0]) || { races: 0, wins: 0, podiums: 0, xp: 0, rating: 1000, peak_rating: 1000, streak: 0 };
@@ -3266,12 +4729,21 @@ function openProfile() {
     const season = seas && seas[0]; const mySeason = psea && psea.find((x) => season && x.season_id === season.id);
     const wr = st.races ? Math.round(100 * st.wins / st.races) : 0;
     const eqCar = (window.SRCos && peq && peq[0]) ? SRCos.findCar(peq[0].car) : null;
-    let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + (eqCar ? ' <span class="p-car" style="color:' + SRCos.RARITY[eqCar.rarity] + '">🏎️ ' + eqCar.name + '</span>' : '') + '</div>' +
+    let badgeInfo = null;
+    try {
+      const bRes = await fetch(`${httpBase()}/api/player/badges?uid=${encodeURIComponent(uid)}`).then(r => r.json());
+      if (bRes && bRes.ok && bRes.badges) {
+        badgeInfo = bRes.badges.find(b => b.equipped);
+      }
+    } catch (e) {}
+
+    let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + (eqCar ? ' <span class="p-car" style="color:' + SRCos.RARITY[eqCar.rarity] + '">🏎️ ' + eqCar.name + '</span>' : '') + (badgeInfo ? ' <span class="p-car" style="color:#ffd479">🎖️ ' + badgeInfo.name + ' (' + badgeInfo.tierName + ')</span>' : '') + '</div>' +
       '<div class="p-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + st.rating + ' <i>peak ' + st.peak_rating + '</i></div>' +
-      '<div class="p-level">' + tr.name.split(' ')[0] + ' PROGRESS<div class="p-bar"><i style="width:' + (tr.pct || 0) + '%"></i></div><span class="p-xp">' + tr.next ? '' : '' + '</span></div>' +
+      '<div class="p-level">' + tr.name.split(' ')[0] + ' PROGRESS<div class="p-bar"><i style="width:' + (tr.pct || 0) + '%"></i></div></div>' +
       (tr.next ? '<div class="p-xp" style="text-align:center">Next: ' + tr.next + '</div>' : '') +
       (season ? '<div class="p-xp" style="text-align:center">🌞 ' + season.name + ' · ' + (window.SRProg ? SRProg.seasonCountdown(season.end_at) : '') + (mySeason ? ' · season rating ' + mySeason.rating : '') + '</div>' : '') +
-      '<div class="p-level">LEVEL ' + lv.level + '<div class="p-bar"><i style="width:' + lv.pct + '%"></i></div><span class="p-xp">' + lv.cur + '/' + lv.span + ' XP</span></div></div>' +
+      '<div class="p-level">LEVEL ' + lv.level + '<div class="p-bar"><i style="width:' + lv.pct + '%"></i></div><span class="p-xp">' + lv.cur + '/' + lv.span + ' XP</span></div>' +
+      '<div style="text-align:center; margin-top:6px;"><button id="prof-badges-btn" class="ghost sm">🎖️ MANAGE BADGES</button></div></div>' +
       '<div class="p-grid">' +
       '<div><b>' + st.races + '</b><span>RACES</span></div><div><b>' + st.wins + '</b><span>WINS</span></div>' +
       '<div><b>' + st.podiums + '</b><span>PODIUMS</span></div><div><b>' + wr + '%</b><span>WIN RATE</span></div>' +
@@ -3293,36 +4765,211 @@ function openProfile() {
     }
     if (!st.races) html += '<div class="p-empty">No settled races yet — your career starts at the next finish line. 🏁</div>';
     body.innerHTML = html;
+    const pbb = $('prof-badges-btn');
+    if (pbb) pbb.onclick = () => { dlg.hidden = true; openBadgesShowcase(); };
   })();
 }
-function loadRatingBoard() {
-  const el = $('rate-board'); if (!el) return;
-  (async () => {
-    const c = sbCfg(); if (!c.url) { el.innerHTML = '<div class="p-empty">Accounts offline</div>'; return; }
-    const rows = await sbGet('/rest/v1/player_stats?order=rating.desc&limit=10&select=user_id,rating,xp');
-    if (!rows || !rows.length) { el.innerHTML = '<div class="p-empty">No rated racers yet — win a 1v1 to claim #1.</div>'; return; }
-    const ids = rows.map((r) => 'id=eq.' + r.user_id).join('&');
-    const prof = await sbGet('/rest/v1/profiles?' + ids + '&select=id,username');
-    const nm = {}; (prof || []).forEach((p) => { nm[p.id] = p.username; });
-    el.innerHTML = rows.map((r, i) => { const lv = window.SRProg ? SRProg.levelFromXp(r.xp).level : 1; const tr = window.SRProg ? SRProg.tier(r.rating) : { col: '#fff' }; return '<div class="lb-row"><span class="lb-rank">' + (i + 1) + '</span><span class="lb-name">' + escapeHtml(nm[r.user_id] || 'RACER') + ' <i>Lv' + lv + '</i></span><b style="color:' + tr.col + '">' + r.rating + '</b></div>'; }).join('');
-  })();
+let compActiveTab = 'rate'; // 'rate' | 'time' | 'daily' | 'weekly'
+let compScope = 'top';      // 'top' | 'nearby'
+let compSelectedMap = 0;
+
+async function loadCompetitiveHub() {
+  const base = httpBase();
+  const acc = window.SRAccount;
+  const uid = (acc && acc.loggedIn && acc.loggedIn()) ? acc.uid() : (prefs.pid || prefs.name);
+
+  const tRate = $('board-tab-rate'), tTime = $('board-tab-time'), tDaily = $('board-tab-daily'), tWeekly = $('board-tab-weekly');
+  const rateB = $('rate-board'), timeB = $('leaderboard'), dailyB = $('daily-board-view'), weeklyB = $('weekly-board-view');
+  const mapWrap = $('map-filter-wrap');
+
+  if (tRate) tRate.classList.toggle('active', compActiveTab === 'rate');
+  if (tTime) tTime.classList.toggle('active', compActiveTab === 'time');
+  if (tDaily) tDaily.classList.toggle('active', compActiveTab === 'daily');
+  if (tWeekly) tWeekly.classList.toggle('active', compActiveTab === 'weekly');
+
+  if (rateB) rateB.hidden = compActiveTab !== 'rate';
+  if (timeB) timeB.hidden = compActiveTab !== 'time';
+  if (dailyB) dailyB.hidden = compActiveTab !== 'daily';
+  if (weeklyB) weeklyB.hidden = compActiveTab !== 'weekly';
+  if (mapWrap) mapWrap.hidden = compActiveTab !== 'time';
+
+  try {
+    if (compActiveTab === 'rate') {
+      if (rateB) rateB.innerHTML = '<div class="lb-empty">Loading global rankings…</div>';
+      const r = await fetch(`${base}/api/leaderboard?type=rating&scope=${compScope}${uid ? '&uid=' + encodeURIComponent(uid) : ''}`);
+      if (!r.ok) throw new Error('fetch error');
+      const data = await r.json();
+      renderCompetitiveRatingBoard(data, rateB);
+    } else if (compActiveTab === 'time') {
+      if (timeB) timeB.innerHTML = '<div class="lb-empty">Loading circuit records…</div>';
+      const r = await fetch(`${base}/api/leaderboard?type=time&map=${compSelectedMap}&scope=${compScope}${uid ? '&uid=' + encodeURIComponent(uid) : ''}`);
+      if (!r.ok) throw new Error('fetch error');
+      const data = await r.json();
+      renderCompetitiveTimeBoard(data, timeB);
+    } else if (compActiveTab === 'daily') {
+      if (dailyB) dailyB.innerHTML = '<div class="lb-empty">Loading Daily Cup…</div>';
+      const r = await fetch(`${base}/api/competitions/daily${uid ? '?uid=' + encodeURIComponent(uid) : ''}`);
+      if (!r.ok) throw new Error('fetch error');
+      const data = await r.json();
+      renderCompetitiveDailyBoard(data, dailyB);
+    } else if (compActiveTab === 'weekly') {
+      if (weeklyB) weeklyB.innerHTML = '<div class="lb-empty">Loading Founders Cup…</div>';
+      const r = await fetch(`${base}/api/competitions/weekly${uid ? '?uid=' + encodeURIComponent(uid) : ''}`);
+      if (!r.ok) throw new Error('fetch error');
+      const data = await r.json();
+      renderCompetitiveWeeklyBoard(data, weeklyB);
+    }
+  } catch (err) {
+    const activeEl = compActiveTab === 'rate' ? rateB : (compActiveTab === 'time' ? timeB : (compActiveTab === 'daily' ? dailyB : weeklyB));
+    if (activeEl) activeEl.innerHTML = '<div class="lb-empty">Rankings offline — race to set the first score!</div>';
+  }
+}
+
+function renderCompetitiveRatingBoard(data, container) {
+  if (!container) return;
+  const rows = data.rows || [];
+  if (!rows.length) { container.innerHTML = '<div class="lb-empty">No rated racers yet — win a 1v1 to claim #1!</div>'; return; }
+
+  const uBar = $('comp-user-bar');
+  if (uBar) {
+    if (data.userRank) {
+      uBar.hidden = false;
+      const rEl = $('cub-rank'); if (rEl) rEl.textContent = '#' + data.userRank;
+      const tEl = $('cub-tier');
+      const uRow = rows.find((r) => r.rank === data.userRank);
+      if (tEl && uRow && uRow.tier) {
+        tEl.textContent = uRow.tier.name;
+        tEl.style.color = uRow.tier.col;
+        tEl.style.borderColor = uRow.tier.col;
+      }
+      const vEl = $('cub-val'); if (vEl && uRow) vEl.textContent = uRow.rating + ' ELO';
+    } else {
+      uBar.hidden = true;
+    }
+  }
+
+  container.innerHTML = rows.map((r) => {
+    const isMe = data.userRank === r.rank;
+    const tierName = (r.tier && r.tier.name) || 'BRONZE III';
+    const tierCol = (r.tier && r.tier.col) || '#d09a6a';
+    return `<div class="lb-row${isMe ? ' me' : ''}">` +
+      `<span class="lb-pos">#${r.rank}</span>` +
+      `<span class="lb-name">${escapeHtml(r.name)} <i>Lv${r.level || 1}</i> <span class="tier-badge" style="color:${tierCol};border-color:${tierCol}">${tierName}</span></span>` +
+      `<span class="lb-val" style="color:${tierCol}">${r.rating}</span>` +
+      `<span class="lb-time">${r.winRate || '0%'}</span>` +
+      `</div>`;
+  }).join('');
+}
+
+function renderCompetitiveTimeBoard(data, container) {
+  if (!container) return;
+  const rows = data.rows || [];
+  if (!rows.length) { container.innerHTML = '<div class="lb-empty">No track times yet on this circuit — set the record!</div>'; return; }
+
+  container.innerHTML = rows.map((r, i) => {
+    const isMe = data.userRank === r.rank;
+    const gap = (i === 0 || !rows[0].t || !r.t) ? '' : ` (+${(r.t - rows[0].t).toFixed(2)}s)`;
+    return `<div class="lb-row${isMe ? ' me' : ''}">` +
+      `<span class="lb-pos">#${r.rank}</span>` +
+      `<span class="lb-name">${escapeHtml(r.name)}${isMe ? ' ★' : ''}</span>` +
+      `<span class="lb-time">${r.timeFormatted}${gap}</span>` +
+      `</div>`;
+  }).join('');
+}
+
+function renderCompetitiveDailyBoard(data, container) {
+  if (!container) return;
+  const rows = data.leaderboard || [];
+  if (!rows.length) { container.innerHTML = `<div class="lb-empty">No daily times today on ${data.mapName || 'circuit'} — be the first!</div>`; return; }
+
+  container.innerHTML = `<div class="daily-meta" style="margin-bottom:6px">📅 ${data.mapName || 'DAILY'} · ⏳ Ends in ${data.endsInFormatted || ''} · 🎁 +150 XP</div>` +
+    rows.map((r) => {
+      const isMe = data.userEntry && data.userEntry.rank === r.rank;
+      return `<div class="lb-row${isMe ? ' me' : ''}">` +
+        `<span class="lb-pos">#${r.rank}</span>` +
+        `<span class="lb-name">${escapeHtml(r.name)}${isMe ? ' ★' : ''}</span>` +
+        `<span class="lb-time">${r.bestFormatted || r.time}</span>` +
+        `</div>`;
+    }).join('');
+}
+
+function renderCompetitiveWeeklyBoard(data, container) {
+  if (!container) return;
+  const rows = data.leaderboard || [];
+  if (!rows.length) { container.innerHTML = `<div class="lb-empty">Founders Cup in progress — race to earn points!</div>`; return; }
+
+  container.innerHTML = `<div class="daily-meta" style="margin-bottom:6px">🏆 FOUNDERS CUP (${data.weekKey || 'THIS WEEK'}) · ⏳ Ends in ${data.endsInFormatted || ''}</div>` +
+    rows.map((r) => {
+      const isMe = data.userEntry && data.userEntry.rank === r.rank;
+      return `<div class="lb-row${isMe ? ' me' : ''}">` +
+        `<span class="lb-pos">#${r.rank}</span>` +
+        `<span class="lb-name">${escapeHtml(r.name)}${isMe ? ' ★' : ''} <i>${r.wins || 0}W</i></span>` +
+        `<span class="lb-val" style="color:#ffd479">${r.points} PTS</span>` +
+        `</div>`;
+    }).join('');
+}
+
+function wireCompetitiveHub() {
+  const tRate = $('board-tab-rate'), tTime = $('board-tab-time'), tDaily = $('board-tab-daily'), tWeekly = $('board-tab-weekly');
+  const sTop = $('scope-top'), sNear = $('scope-nearby');
+
+  if (tRate) tRate.addEventListener('click', () => { compActiveTab = 'rate'; loadCompetitiveHub(); });
+  if (tTime) tTime.addEventListener('click', () => { compActiveTab = 'time'; loadCompetitiveHub(); });
+  if (tDaily) tDaily.addEventListener('click', () => { compActiveTab = 'daily'; loadCompetitiveHub(); });
+  if (tWeekly) tWeekly.addEventListener('click', () => { compActiveTab = 'weekly'; loadCompetitiveHub(); });
+
+  if (sTop) sTop.addEventListener('click', () => { compScope = 'top'; sTop.classList.add('active'); if (sNear) sNear.classList.remove('active'); loadCompetitiveHub(); });
+  if (sNear) sNear.addEventListener('click', () => { compScope = 'nearby'; sNear.classList.add('active'); if (sTop) sTop.classList.remove('active'); loadCompetitiveHub(); });
+
+  document.querySelectorAll('.mf-pill').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.mf-pill').forEach((b) => b.classList.toggle('active', b === btn));
+      compSelectedMap = parseInt(btn.dataset.map, 10) || 0;
+      loadCompetitiveHub();
+    });
+  });
+
+  const cWa = $('comp-wa-share');
+  if (cWa) {
+    cWa.addEventListener('click', () => {
+      const rName = (prefs.name || 'A RACER').slice(0, 14);
+      const msg = `🏆 I'm racing on Sridhar Rush! Check out the live competitive rankings and challenge me: ${location.origin}/`;
+      track('share', selectedMap, { channel: 'wa' });
+      window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+    });
+  }
+
+  const cTg = $('comp-tg-share');
+  if (cTg) {
+    cTg.addEventListener('click', () => {
+      const text = `🏆 Race with me on Sridhar Rush and climb the global competitive leaderboard!`;
+      track('share', selectedMap, { channel: 'tg' });
+      window.open(`https://t.me/share/url?url=${encodeURIComponent(location.origin + '/')}&text=${encodeURIComponent(text)}`, '_blank');
+    });
+  }
+
+  loadCompetitiveHub();
 }
 $('rematch-btn').addEventListener('click', () => {
+  clearAutoRematchTimer();
   $('results').classList.add('hidden');
   const humanRival = latest && latest.cars && latest.cars[1] && latest.cars[1].p === 1 && !latest.bot;
   if (humanRival) { net.send({ type: 'rematch' }); toast('🔁 Rematch requested — waiting for rival…'); }
   else net.send({ type: 'start' });
+  track('second_race', selectedMap);
   track('race', selectedMap);
+  if (humanRival) track('multiplayer', selectedMap);
 });
 const rstBtn = $('restart-btn');
 if (rstBtn) rstBtn.addEventListener('click', () => { // v61 quick restart (no reload/reconnect)
+  clearAutoRematchTimer();
   const ov = $('tt-overlay'); if (ov) ov.classList.add('hidden');
   TT.done = false;
   net.send({ type: 'restart' });
 });
 const trkBtn = $('track-btn');
-if (trkBtn) trkBtn.addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'reset' }); const nb = $('next-btn'); if (nb) setTimeout(() => nb.click(), 150); });
-$('menu-btn').addEventListener('click', () => { $('results').classList.add('hidden'); net.send({ type: 'reset' }); });
+if (trkBtn) trkBtn.addEventListener('click', () => { clearAutoRematchTimer(); $('results').classList.add('hidden'); net.send({ type: 'reset' }); const nb = $('next-btn'); if (nb) setTimeout(() => nb.click(), 150); });
+$('menu-btn').addEventListener('click', () => { clearAutoRematchTimer(); $('results').classList.add('hidden'); net.send({ type: 'reset' }); });
 document.querySelectorAll('.map-card').forEach((b) => b.addEventListener('click', () => {
   selectedMap = parseInt(b.dataset.map, 10);
   document.querySelectorAll('.map-card').forEach((x) => x.classList.toggle('active', x === b));
@@ -3337,17 +4984,45 @@ document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click'
   const div = $('split-divider'); if (div) div.style.display = splitScreen ? '' : 'none';
 }));
 document.querySelectorAll('.map-btn').forEach((b) => b.addEventListener('click', () => net.send({ type: 'map', map: parseInt(b.dataset.map, 10) })));
-$('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); });
+$('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); track('share', undefined, { channel: 'code' }); });
 const exitBtn = $('exit-btn');
 if (exitBtn) exitBtn.addEventListener('click', () => net.send({ type: 'reset' }));
-$('copy-game-link').addEventListener('click', () => { copyText($('game-link').textContent); toast('Game link copied — send it to your friend!'); });
+$('copy-game-link').addEventListener('click', () => { copyText($('game-link').textContent); toast('Game link copied — send it to your friend!'); track('share', selectedMap, { channel: 'link' }); });
+
+const waShareBtn = $('wa-share');
+if (waShareBtn) {
+  waShareBtn.addEventListener('click', () => {
+    const link = ($('game-link') && $('game-link').textContent) ? $('game-link').textContent : (roomCode ? `${location.origin}/?room=${roomCode}` : `${location.origin}/`);
+    const msg = `🏎️ Race with me in Sridhar Rush! Join my room here: ${link}`;
+    track('share', selectedMap, { channel: 'wa' });
+    window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+  });
+}
+
+const tgShareBtn = $('tg-share');
+if (tgShareBtn) {
+  tgShareBtn.addEventListener('click', () => {
+    const link = ($('game-link') && $('game-link').textContent) ? $('game-link').textContent : (roomCode ? `${location.origin}/?room=${roomCode}` : `${location.origin}/`);
+    const text = '🏎️ Race with me in Sridhar Rush!';
+    track('share', selectedMap, { channel: 'tg' });
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`, '_blank');
+  });
+}
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   if (fxComposer) fxComposer.setSize(window.innerWidth, window.innerHeight);
 });
-window.addEventListener('pointerdown', ensureAudio, { passive: true });
+const unlockAudio = () => {
+  ensureAudio();
+  if (audio && audio.ctx && audio.ctx.state === 'suspended') {
+    audio.ctx.resume().catch(() => {});
+  }
+};
+window.addEventListener('pointerdown', unlockAudio, { passive: true });
+window.addEventListener('touchstart', unlockAudio, { passive: true });
+window.addEventListener('touchend', unlockAudio, { passive: true });
 
 // ---------------------------------------------------------------------------
 // Main loop
@@ -3421,6 +5096,7 @@ function frame() {
     bootHidden = true;
     const bs = document.getElementById('boot-splash');
     if (bs) { bs.classList.add('done'); setTimeout(() => bs.remove(), 600); }
+    track('game_start');
   }
 }
 let bootHidden = false;
