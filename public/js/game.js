@@ -5127,3 +5127,23 @@ function frame() {
 }
 let bootHidden = false;
 frame();
+
+
+function switchLobbyTab(t) {
+  const tabs = ["race", "rank", "prof", "sett"];
+  tabs.forEach(other => {
+    const b = document.getElementById("ltab-" + other);
+    const p = document.getElementById("pane-" + other);
+    if (b) b.classList.toggle("active", other === t);
+    if (p) p.classList.toggle("hidden", other !== t);
+  });
+  if (t === "rank" && typeof loadCompetitiveHub === "function") loadCompetitiveHub();
+}
+
+function initLobbyTabs() {
+  ["race", "rank", "prof", "sett"].forEach(t => {
+    const btn = document.getElementById("ltab-" + t);
+    if (btn) btn.addEventListener("click", () => switchLobbyTab(t));
+  });
+}
+initLobbyTabs();
