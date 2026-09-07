@@ -49,6 +49,23 @@ function lerpAngle(a, b, t) {
   return a + d * t;
 }
 
+
+function loadPrefs() {
+  try { return Object.assign({
+    name: "", color: 0xe10600, cls: "velocity", laps: 3, bot: true,
+    quality: "high", music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: "en", hdLobby: true
+  }, JSON.parse(localStorage.getItem("sr_prefs") || "{}")); }
+  catch (e) { return { name: "", color: 0xe10600, cls: "velocity", laps: 3, bot: true, quality: "high", music: true, mute: false, fpsmeter: false, racingLine: true }; }
+}
+let prefs = loadPrefs();
+function savePrefs() { try { localStorage.setItem("sr_prefs", JSON.stringify(prefs)); } catch (e) {} }
+try {
+  if (!localStorage.getItem("sr_prefs") && prefs.botSkill == null) { prefs.botSkill = 0; savePrefs(); }
+} catch (e) {}
+if (prefs.botSkill == null) prefs.botSkill = 1;
+if (!prefs.pid) { prefs.pid = "p" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
+if (!prefs.name) { prefs.name = "RACER-" + prefs.pid.slice(1, 5).toUpperCase(); savePrefs(); }
+
 // ---------------------------------------------------------------------------
 // Renderer / scene
 // ---------------------------------------------------------------------------
