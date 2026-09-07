@@ -21,11 +21,13 @@ class RoomLink {
     this.hello = null;
     this.delay = 800;
     this.closedByUser = false;
+    this._retryTimer = null;
   }
   status(s) { if (this.handlers.onStatus) this.handlers.onStatus(s); }
   connect(hello) {
     if (hello) this.hello = hello;
     this.closedByUser = false;
+    if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null; }
     this._dial();
   }
   _dial() {
@@ -57,8 +59,9 @@ class RoomLink {
   }
   _retry() {
     if (this.closedByUser) return;
+    if (this._retryTimer) clearTimeout(this._retryTimer);
     const self = this;
-    setTimeout(() => self._dial(), this.delay);
+    this._retryTimer = setTimeout(() => self._dial(), this.delay);
     this.delay = Math.min(this.delay * 1.7, 8000);
   }
   send(msg) {
