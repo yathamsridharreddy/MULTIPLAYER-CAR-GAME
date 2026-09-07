@@ -221,14 +221,22 @@ function getCachedTexture(key, createFn) {
 }
 
 function grassTexture(base) {
-  return getCachedTexture('grass_' + base, () => {
-    const c = document.createElement('canvas'); c.width = c.height = 256;
-    const g = c.getContext('2d');
-    g.fillStyle = base; g.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 9000; i++) {
-      g.fillStyle = `rgba(${30 + Math.random() * 60},${80 + Math.random() * 80},${28 + Math.random() * 40},0.3)`;
-      g.fillRect(Math.random() * 256, Math.random() * 256, 1.5, 2.5);
+  return getCachedTexture("grass_" + base, () => {
+    const c = document.createElement("canvas"); c.width = c.height = 256;
+    const g = c.getContext("2d");
+    g.fillStyle = base; g.fillRect(0, 0, 1, 1);
+    const pix = g.getImageData(0, 0, 1, 1).data;
+    const r0 = pix[0], g0 = pix[1], b0 = pix[2];
+    const imgData = g.createImageData(256, 256);
+    const buf = new Uint32Array(imgData.data.buffer);
+    for (let i = 0; i < 256 * 256; i++) {
+      const n = (Math.random() * 40 - 20) | 0;
+      const r = Math.max(0, Math.min(255, r0 + n));
+      const gCol = Math.max(0, Math.min(255, g0 + (n * 1.5 | 0)));
+      const b = Math.max(0, Math.min(255, b0 + n));
+      buf[i] = (255 << 24) | (b << 16) | (gCol << 8) | r;
     }
+    g.putImageData(imgData, 0, 0);
     const tex = new THREE.CanvasTexture(c);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(150, 150); tex.anisotropy = 4; tex.encoding = THREE.sRGBEncoding;
@@ -236,15 +244,16 @@ function grassTexture(base) {
   });
 }
 function asphaltTexture(col) {
-  return getCachedTexture('asphalt_' + col, () => {
-    const c = document.createElement('canvas'); c.width = c.height = 256;
-    const g = c.getContext('2d');
-    g.fillStyle = col; g.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 5200; i++) {
-      const v = 28 + Math.random() * 46;
-      g.fillStyle = `rgba(${v},${v},${v + 3},0.5)`;
-      g.fillRect(Math.random() * 256, Math.random() * 256, 1.4, 1.4);
+  return getCachedTexture("asphalt_" + col, () => {
+    const c = document.createElement("canvas"); c.width = c.height = 256;
+    const g = c.getContext("2d");
+    const imgData = g.createImageData(256, 256);
+    const buf = new Uint32Array(imgData.data.buffer);
+    for (let i = 0; i < 256 * 256; i++) {
+      const v = (28 + Math.random() * 32) | 0;
+      buf[i] = (255 << 24) | ((v + 3) << 16) | (v << 8) | v;
     }
+    g.putImageData(imgData, 0, 0);
     const tex = new THREE.CanvasTexture(c);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(0.1, 0.1); tex.anisotropy = 8; tex.encoding = THREE.sRGBEncoding;
