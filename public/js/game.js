@@ -49,22 +49,21 @@ function lerpAngle(a, b, t) {
   return a + d * t;
 }
 
-
 function loadPrefs() {
   try { return Object.assign({
-    name: "", color: 0xe10600, cls: "velocity", laps: 3, bot: true,
-    quality: "high", music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: "en", hdLobby: true
-  }, JSON.parse(localStorage.getItem("sr_prefs") || "{}")); }
-  catch (e) { return { name: "", color: 0xe10600, cls: "velocity", laps: 3, bot: true, quality: "high", music: true, mute: false, fpsmeter: false, racingLine: true }; }
+    name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
+    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: 'en', hdLobby: true
+  }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
+  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true }; }
 }
 let prefs = loadPrefs();
-function savePrefs() { try { localStorage.setItem("sr_prefs", JSON.stringify(prefs)); } catch (e) {} }
+function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
 try {
-  if (!localStorage.getItem("sr_prefs") && prefs.botSkill == null) { prefs.botSkill = 0; savePrefs(); }
+  if (!localStorage.getItem('sr_prefs') && prefs.botSkill == null) { prefs.botSkill = 0; savePrefs(); }
 } catch (e) {}
 if (prefs.botSkill == null) prefs.botSkill = 1;
-if (!prefs.pid) { prefs.pid = "p" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
-if (!prefs.name) { prefs.name = "RACER-" + prefs.pid.slice(1, 5).toUpperCase(); savePrefs(); }
+if (!prefs.pid) { prefs.pid = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
+if (!prefs.name) { prefs.name = 'RACER-' + prefs.pid.slice(1, 5).toUpperCase(); savePrefs(); }
 
 // ---------------------------------------------------------------------------
 // Renderer / scene
@@ -221,9 +220,9 @@ function getCachedTexture(key, createFn) {
 }
 
 function grassTexture(base) {
-  return getCachedTexture("grass_" + base, () => {
-    const c = document.createElement("canvas"); c.width = c.height = 256;
-    const g = c.getContext("2d");
+  return getCachedTexture('grass_' + base, () => {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const g = c.getContext('2d');
     g.fillStyle = base; g.fillRect(0, 0, 1, 1);
     const pix = g.getImageData(0, 0, 1, 1).data;
     const r0 = pix[0], g0 = pix[1], b0 = pix[2];
@@ -231,9 +230,9 @@ function grassTexture(base) {
     const buf = new Uint32Array(imgData.data.buffer);
     for (let i = 0; i < 256 * 256; i++) {
       const n = (Math.random() * 40 - 20) | 0;
-      const r = Math.max(0, Math.min(255, r0 + n));
-      const gCol = Math.max(0, Math.min(255, g0 + (n * 1.5 | 0)));
-      const b = Math.max(0, Math.min(255, b0 + n));
+      const r = clamp(r0 + n, 0, 255);
+      const gCol = clamp(g0 + (n * 1.5 | 0), 0, 255);
+      const b = clamp(b0 + n, 0, 255);
       buf[i] = (255 << 24) | (b << 16) | (gCol << 8) | r;
     }
     g.putImageData(imgData, 0, 0);
@@ -244,9 +243,9 @@ function grassTexture(base) {
   });
 }
 function asphaltTexture(col) {
-  return getCachedTexture("asphalt_" + col, () => {
-    const c = document.createElement("canvas"); c.width = c.height = 256;
-    const g = c.getContext("2d");
+  return getCachedTexture('asphalt_' + col, () => {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const g = c.getContext('2d');
     const imgData = g.createImageData(256, 256);
     const buf = new Uint32Array(imgData.data.buffer);
     for (let i = 0; i < 256 * 256; i++) {
@@ -1462,25 +1461,6 @@ const CAR_NAMES = [
   { e: '🟠', n: 'BLAZE' }, { e: '🟣', n: 'PHANTOM' }, { e: '⚪', n: 'GHOST' }, { e: '⚫', n: 'REAPER' }
 ];
 
-function loadPrefs() {
-  try { return Object.assign({
-    name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: 'en', hdLobby: true
-  }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
-  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true }; }
-}
-let prefs = loadPrefs();
-function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
-// v45: brand-new visitors start vs the ROOKIE bot so their first race is winnable;
-// returning players keep whatever they chose (PRO remains the historic bot).
-try {
-  if (!localStorage.getItem('sr_prefs') && prefs.botSkill == null) { prefs.botSkill = 0; savePrefs(); }
-} catch (e) {}
-if (prefs.botSkill == null) prefs.botSkill = 1;
-// Account-lite: a stable player id persisted on this device, so returning
-// players update one leaderboard entry instead of creating duplicates.
-if (!prefs.pid) { prefs.pid = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
-if (!prefs.name) { prefs.name = 'RACER-' + prefs.pid.slice(1, 5).toUpperCase(); savePrefs(); }
 let myEq = null; // v75 server-validated equipped loadout (null = guest/local prefs)
 async function loadEquipped() {
   const acc = window.SRAccount;
@@ -1738,10 +1718,9 @@ function wireLobbyV2() {
   const s1Btn = $('lobby-season-btn');
   if (s1Btn) {
     s1Btn.addEventListener('click', () => {
+      switchLobbyTab('rank');
       const wTab = $('board-tab-weekly');
       if (wTab) wTab.click();
-      const hub = $('comp-hub');
-      if (hub) hub.scrollIntoView({ behavior: 'smooth' });
     });
   }
 
@@ -2052,10 +2031,29 @@ function renderRoomLobby(e) {
   const gc = $('garage-close'); if (gc) gc.addEventListener('click', () => { const d = $('garage-dlg'); if (d) d.hidden = true; });
   const fc = $('friends-close'); if (fc) fc.addEventListener('click', () => { const d = $('friends-dlg'); if (d) d.hidden = true; });
 })();
+function switchLobbyTab(t) {
+  const tabs = ['race', 'rank', 'prof', 'sett'];
+  tabs.forEach(other => {
+    const b = $(`ltab-${other}`);
+    const p = $(`pane-${other}`);
+    if (b) b.classList.toggle('active', other === t);
+    if (p) p.classList.toggle('hidden', other !== t);
+  });
+  if (t === 'rank') loadCompetitiveHub();
+}
+
+function initLobbyTabs() {
+  ['race', 'rank', 'prof', 'sett'].forEach(t => {
+    const btn = $(`ltab-${t}`);
+    if (btn) btn.addEventListener('click', () => switchLobbyTab(t));
+  });
+}
+initLobbyTabs();
+
 function showRatingTab() {
+  switchLobbyTab('rank');
   compActiveTab = 'rate';
   loadCompetitiveHub();
-  const setup = $('setup'); if (setup) setup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 const tc = $('tut-close'); if (tc) tc.addEventListener('click', () => { $('tutorial').style.display = 'none'; try { localStorage.setItem('sr_tut', '1'); } catch (e) {} });
 
@@ -5127,23 +5125,3 @@ function frame() {
 }
 let bootHidden = false;
 frame();
-
-
-function switchLobbyTab(t) {
-  const tabs = ["race", "rank", "prof", "sett"];
-  tabs.forEach(other => {
-    const b = document.getElementById("ltab-" + other);
-    const p = document.getElementById("pane-" + other);
-    if (b) b.classList.toggle("active", other === t);
-    if (p) p.classList.toggle("hidden", other !== t);
-  });
-  if (t === "rank" && typeof loadCompetitiveHub === "function") loadCompetitiveHub();
-}
-
-function initLobbyTabs() {
-  ["race", "rank", "prof", "sett"].forEach(t => {
-    const btn = document.getElementById("ltab-" + t);
-    if (btn) btn.addEventListener("click", () => switchLobbyTab(t));
-  });
-}
-initLobbyTabs();

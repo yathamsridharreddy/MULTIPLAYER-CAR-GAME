@@ -303,7 +303,7 @@
           <div class="nah-left">
             <span id="nah-badge" class="nah-badge">RECOMMENDED</span>
             <b id="nah-title">Complete Driving Academy</b>
-            <span id="nah-desc" class="nah-sub">Earn your official Pro License + 200 starter Coins &amp; 200 XP!</span>
+            <span id="nah-desc" class="nah-sub">Earn your Pro License (+200 Coins &amp; 200 XP)</span>
           </div>
           <button id="nah-btn" class="nah-btn">🎓 START ACADEMY</button>
         </div>
@@ -330,173 +330,193 @@
           <button id="account-out" class="ghost sm" hidden data-i18n="signout">SIGN OUT</button>
         </div>
         <p id="room-error" style="display:none"></p>
-        <button id="quickplay-btn" class="big-cta" style="margin:10px 0 2px" data-i18n="quickplay">⚡ QUICK PLAY — find a rival</button>
 
-        <!-- v81 Competitive Retention: Rivals, Missions, Streak, Ghost -->
-        <div class="lobby-comp-grid">
-          <!-- Next Rival Card -->
-          <div id="lobby-rival-card" class="lcomp-card rival-card">
-            <div class="lcomp-head">
-              <span class="lcomp-title">⚔️ NEXT RIVAL</span>
-              <span id="lcomp-rival-rank" class="lcomp-tag">#--</span>
-            </div>
-            <div class="lcomp-main">
-              <b id="lcomp-rival-name">Finding competitor…</b>
-              <span id="lcomp-rival-gap" class="lcomp-sub">0 rating pts ahead</span>
-            </div>
-            <button id="lcomp-rival-btn" class="lcomp-btn">⚡ RACE RIVAL</button>
-          </div>
-
-          <!-- Daily Missions Card -->
-          <div id="lobby-missions-card" class="lcomp-card missions-card">
-            <div class="lcomp-head">
-              <span class="lcomp-title">🎯 DAILY MISSIONS</span>
-              <span id="lcomp-missions-count" class="lcomp-tag">0/3</span>
-            </div>
-            <div id="lcomp-missions-list" class="lcomp-list">
-              <div class="lcomp-m-row">Loading missions…</div>
-            </div>
-          </div>
-
-          <!-- Daily Streak & Ghost Quick-Actions -->
-          <div class="lcomp-card streak-ghost-card">
-            <div class="lcomp-head">
-              <span class="lcomp-title">🔥 RACING STREAK</span>
-              <span id="lcomp-streak-badge" class="lcomp-tag">DAY 1</span>
-            </div>
-            <div class="lcomp-main">
-              <div id="lcomp-streak-txt" class="lcomp-sub">🏁 Race today to maintain streak</div>
-              <div id="lcomp-streak-milestone" class="lcomp-milestone">Next: 3-Day Milestone</div>
-            </div>
-            <div class="lcomp-actions">
-              <button id="lobby-ghost-toggle-btn" class="lcomp-ghost-btn">👻 GHOST: PB (ON)</button>
-              <button id="lobby-season-btn" class="lcomp-season-btn">🏆 S1 LADDER</button>
-            </div>
-          </div>
+        <!-- Main Dashboard Navigation Tabs (AAA Arcade Layout) -->
+        <div class="lobby-nav-tabs">
+          <button id="ltab-race" class="ltab active">🏁 RACE</button>
+          <button id="ltab-rank" class="ltab">🏆 LEADERBOARDS</button>
+          <button id="ltab-prof" class="ltab">📊 PROFILE</button>
+          <button id="ltab-sett" class="ltab">⚙️ SETTINGS</button>
         </div>
 
-        <div class="cols">
-          <div class="col">
-            <h2>🖥️ Invite a Friend</h2>
-            <p class="small">Share this link to race head-to-head on separate screens:</p>
-            <p class="url" id="game-link"></p>
-            <button id="copy-game-link" class="ghost">COPY GAME LINK</button>
-            <div id="room-count" class="daily-meta" style="margin-top:6px"></div>
-            <div id="room-players" class="room-players"></div>
-            <button id="ready-btn" class="ghost sm" hidden>🏁 READY UP</button>
-            <div class="share-row">
-              <button id="wa-share" class="ghost sm">🟢 WHATSAPP</button>
-              <button id="tg-share" class="ghost sm">✈️ TELEGRAM</button>
+        <!-- ============ TAB 1: RACE DASHBOARD ============ -->
+        <div id="pane-race" class="lobby-tab-pane">
+          <button id="quickplay-btn" class="big-cta" style="margin:4px 0 12px" data-i18n="quickplay">⚡ QUICK PLAY — find a rival</button>
+
+          <!-- v81 Competitive Retention: Rivals, Missions, Streak, Ghost -->
+          <div class="lobby-comp-grid">
+            <!-- Next Rival Card -->
+            <div id="lobby-rival-card" class="lcomp-card rival-card">
+              <div class="lcomp-head">
+                <span class="lcomp-title">⚔️ NEXT RIVAL</span>
+                <span id="lcomp-rival-rank" class="lcomp-tag">#--</span>
+              </div>
+              <div class="lcomp-main">
+                <b id="lcomp-rival-name">Finding competitor…</b>
+                <span id="lcomp-rival-gap" class="lcomp-sub">0 rating pts ahead</span>
+              </div>
+              <button id="lcomp-rival-btn" class="lcomp-btn">⚡ RACE RIVAL</button>
             </div>
-            <ul class="keys">
-              <li><b>WASD / Arrows</b> — steer, throttle &amp; brake</li>
-              <li><b>Shift</b> nitro 🔥 · <b>Space</b> drift · <b>C</b> camera</li>
-            </ul>
-          </div>
-          <div class="col">
-            <h2>📱 Phone Controller (Up to 6)</h2>
-            <div class="qr-wrap">
-              <canvas id="qr-canvas"></canvas>
-              <div class="qr-side">
-                <p>Scan with your phone to use it as a wireless steering wheel.</p>
-                <p class="url" id="ctrl-url"></p>
+
+            <!-- Daily Missions Card -->
+            <div id="lobby-missions-card" class="lcomp-card missions-card">
+              <div class="lcomp-head">
+                <span class="lcomp-title">🎯 DAILY MISSIONS</span>
+                <span id="lcomp-missions-count" class="lcomp-tag">0/3</span>
+              </div>
+              <div id="lcomp-missions-list" class="lcomp-list">
+                <div class="lcomp-m-row">Loading missions…</div>
+              </div>
+            </div>
+
+            <!-- Daily Streak & Ghost Quick-Actions -->
+            <div class="lcomp-card streak-ghost-card">
+              <div class="lcomp-head">
+                <span class="lcomp-title">🔥 RACING STREAK</span>
+                <span id="lcomp-streak-badge" class="lcomp-tag">DAY 1</span>
+              </div>
+              <div class="lcomp-main">
+                <div id="lcomp-streak-txt" class="lcomp-sub">🏁 Race today to maintain streak</div>
+                <div id="lcomp-streak-milestone" class="lcomp-milestone">Next: 3-Day Milestone</div>
+              </div>
+              <div class="lcomp-actions">
+                <button id="lobby-ghost-toggle-btn" class="lcomp-ghost-btn">👻 GHOST: PB (ON)</button>
+                <button id="lobby-season-btn" class="lcomp-season-btn">🏆 S1 LADDER</button>
               </div>
             </div>
           </div>
-        </div>
 
-        <div class="modes">
-          <button class="mode-btn active" data-mode="race">⚔️ RIVAL RUSH<em>2 cars online — each laptop follows its own car</em></button>
-          <button class="mode-btn" data-mode="coop">🏎️ SOLO RUSH<em>1 car co-op — both phones drive together</em></button>
-          <button class="mode-btn" data-mode="split">🏁 LOCAL DUEL<em>2 cars split-screen — one laptop</em></button>
-          <button class="mode-btn" data-mode="elim">❌ ELIMINATION<em>last place drops every lap</em></button>
-          <button class="mode-btn" data-mode="drift">🌀 DRIFT SCORE<em>highest drift points wins</em></button>
-        </div>
-        <div id="split-divider" style="display:none"></div>
+          <div class="modes">
+            <button class="mode-btn active" data-mode="race">⚔️ RIVAL RUSH<em>2-Player Online Dual</em></button>
+            <button class="mode-btn" data-mode="coop">🏎️ SOLO RUSH<em>Co-op Drive</em></button>
+            <button class="mode-btn" data-mode="split">🏁 LOCAL DUEL<em>Split-Screen</em></button>
+            <button class="mode-btn" data-mode="elim">❌ ELIMINATION<em>Knockout Lap</em></button>
+            <button class="mode-btn" data-mode="drift">🌀 DRIFT SCORE<em>Points Battle</em></button>
+          </div>
+          <div id="split-divider" style="display:none"></div>
 
-        <div class="lobby-grid">
-          <div class="lcol">
-            <div class="lsec">
-              <div class="lsec-title" data-i18n="settings">SETTINGS</div>
-              <div class="btn-row-sm">
-                <span class="opt-label">GFX</span>
-                <button class="q-btn" data-q="low">LOW</button>
-                <button class="q-btn" data-q="med">MED</button>
-                <button class="q-btn active" data-q="high">HIGH</button>
+          <div class="cols">
+            <div class="col">
+              <h2>🖥️ Invite a Friend</h2>
+              <p class="small">Share this link to race head-to-head on separate screens:</p>
+              <p class="url" id="game-link"></p>
+              <button id="copy-game-link" class="ghost">COPY GAME LINK</button>
+              <div id="room-count" class="daily-meta" style="margin-top:6px"></div>
+              <div id="room-players" class="room-players"></div>
+              <button id="ready-btn" class="ghost sm" hidden>🏁 READY UP</button>
+              <div class="share-row">
+                <button id="wa-share" class="ghost sm">🟢 WHATSAPP</button>
+                <button id="tg-share" class="ghost sm">✈️ TELEGRAM</button>
               </div>
-              <label class="toggle-line"><input type="checkbox" id="set-mute"/> 🔇 Mute Audio</label>
-              <label class="toggle-line"><input type="checkbox" id="set-music"/> 🎵 Music</label>
-              <label class="toggle-line"><input type="checkbox" id="set-fps"/> 📊 FPS Counter</label>
-              <label class="toggle-line"><input type="checkbox" id="set-rm"/> ✨ Reduced Motion</label>
-              <label class="toggle-line"><input type="checkbox" id="set-cb"/> 🎨 Colorblind UI</label>
-              <label class="toggle-line"><input type="checkbox" id="set-ar" checked/> ⚙️ Adaptive Resolution</label>
-              <label class="toggle-line"><input type="checkbox" id="set-ghost"/> 👻 PB Ghost Overlay</label>
-              <label class="toggle-line"><input type="checkbox" id="set-racing-line" checked/> 🏎️ Dynamic Racing Line</label>
-              <label class="toggle-line"><input type="checkbox" id="set-fx" checked/> 💡 Neon Glow FX</label>
-              <label class="toggle-line"><input type="checkbox" id="set-hd" checked/> 🖼️ HD Lobby Visuals</label>
+              <ul class="keys">
+                <li><b>WASD / Arrows</b> — steer, throttle &amp; brake</li>
+                <li><b>Shift</b> nitro 🔥 · <b>Space</b> drift · <b>C</b> camera</li>
+              </ul>
             </div>
-            <div class="lsec" id="comp-hub">
-              <div class="lsec-title" data-i18n="leaderboard">🏆 COMPETITIVE HUB</div>
-              <div class="board-tabs">
-                <button id="board-tab-rate" class="btab active">👑 GLOBAL RATING</button>
-                <button id="board-tab-time" class="btab">⏱️ TRACK RECORDS</button>
-                <button id="board-tab-daily" class="btab">📅 DAILY CUP</button>
-                <button id="board-tab-weekly" class="btab">🏆 FOUNDERS CUP</button>
-              </div>
-              <div id="comp-filters" class="comp-filter-row">
-                <div class="scope-toggle">
-                  <button id="scope-top" class="scope-btn active">TOP 20</button>
-                  <button id="scope-nearby" class="scope-btn">NEARBY (YOU ±3)</button>
-                </div>
-                <div id="map-filter-wrap" class="map-filter-pills" hidden>
-                  <button class="mf-pill active" data-map="0">HIGHLAND</button>
-                  <button class="mf-pill" data-map="1">NEON</button>
-                  <button class="mf-pill" data-map="2">ISLAND</button>
-                  <button class="mf-pill" data-map="3">CANYON</button>
-                  <button class="mf-pill" data-map="4">HAIRPIN</button>
+            <div class="col">
+              <h2>📱 Phone Controller (Up to 6)</h2>
+              <div class="qr-wrap">
+                <canvas id="qr-canvas"></canvas>
+                <div class="qr-side">
+                  <p>Scan with your phone to use it as a wireless steering wheel.</p>
+                  <p class="url" id="ctrl-url"></p>
                 </div>
               </div>
-              <div id="comp-user-bar" class="comp-user-card" hidden>
-                <div class="cub-left"><span id="cub-rank">#--</span><span id="cub-name">YOU</span></div>
-                <div class="cub-right"><span id="cub-tier" class="tier-badge">BRONZE</span><b id="cub-val">1000</b></div>
+            </div>
+          </div>
+
+          <button id="next-btn" class="big-cta" style="margin-top:14px;" data-i18n="setup">SET UP RACE →</button>
+        </div>
+
+        <!-- ============ TAB 2: LEADERBOARDS ============ -->
+        <div id="pane-rank" class="lobby-tab-pane hidden">
+          <div class="lsec" id="comp-hub">
+            <div class="lsec-title" data-i18n="leaderboard">🏆 COMPETITIVE HUB</div>
+            <div class="board-tabs">
+              <button id="board-tab-rate" class="btab active">👑 GLOBAL RATING</button>
+              <button id="board-tab-time" class="btab">⏱️ TRACK RECORDS</button>
+              <button id="board-tab-daily" class="btab">📅 DAILY CUP</button>
+              <button id="board-tab-weekly" class="btab">🏆 FOUNDERS CUP</button>
+            </div>
+            <div id="comp-filters" class="comp-filter-row">
+              <div class="scope-toggle">
+                <button id="scope-top" class="scope-btn active">TOP 20</button>
+                <button id="scope-nearby" class="scope-btn">NEARBY (YOU ±3)</button>
               </div>
-              <div id="leaderboard" class="leaderboard"></div>
-              <div id="rate-board" class="leaderboard"></div>
-              <div id="daily-board-view" class="leaderboard" hidden></div>
-              <div id="weekly-board-view" class="leaderboard" hidden></div>
-              <div id="lb-motiv" class="daily-meta"></div>
-              <div class="share-row comp-share-row" style="margin-top:8px">
-                <button id="comp-wa-share" class="ghost sm">🟢 SHARE RANK ON WA</button>
-                <button id="comp-tg-share" class="ghost sm">✈️ TELEGRAM</button>
+              <div id="map-filter-wrap" class="map-filter-pills" hidden>
+                <button class="mf-pill active" data-map="0">HIGHLAND</button>
+                <button class="mf-pill" data-map="1">NEON</button>
+                <button class="mf-pill" data-map="2">ISLAND</button>
+                <button class="mf-pill" data-map="3">CANYON</button>
+                <button class="mf-pill" data-map="4">HAIRPIN</button>
               </div>
             </div>
-            <div class="lsec" id="daily-box" hidden>
-              <div class="lsec-title" id="daily-title">📅 DAILY CHALLENGE</div>
-              <div id="daily-lb" class="leaderboard"></div>
-              <div id="daily-meta" class="daily-meta"></div>
-              <button id="daily-play" class="ghost sm" data-i18n="playToday">▶ PLAY TODAY'S MAP</button>
-              <button id="daily-share" class="ghost sm">📤 SHARE</button>
+            <div id="comp-user-bar" class="comp-user-card" hidden>
+              <div class="cub-left"><span id="cub-rank">#--</span><span id="cub-name">YOU</span></div>
+              <div class="cub-right"><span id="cub-tier" class="tier-badge">BRONZE</span><b id="cub-val">1000</b></div>
             </div>
-            <div class="lsec" id="profile-box">
-              <div class="lsec-title">📊 DRIVER PROFILE — <span id="prof-title"></span></div>
-              <div id="prof-grid" class="prof-grid"></div>
-              <div id="prof-xp" class="xp-bar"><i></i><span id="prof-xp-txt"></span></div>
-              <div id="prof-ach" class="prof-ach"></div>
-              <div id="prof-mis" class="prof-mis"></div>
-              <div id="prof-rival" class="daily-meta"></div>
-              <button id="beat-rival" class="ghost sm">⚔️ BEAT RIVAL</button>
-              <div id="weekly-box" class="daily-meta" hidden>📈 THIS WEEK: <span id="weekly-txt"></span></div>
-              <div id="welcome-back" class="daily-meta" hidden></div>
+            <div id="leaderboard" class="leaderboard"></div>
+            <div id="rate-board" class="leaderboard"></div>
+            <div id="daily-board-view" class="leaderboard" hidden></div>
+            <div id="weekly-board-view" class="leaderboard" hidden></div>
+            <div id="lb-motiv" class="daily-meta"></div>
+            <div class="share-row comp-share-row" style="margin-top:8px">
+              <button id="comp-wa-share" class="ghost sm">🟢 SHARE RANK ON WA</button>
+              <button id="comp-tg-share" class="ghost sm">✈️ TELEGRAM</button>
             </div>
-            <div class="lsec" id="cup-box" hidden>
-              <div class="lsec-title" id="cup-title" data-i18n="cup">🏆 FOUNDERS CUP — WEEK TOP 5</div>
-              <div id="cup-lb" class="leaderboard"></div>
-              <button id="cup-share" class="ghost sm">📤 SHARE CUP</button>
-            </div>
+          </div>
+          <div class="lsec" id="daily-box" hidden>
+            <div class="lsec-title" id="daily-title">📅 DAILY CHALLENGE</div>
+            <div id="daily-lb" class="leaderboard"></div>
+            <div id="daily-meta" class="daily-meta"></div>
+            <button id="daily-play" class="ghost sm" data-i18n="playToday">▶ PLAY TODAY'S MAP</button>
+            <button id="daily-share" class="ghost sm">📤 SHARE</button>
+          </div>
+          <div class="lsec" id="cup-box" hidden>
+            <div class="lsec-title" id="cup-title" data-i18n="cup">🏆 FOUNDERS CUP — WEEK TOP 5</div>
+            <div id="cup-lb" class="leaderboard"></div>
+            <button id="cup-share" class="ghost sm">📤 SHARE CUP</button>
           </div>
         </div>
 
-        <button id="next-btn" class="big-cta" data-i18n="setup">SET UP RACE →</button>
+        <!-- ============ TAB 3: DRIVER PROFILE ============ -->
+        <div id="pane-prof" class="lobby-tab-pane hidden">
+          <div class="lsec" id="profile-box">
+            <div class="lsec-title">📊 DRIVER PROFILE — <span id="prof-title"></span></div>
+            <div id="prof-grid" class="prof-grid"></div>
+            <div id="prof-xp" class="xp-bar"><i></i><span id="prof-xp-txt"></span></div>
+            <div id="prof-ach" class="prof-ach"></div>
+            <div id="prof-mis" class="prof-mis"></div>
+            <div id="prof-rival" class="daily-meta"></div>
+            <button id="beat-rival" class="ghost sm" style="margin-top:6px;">⚔️ BEAT RIVAL</button>
+            <div id="weekly-box" class="daily-meta" hidden>📈 THIS WEEK: <span id="weekly-txt"></span></div>
+            <div id="welcome-back" class="daily-meta" hidden></div>
+          </div>
+        </div>
+
+        <!-- ============ TAB 4: SETTINGS ============ -->
+        <div id="pane-sett" class="lobby-tab-pane hidden">
+          <div class="lsec">
+            <div class="lsec-title" data-i18n="settings">SETTINGS</div>
+            <div class="btn-row-sm">
+              <span class="opt-label">GFX</span>
+              <button class="q-btn" data-q="low">LOW</button>
+              <button class="q-btn" data-q="med">MED</button>
+              <button class="q-btn active" data-q="high">HIGH</button>
+            </div>
+            <label class="toggle-line"><input type="checkbox" id="set-mute"/> 🔇 Mute Audio</label>
+            <label class="toggle-line"><input type="checkbox" id="set-music"/> 🎵 Music</label>
+            <label class="toggle-line"><input type="checkbox" id="set-fps"/> 📊 FPS Counter</label>
+            <label class="toggle-line"><input type="checkbox" id="set-rm"/> ✨ Reduced Motion</label>
+            <label class="toggle-line"><input type="checkbox" id="set-cb"/> 🎨 Colorblind UI</label>
+            <label class="toggle-line"><input type="checkbox" id="set-ar" checked/> ⚙️ Adaptive Resolution</label>
+            <label class="toggle-line"><input type="checkbox" id="set-ghost"/> 👻 PB Ghost Overlay</label>
+            <label class="toggle-line"><input type="checkbox" id="set-racing-line" checked/> 🏎️ Dynamic Racing Line</label>
+            <label class="toggle-line"><input type="checkbox" id="set-fx" checked/> 💡 Neon Glow FX</label>
+            <label class="toggle-line"><input type="checkbox" id="set-hd" checked/> 🖼️ HD Lobby Visuals</label>
+          </div>
+        </div>
+
         <div class="share-row" id="community-row" hidden><a id="comm-wa" class="ghost sm" target="_blank" rel="noopener">💬 WHATSAPP GROUP</a><a id="comm-dc" class="ghost sm" target="_blank" rel="noopener">🎮 DISCORD</a></div>
         <p class="foot">SRIDHAR RUSH · 30Hz Authoritative Physics · Real-Time 3D Multiplayer</p>
       </div>
@@ -607,7 +627,7 @@
   <div id="academy-dlg" class="dlg" hidden>
     <div class="dlg-box wide">
       <h2>🎓 DRIVING ACADEMY &amp; PRO LICENSE</h2>
-      <p class="dlg-sub">Master fundamental driving mechanics to earn your official Pro Racing License + 200 starter Coins &amp; 200 XP!</p>
+      <p class="dlg-sub">Master driving fundamentals to earn your Pro License (+200 Coins &amp; 200 XP).</p>
       <div id="academy-body" class="academy-body"></div>
       <button id="academy-close" class="big-cta">CLOSE</button>
     </div>
@@ -615,7 +635,7 @@
   <div id="badges-dlg" class="dlg" hidden>
     <div class="dlg-box wide">
       <h2>🎖️ MILESTONE BADGES &amp; SHOWCASE</h2>
-      <p class="dlg-sub">Unlock prestigious tiered badges to display on your player banner and leaderboard profile.</p>
+      <p class="dlg-sub">Unlock prestigious tiered badges to showcase on your profile.</p>
       <div id="badges-body" class="badges-body"></div>
       <button id="badges-close" class="big-cta">CLOSE</button>
     </div>
@@ -623,7 +643,7 @@
   <div id="bounties-dlg" class="dlg" hidden>
     <div class="dlg-box">
       <h2>🏆 WEEKLY SYNDICATE BOUNTIES</h2>
-      <p class="dlg-sub">Complete weekly syndicate goals to earn exclusive Founders Cup points, XP, and Rush Coins.</p>
+      <p class="dlg-sub">Complete weekly syndicate challenges for bonus XP and Rush Coins.</p>
       <div id="bounties-body" class="profile-body"></div>
       <button id="bounties-close" class="big-cta">CLOSE</button>
     </div>

@@ -1,7 +1,7 @@
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
-const { app, settleRace, dailyInfo, weeklyInfo } = require('../server.js');
+const { app, settleRace, dailyInfo, weeklyInfo, memPlayerStats, leaderboard } = require('../server.js');
 const PROG = require('../shared/progression.js');
 const CORE = require('../shared/game-core.js');
 
@@ -10,6 +10,32 @@ describe('Competitive Leaderboard, Anti-Cheat & Retention Math', () => {
   let baseUrl;
 
   before(async () => {
+    // Populate test records for leaderboard endpoints
+    memPlayerStats.set('test_racer_1', {
+      uid: 'test_racer_1',
+      name: 'test_racer_1',
+      rating: 1250,
+      xp: 2500,
+      wins: 10,
+      races: 15,
+      streak: 3,
+      bestTimes: { 0: 42.5 }
+    });
+    memPlayerStats.set('test_racer_2', {
+      uid: 'test_racer_2',
+      name: 'test_racer_2',
+      rating: 1100,
+      xp: 1200,
+      wins: 3,
+      races: 8,
+      streak: 1,
+      bestTimes: { 0: 44.1 }
+    });
+
+    leaderboard['0'] = [
+      { name: 'test_racer_1', time: 42.5, timeFormatted: '0:42.500', uid: 'test_racer_1', rank: 1, ts: Date.now() }
+    ];
+
     await new Promise((resolve) => {
       server = app.listen(0, () => {
         const port = server.address().port;

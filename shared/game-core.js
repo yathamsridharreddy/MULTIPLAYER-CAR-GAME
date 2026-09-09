@@ -134,7 +134,8 @@
 
   function radialDistToTrack(x, z, a, b) {
     const t = Math.atan2(z, x);
-    const re = (a * b) / Math.hypot(b * Math.cos(t), a * Math.sin(t));
+    const denom = Math.hypot(b * Math.cos(t), a * Math.sin(t));
+    const re = denom > 0 ? (a * b) / denom : a;
     return { re, d: Math.hypot(x, z) - re };
   }
 
