@@ -537,7 +537,11 @@
         const human = !!(this.controllers[c.slot] || this.seats[c.slot]);
         c.participating = this.mode !== 'coop' && (human || botOn);
         c._bot = this.mode !== 'coop' && !human && botOn;
-        if (c._bot) c.setMeta('AI DRIVER', 0x0a84ff);
+        if (c._bot) {
+          const BOT_NAMES = ['REDLINE_ACE', 'TAKUMI_86', 'PHANTOM_GT', 'VORTEX_99', 'SHADOW_PILOT', 'STORM_VALKYRIE', 'APEX_HUNTER'];
+          const botName = BOT_NAMES[(c.slot - 1) % BOT_NAMES.length];
+          c.setMeta(botName, 0x0a84ff);
+        }
       }
       this._botActive = botOn;
       this.state = 'countdown';

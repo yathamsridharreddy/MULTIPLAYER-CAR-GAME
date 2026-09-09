@@ -87,20 +87,20 @@ describe('V83 Feature Suite: Syndicate Crews, Weather, Ghost Racing Line & Photo
       assert.equal(r0.ok, true);
       assert.equal(r0.hasCrew, false);
 
-      // Join APEX crew
+      // Join APEX preset crew (Redline Motorsport [REDL])
       const rJoin = await fetch(`${baseUrl}/api/player/crew/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: testUid, name: 'TEST_PILOT', crewId: 'apex' })
       }).then(r => r.json());
       assert.equal(rJoin.ok, true);
-      assert.equal(rJoin.tag, 'APEX');
+      assert.equal(rJoin.tag, 'REDL');
 
       // Check player crew info now
       const r1 = await fetch(`${baseUrl}/api/player/crew?uid=${testUid}`).then(r => r.json());
       assert.equal(r1.ok, true);
       assert.equal(r1.hasCrew, true);
-      assert.equal(r1.crew.tag, 'APEX');
+      assert.equal(r1.crew.tag, 'REDL');
       assert.ok(r1.crew.members.some(m => m.uid === testUid));
     });
 
