@@ -1,5 +1,5 @@
 /* ============================================================================
-   SRIDHAR RUSH — service worker (v36)
+   SRIDHAR RUSH — service worker (v83)
    Makes the game installable (home-screen app) and loads repeat visits fast.
    Purely additive: if this file is missing/broken the site works exactly as before.
 
@@ -9,17 +9,17 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v78';
+const CACHE = 'sridhar-rush-v83';
 
 const CORE = [
   '/', '/controller',
-  '/css/style.css?v=78', '/css/controller.css?v=78',
-  '/js/game-core.js?v=78', '/js/progression.js?v=78', '/js/cosmetics.js?v=78', '/js/net.js?v=78', '/js/game.js?v=78', '/js/controller.js?v=78', '/js/account.js?v=78', '/js/i18n.js?v=78',
+  '/css/style.css?v=83', '/css/controller.css?v=83',
+  '/js/game-core.js?v=83', '/js/progression.js?v=83', '/js/cosmetics.js?v=83', '/js/net.js?v=83', '/js/game.js?v=83', '/js/controller.js?v=83', '/js/account.js?v=83', '/js/i18n.js?v=83',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
   '/js/vendor/post/RenderPass.js', '/js/vendor/post/UnrealBloomPass.js',
-  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=78',
+  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=83',
   '/icon.svg', '/img/icon-192.png', '/img/icon-512.png',
   '/img/map-highland.webp', '/img/map-neon.webp', '/img/map-island.webp',
   '/img/map-canyon.webp', '/img/map-snow.webp'
