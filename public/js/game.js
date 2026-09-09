@@ -2614,7 +2614,7 @@ function updateLobby(snap) {
   const parts = [];
   if (snap.controllers[1]) parts.push('📱 P1 joystick');
   if (snap.controllers[2]) parts.push('📱 P2 joystick');
-  if (snap.bot) parts.push('🤖 AI driver');
+  if (snap.bot) parts.push('🏎️ Pro Rival Driver');
   $('lobby-status').textContent = parts.length ? 'Connected: ' + parts.join(' · ') : 'Waiting for joysticks (or drive with keyboard)…';
   const isTouchDev = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
   const mobBar = $('mob-choice-bar');
@@ -3132,24 +3132,24 @@ async function openCrewModal(tab = 'my') {
         body.innerHTML = `
           <div style="text-align:center; padding:30px 10px;">
             <div style="font-size:36px; margin-bottom:10px;">🏁</div>
-            <h3 style="font:800 16px Orbitron; color:#fff; margin-bottom:6px;">NO RACING SYNDICATE YET</h3>
-            <p style="font-size:12px; color:#8b93a8; max-width:400px; margin:0 auto 18px;">Join a top racing syndicate to pool weekly mileage, unlock exclusive team milestone rewards, and compete in the Syndicate Grand Prix!</p>
+            <h3 style="font:800 16px Orbitron; color:#fff; margin-bottom:6px;">NO MOTORSPORT CLUB YET</h3>
+            <p style="font-size:12px; color:#8b93a8; max-width:400px; margin:0 auto 18px;">Join a top motorsport club to pool weekly mileage, unlock exclusive team milestone rewards, and compete in the Club Championship!</p>
             <div style="display:flex; justify-content:center; gap:10px;">
-              <button class="big-cta" onclick="openCrewModal('join')">⚡ JOIN A SYNDICATE</button>
-              <button class="ghost" onclick="openCrewModal('create')">➕ CREATE CREW</button>
+              <button class="big-cta" onclick="openCrewModal('join')">⚡ JOIN A MOTORSPORT CLUB</button>
+              <button class="ghost" onclick="openCrewModal('create')">➕ FOUND A CLUB</button>
             </div>
           </div>
         `;
       }
     } catch (e) {
-      body.innerHTML = '<div style="color:#ff5252; text-align:center; padding:20px;">Failed to load crew.</div>';
+      body.innerHTML = '<div style="color:#ff5252; text-align:center; padding:20px;">Failed to load club.</div>';
     }
   } else if (tab === 'join') {
     try {
       const res = await fetch(`${httpBase()}/api/crews`).then(r => r.json());
       const crews = (res && res.crews) || [];
       body.innerHTML = `
-        <div style="margin-bottom:12px; font:700 12px Orbitron; color:#7ee7ff;">SELECT A PUBLIC SYNDICATE TO JOIN:</div>
+        <div style="margin-bottom:12px; font:700 12px Orbitron; color:#7ee7ff;">SELECT A MOTORSPORT CLUB TO JOIN:</div>
         <div class="crew-preset-grid">
           ${crews.map(cr => `
             <div class="crew-preset-card" style="border-color:${cr.color || 'rgba(255,255,255,0.1)'};">
@@ -3165,41 +3165,40 @@ async function openCrewModal(tab = 'my') {
         </div>
       `;
     } catch (e) {
-      body.innerHTML = '<div style="color:#ff5252; text-align:center; padding:20px;">Failed to load syndicates.</div>';
+      body.innerHTML = '<div style="color:#ff5252; text-align:center; padding:20px;">Failed to load clubs.</div>';
     }
   } else if (tab === 'create') {
     body.innerHTML = `
       <form class="crew-form" id="crew-create-form" onsubmit="handleCreateCrewSubmit(event)">
         <label>
-          SYNDICATE NAME (3-20 characters):
-          <input id="cf-name" class="name-input" maxlength="20" placeholder="e.g. Velocity Phantoms" required />
+          CLUB NAME (3-20 characters):
+          <input id="cf-name" class="name-input" maxlength="20" placeholder="e.g. Redline Pro Racing" required />
         </label>
         <label>
-          CREW TAG (2-5 uppercase letters/numbers):
-          <input id="cf-tag" class="name-input" maxlength="5" placeholder="e.g. PHNTM" style="text-transform:uppercase;" required />
+          CLUB TAG (2-5 uppercase letters/numbers):
+          <input id="cf-tag" class="name-input" maxlength="5" placeholder="e.g. REDL" style="text-transform:uppercase;" required />
         </label>
         <label>
           MOTTO / SLOGAN:
-          <input id="cf-motto" class="name-input" maxlength="50" placeholder="e.g. Masters of the Apex" />
+          <input id="cf-motto" class="name-input" maxlength="50" placeholder="e.g. Push past the limit, hold the line" />
         </label>
         <label>
           BADGE ICON:
           <select id="cf-badge" class="name-input" style="background:#141c30; color:#fff;">
-            <option value="⚡">⚡ Lightning</option>
+            <option value="🏁">🏁 Checkered Flag</option>
+            <option value="⚡">⚡ Lightning Bolt</option>
+            <option value="🏎️">🏎️ Grand Prix</option>
             <option value="🌀">🌀 Vortex</option>
-            <option value="🐍">🐍 Viper</option>
-            <option value="🛡️">🛡️ Shield</option>
-            <option value="👻">👻 Phantom</option>
             <option value="🔥">🔥 Flame</option>
             <option value="👑">👑 Crown</option>
           </select>
         </label>
         <label>
-          SYNDICATE THEME COLOR:
-          <input id="cf-color" type="color" value="#00e5ff" style="width:100%; height:38px; background:none; border:none; cursor:pointer;" />
+          CLUB THEME COLOR:
+          <input id="cf-color" type="color" value="#ff3344" style="width:100%; height:38px; background:none; border:none; cursor:pointer;" />
         </label>
         <p id="cf-err" style="color:#ff5252; font-size:11px; margin:0;"></p>
-        <button type="submit" class="big-cta" style="margin-top:10px;">🚀 CREATE RACING SYNDICATE</button>
+        <button type="submit" class="big-cta" style="margin-top:10px;">🚀 FOUND MOTORSPORT CLUB</button>
       </form>
     `;
   } else if (tab === 'board') {
@@ -3207,7 +3206,7 @@ async function openCrewModal(tab = 'my') {
       const res = await fetch(`${httpBase()}/api/crews/leaderboard`).then(r => r.json());
       const crews = (res && res.crews) || [];
       body.innerHTML = `
-        <div style="margin-bottom:10px; font:700 12px Orbitron; color:#ffd479;">🏆 WEEKLY SYNDICATE GRAND PRIX STANDINGS</div>
+        <div style="margin-bottom:10px; font:700 12px Orbitron; color:#ffd479;">🏆 WEEKLY CLUB CHAMPIONSHIP STANDINGS</div>
         <table class="crew-lb-table">
           <thead><tr><th>RANK</th><th>SYNDICATE</th><th>RACERS</th><th>WEEKLY DISTANCE</th><th>POINTS</th></tr></thead>
           <tbody>

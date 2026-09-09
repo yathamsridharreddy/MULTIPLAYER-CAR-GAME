@@ -764,11 +764,11 @@
   ];
 
   const CREW_PRESETS = [
-    { id: 'apex', tag: 'APEX', name: 'Apex Predators', motto: 'Speed is our only law', badge: '⚡', color: '#ff4444' },
-    { id: 'drift', tag: 'DRIFT', name: 'Drift Syndicate', motto: 'Sideways is the fastest way', badge: '🌀', color: '#00e5ff' },
-    { id: 'viper', tag: 'VIPER', name: 'Viper Velocity', motto: 'Strike first, strike fast', badge: '🐍', color: '#00e676' },
-    { id: 'titan', tag: 'TITAN', name: 'Titan Motorsports', motto: 'Unstoppable mechanical force', badge: '🛡️', color: '#ffb300' },
-    { id: 'ghost', tag: 'GHOST', name: 'Phantom Syndicate', motto: 'Leave only shadows behind', badge: '👻', color: '#b388ff' }
+    { id: 'apex', tag: 'REDL', name: 'Redline Motorsport', motto: 'Push past the limit, hold the racing line', badge: '🏁', color: '#ff3344' },
+    { id: 'drift', tag: 'AKNA', name: 'Akina SpeedStars', motto: 'Precision downhill touge apex mastery', badge: '⚡', color: '#00e5ff' },
+    { id: 'viper', tag: 'MDNT', name: 'Midnight Club Tokyo', motto: 'Rule the asphalt under city neon', badge: '🌃', color: '#b388ff' },
+    { id: 'titan', tag: 'VLCX', name: 'Veloce Grand Prix', motto: 'Pure racing pedigree and unmatched speed', badge: '🏎️', color: '#ffd479' },
+    { id: 'ghost', tag: 'MNZA', name: 'Monza Oversteer Works', motto: 'Flat-out through every chicane', badge: '🔥', color: '#ff6d00' }
   ];
 
   function validCrewTag(tag) {
