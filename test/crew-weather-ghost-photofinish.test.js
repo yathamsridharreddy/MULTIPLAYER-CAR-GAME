@@ -129,7 +129,16 @@ describe('V83 Feature Suite: Syndicate Crews, Weather, Ghost Racing Line & Photo
     });
 
     test('supports claiming reached crew milestones via POST /api/player/crew/claim-milestone', async () => {
-      const testUid = 'seed_pro_1'; // Member of Apex crew which has 70km (reached Tier 1 & Tier 2)
+      const testUid = 'test_pilot_milestone';
+      // Join crew first
+      await fetch(`${baseUrl}/api/player/crew/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: testUid, name: 'TEST_PILOT', crewId: 'apex' })
+      });
+      // Give apex crew 30,000m (Tier 1 reached)
+      serverMod.memCrews.get('apex').weeklyMeters = 30000;
+
       const rClaim = await fetch(`${baseUrl}/api/player/crew/claim-milestone`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -252,13 +261,17 @@ describe('V83 Feature Suite: Syndicate Crews, Weather, Ghost Racing Line & Photo
   // =========================================================================
   describe('4. Photo-Finish Slow-Motion Highlight Replay', () => {
     test('detects sub-0.60s finish margins and broadcasts photo-finish event during race settlement', async () => {
+      // Register test pilot in apex crew
+      serverMod.memPlayerCrew.set('pf_pilot_1', 'apex');
+      serverMod.memCrews.get('apex').members.push({ uid: 'pf_pilot_1', name: 'PF PILOT 1', role: 'member' });
+
       const room = new core.RaceRoom('PF001', 'race', 0, 2);
       const entry = {
         room,
         screens: new Set(),
         controllers: new Map(),
         raceSeq: 1,
-        uidBySlot: { 1: 'seed_pro_1', 2: 'seed_pro_2' },
+        uidBySlot: { 1: 'pf_pilot_1', 2: 'pf_pilot_2' },
         dupUid: {},
         chBySlot: {}
       };

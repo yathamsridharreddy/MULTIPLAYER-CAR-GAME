@@ -381,11 +381,6 @@ const clientsByWs = new Map(); // ws -> client (for matchmaking pairing)
 const LB_FILE = path.join(__dirname, 'leaderboard.json');
 let leaderboard = {};
 try { leaderboard = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); } catch (e) { leaderboard = {}; }
-if (!leaderboard[0] || !leaderboard[0].length) {
-  leaderboard[0] = [{ name: 'APEX_HUNTER', pid: 'seed_pro_1', t: 42.15, ts: Date.now() }, { name: 'DRIFT_KING', pid: 'seed_pro_2', t: 44.30, ts: Date.now() }];
-  leaderboard[1] = [{ name: 'DRIFT_KING', pid: 'seed_pro_2', t: 58.40, ts: Date.now() }];
-  leaderboard[2] = [{ name: 'TURBO_VIPER', pid: 'seed_pro_3', t: 64.20, ts: Date.now() }];
-}
 
 function lbAdd(mapId, entry) {
   const list = leaderboard[mapId] || (leaderboard[mapId] = []);
@@ -459,11 +454,7 @@ function weeklyInfo() {
 // ---------------------------------------------------------------------------
 // v80 Competitive Leaderboards & Storage (In-Memory Fallback + Supabase Sync)
 // ---------------------------------------------------------------------------
-const memPlayerStats = new Map([
-  ['seed_pro_1', { uid: 'seed_pro_1', name: 'APEX_HUNTER', rating: 1650, peak_rating: 1650, xp: 4500, races: 28, wins: 22, podiums: 26, streak: 5, best_streak: 8 }],
-  ['seed_pro_2', { uid: 'seed_pro_2', name: 'DRIFT_KING', rating: 1420, peak_rating: 1450, xp: 2800, races: 19, wins: 12, podiums: 16, streak: 2, best_streak: 4 }],
-  ['seed_pro_3', { uid: 'seed_pro_3', name: 'TURBO_VIPER', rating: 1280, peak_rating: 1300, xp: 1900, races: 15, wins: 8, podiums: 11, streak: 1, best_streak: 3 }]
-]); // uid -> { uid, name, rating, peak_rating, xp, races, wins, podiums, streak, best_streak, daily_days, last_daily }
+const memPlayerStats = new Map(); // uid -> { uid, name, rating, peak_rating, xp, races, wins, podiums, streak, best_streak, daily_days, last_daily }
 const memDailyComp = new Map();   // date_key -> Map<uid, { user_id, name, map, best_lap_ms, races_today, updated_at }>
 const memWeeklyComp = new Map();  // week_key -> Map<uid, { user_id, name, points, races_week, wins_week, best_lap_ms, updated_at }>
 
@@ -1341,15 +1332,12 @@ const memCrews = new Map([
     motto: 'Speed is our only law',
     badge: '⚡',
     color: '#ff4444',
-    leaderUid: 'seed_pro_1',
-    members: [
-      { uid: 'seed_pro_1', name: 'APEX_HUNTER', role: 'leader', weeklyMeters: 42000, totalMeters: 185000, weeklyPoints: 5200 },
-      { uid: 'seed_pro_3', name: 'TURBO_VIPER', role: 'member', weeklyMeters: 28000, totalMeters: 94000, weeklyPoints: 3100 }
-    ],
-    weeklyMeters: 70000,
-    totalMeters: 279000,
-    weeklyPoints: 8300,
-    created_at: new Date(Date.now() - 14 * 86400000).toISOString()
+    leaderUid: null,
+    members: [],
+    weeklyMeters: 0,
+    totalMeters: 0,
+    weeklyPoints: 0,
+    created_at: new Date().toISOString()
   }],
   ['drift', {
     id: 'drift',
@@ -1358,14 +1346,12 @@ const memCrews = new Map([
     motto: 'Sideways is the fastest way',
     badge: '🌀',
     color: '#00e5ff',
-    leaderUid: 'seed_pro_2',
-    members: [
-      { uid: 'seed_pro_2', name: 'DRIFT_KING', role: 'leader', weeklyMeters: 38000, totalMeters: 142000, weeklyPoints: 4600 }
-    ],
-    weeklyMeters: 38000,
-    totalMeters: 142000,
-    weeklyPoints: 4600,
-    created_at: new Date(Date.now() - 10 * 86400000).toISOString()
+    leaderUid: null,
+    members: [],
+    weeklyMeters: 0,
+    totalMeters: 0,
+    weeklyPoints: 0,
+    created_at: new Date().toISOString()
   }],
   ['viper', {
     id: 'viper',
@@ -1376,10 +1362,10 @@ const memCrews = new Map([
     color: '#00e676',
     leaderUid: null,
     members: [],
-    weeklyMeters: 18000,
-    totalMeters: 64000,
-    weeklyPoints: 2100,
-    created_at: new Date(Date.now() - 7 * 86400000).toISOString()
+    weeklyMeters: 0,
+    totalMeters: 0,
+    weeklyPoints: 0,
+    created_at: new Date().toISOString()
   }],
   ['titan', {
     id: 'titan',
@@ -1390,10 +1376,10 @@ const memCrews = new Map([
     color: '#ffb300',
     leaderUid: null,
     members: [],
-    weeklyMeters: 12000,
-    totalMeters: 45000,
-    weeklyPoints: 1500,
-    created_at: new Date(Date.now() - 5 * 86400000).toISOString()
+    weeklyMeters: 0,
+    totalMeters: 0,
+    weeklyPoints: 0,
+    created_at: new Date().toISOString()
   }],
   ['ghost', {
     id: 'ghost',
@@ -1404,18 +1390,14 @@ const memCrews = new Map([
     color: '#b388ff',
     leaderUid: null,
     members: [],
-    weeklyMeters: 9000,
-    totalMeters: 32000,
-    weeklyPoints: 1100,
-    created_at: new Date(Date.now() - 3 * 86400000).toISOString()
+    weeklyMeters: 0,
+    totalMeters: 0,
+    weeklyPoints: 0,
+    created_at: new Date().toISOString()
   }]
 ]);
 
-const memPlayerCrew = new Map([
-  ['seed_pro_1', 'apex'],
-  ['seed_pro_2', 'drift'],
-  ['seed_pro_3', 'apex']
-]);
+const memPlayerCrew = new Map();
 
 const memClaimedCrewMilestones = new Map(); // `${crewId}:${milestoneTier}:${uid}` -> true
 
@@ -2603,6 +2585,9 @@ function handleMessage(client, msg) {
 }
 
 function handleLeave(client) {
+  const qIdx = matchQueue.indexOf(client.ws);
+  if (qIdx !== -1) matchQueue.splice(qIdx, 1);
+
   const entry = client.entry;
   if (!entry) return;
   client.entry = null;
@@ -2752,5 +2737,6 @@ module.exports = {
   getOrInitMissions,
   memCrews,
   memPlayerCrew,
-  memClaimedCrewMilestones
+  memClaimedCrewMilestones,
+  leaderboard
 };
