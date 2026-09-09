@@ -2008,6 +2008,7 @@ function openGarage() {
 // v76 — room lobby panel (players / rating / ready / host)
 let iAmReady = false;
 function renderRoomLobby(e) {
+  if (!e) return;
   const el = $('room-players'); if (!el) return;
   const ps = e.players || [];
   $('room-count') && ($('room-count').textContent = ps.length + ' / ' + (e.cap || 6) + ' PLAYERS');
@@ -2022,6 +2023,7 @@ function renderRoomLobby(e) {
   const rb = $('ready-btn');
   if (rb) { rb.hidden = ps.length < 3; rb.textContent = iAmReady ? '✅ READY' : '🏁 READY UP'; }
 }
+window.renderRoomLobby = renderRoomLobby;
 // v73 wiring: profile / ratings access points
 (function () {
   const pc = $('profile-close'); if (pc) pc.addEventListener('click', () => { const d = $('profile-dlg'); if (d) d.hidden = true; });
