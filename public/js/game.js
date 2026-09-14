@@ -1122,6 +1122,16 @@ function ttHudUpdate(mine) {
 function showTTResults(order, finalT) {
   const ov = $('tt-overlay'); if (!ov || TT.done) return;
   TT.done = true;
+  if (currentAcademyLesson) {
+    try {
+      const les = JSON.parse(localStorage.getItem('sr_academy_lessons') || '{}');
+      les[currentAcademyLesson] = true;
+      localStorage.setItem('sr_academy_lessons', JSON.stringify(les));
+      toast('🎓 Academy Lesson Completed!');
+    } catch (e) {}
+    currentAcademyLesson = null;
+    const hEl = $('academy-hint-banner'); if (hEl) hEl.style.display = 'none';
+  }
   const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
   const M = (CORE.MAPS[mapId] || {}).name || 'TRACK';
   let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
@@ -1954,7 +1964,11 @@ function openGarage() {
   dlg.hidden = false;
   const body = $('garage-body');
   const acc = window.SRAccount;
-  if (!(acc && acc.loggedIn())) { body.innerHTML = '<div class="p-empty">Sign in to open your garage — cars, paints, neon and more unlock as you race.</div>'; return; }
+  if (!(acc && acc.loggedIn())) {
+    body.innerHTML = '<div class="p-empty">Sign in to open your garage — cars, paints, neon and more unlock as you race.<br><br><button id="g-signin" class="big-cta">SIGN IN / CREATE ACCOUNT</button></div>';
+    const b = $('g-signin'); if (b) b.addEventListener('click', () => { dlg.hidden = true; const ab = $('account-btn'); if (ab) ab.click(); });
+    return;
+  }
   body.innerHTML = '<div class="p-empty">Opening garage…</div>';
   (async () => {
     const gd = await garageData();
@@ -3300,6 +3314,11 @@ window.handleCreateCrewSubmit = async function(e) {
   }
 };
 
+window.openCrewModal = openCrewModal;
+window.openDrivingAcademy = openDrivingAcademy;
+window.openBadgesShowcase = openBadgesShowcase;
+window.openBountiesModal = openBountiesModal;
+
 // Wire up modal openers and close buttons
 const acadBtn = $('academy-btn'); if (acadBtn) acadBtn.addEventListener('click', openDrivingAcademy);
 const acadClose = $('academy-close'); if (acadClose) acadClose.addEventListener('click', () => { $('academy-dlg').hidden = true; });
@@ -4110,11 +4129,21 @@ const touchInput = { l: 0, r: 0, u: 0, d: 0, nitro: false };
 function wireTouchBtn(id, downFn, upFn) {
   const el = $(id);
   if (!el) return;
-  const down = (e) => { e.preventDefault(); el.classList.add('active'); downFn(); };
-  const up = (e) => { e.preventDefault(); el.classList.remove('active'); upFn(); };
+  const down = (e) => {
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    el.classList.add('active');
+    downFn();
+  };
+  const up = (e) => {
+    e.preventDefault();
+    el.classList.remove('active');
+    upFn();
+  };
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
+  el.addEventListener('pointerleave', up);
 }
 wireTouchBtn('tc-left', () => { touchInput.l = 1; }, () => { touchInput.l = 0; });
 wireTouchBtn('tc-right', () => { touchInput.r = 1; }, () => { touchInput.r = 0; });
@@ -4200,6 +4229,10 @@ function renderSplit(dt) {
   if (c2) aimChaseInstant(c2);
   renderer.render(scene, camera);
   renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, w, h);
+  renderer.setScissor(0, 0, w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
 }
 let photoFinishActive = false;
 let photoFinishTimer = 0;
@@ -4217,7 +4250,8 @@ function triggerPhotoFinish(margin, winnerName, runnerUpName) {
   if (banner) {
     banner.style.display = 'block';
     const mEl = $('pf-margin');
-    if (mEl) mEl.textContent = '+' + margin.toFixed(3) + 's';
+    const mVal = typeof margin === 'number' ? margin : (parseFloat(margin) || 0);
+    if (mEl) mEl.textContent = '+' + mVal.toFixed(3) + 's';
     const tEl = $('pf-title');
     if (tEl) tEl.textContent = `${escapeHtml(winnerName || 'P1')} VS ${escapeHtml(runnerUpName || 'P2')}`;
     setTimeout(() => { banner.style.display = 'none'; }, 3200);
@@ -4451,7 +4485,8 @@ function updateAudio(mine, rival) {
   if (audio.ctx.state === 'suspended') { audio.ctx.resume(); return; }
   const t = audio.ctx.currentTime;
   [mine, rival].forEach((cs, i) => {
-    const e = audio.engines[i];
+    const e = audio.engines && audio.engines[i];
+    if (!e) return;
     if (!cs || cs.p !== 1) { e.engGain.gain.setTargetAtTime(0, t, 0.1); return; }
     const sp = clamp(Math.abs(cs.v) / CFG.maxSpeed, 0, 1);
     const thr = clamp((cs.th != null ? cs.th : sp) + (cs.n ? 0.4 : 0), 0, 1);
@@ -4700,12 +4735,12 @@ function updateHUD(mine, rival) {
   if (!latest || !mine) return;
   updateModeLabels(latest.mode);
   if (!hudPill1) { const p1 = hEl('pill-p1'), p2 = hEl('pill-p2'); hudPill1 = p1 && p1.querySelector('span'); hudPill2 = p2 && p2.querySelector('span'); }
-  const c1 = latest.cars[0], c2 = latest.cars[1];
+  const c1 = latest.cars && latest.cars[0], c2 = latest.cars && latest.cars[1];
   if (latest.mode !== 'coop') {
-    hText(hudPill1, c1.nm || 'PLAYER 1');
-    hText(hudPill2, c2.nm || 'PLAYER 2');
+    hText(hudPill1, (c1 && c1.nm) || 'PLAYER 1');
+    hText(hudPill2, (c2 && c2.nm) || 'PLAYER 2');
   } else {
-    hText(hudPill1, 'CO-OP · ' + (c1.nm || 'YOU'));
+    hText(hudPill1, 'CO-OP · ' + ((c1 && c1.nm) || 'YOU'));
   }
   const pingEl = hEl('ping-badge');
   if (pingEl) {
@@ -5060,7 +5095,7 @@ function wireCompetitiveHub() {
 $('rematch-btn').addEventListener('click', () => {
   clearAutoRematchTimer();
   $('results').classList.add('hidden');
-  const humanRival = latest && latest.cars && latest.cars[1] && latest.cars[1].p === 1 && !latest.bot;
+  const humanRival = latest && latest.cars && latest.cars.filter((c) => c && c.p === 1 && c.s !== mySlot).length > 0 && !latest.bot;
   if (humanRival) { net.send({ type: 'rematch' }); toast('🔁 Rematch requested — waiting for rival…'); }
   else net.send({ type: 'start' });
   track('second_race', selectedMap);

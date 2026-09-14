@@ -26,7 +26,7 @@ const CORE = [
 ];
 
 // live data — always straight from the network, never stored
-const NOCACHE = ['/js/config.js', '/version', '/health', '/lb', '/recent', '/daily', '/cup'];
+const NOCACHE = ['/js/config.js', '/version', '/health', '/lb', '/recent', '/daily', '/cup', '/ghost', '/a'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -50,7 +50,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   let url; try { url = new URL(req.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return;      // external requests untouched
-  if (NOCACHE.includes(url.pathname)) return;           // live endpoints untouched
+  if (NOCACHE.includes(url.pathname) || url.pathname.startsWith('/api/')) return;           // live endpoints untouched
 
   if (req.mode === 'navigate') {
     // HTML: fresh when online, cached copy when offline

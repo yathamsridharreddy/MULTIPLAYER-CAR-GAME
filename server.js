@@ -2530,12 +2530,13 @@ function handleMessage(client, msg) {
       }
       break;
 
-    // v59 rematch voting: when every connected screen votes, reuse the room
+    // v59 rematch voting: when every connected screen/controller votes, reuse the room
     case 'rematch':
-      if (client.entry && client.role === 'screen') {
+      if (client.entry) {
         const en = client.entry;
-        en.rematch.add(client.ws);
-        en.room.events.push({ type: 'rematch', n: en.rematch.size, total: en.screens.size });
+        const voteKey = client.slot || client.ws;
+        en.rematch.add(voteKey);
+        en.room.events.push({ type: 'rematch', n: en.rematch.size, total: Math.max(1, en.screens.size) });
         if (en.rematch.size >= Math.max(1, en.screens.size)) { en.rematch.clear(); en.room.start(); }
       }
       break;
@@ -2576,16 +2577,24 @@ function handleMessage(client, msg) {
         if (entry.screens.size === 0 && entry.controllers.size === 0) rooms.delete(entry.room.code);
       }
       if (!matchQueue.includes(client.ws)) matchQueue.push(client.ws);
+      // Clean dead or closed sockets from matchQueue
+      for (let i = matchQueue.length - 1; i >= 0; i--) {
+        const ws = matchQueue[i];
+        if (!ws || ws.readyState !== 1 || !clientsByWs.has(ws)) matchQueue.splice(i, 1);
+      }
       sendJSON(client.ws, { type: 'searching', waiting: matchQueue.length });
       if (matchQueue.length >= 2) {
         const wsA = matchQueue.shift(), wsB = matchQueue.shift();
         const cA = clientsByWs.get(wsA), cB = clientsByWs.get(wsB);
-        if (cA && cB) {
+        if (cA && cB && wsA.readyState === 1 && wsB.readyState === 1) {
           const entry = newRoom('race', 0, 6); // v76
           joinRoom(cA, entry, 'screen');
           joinRoom(cB, entry, 'screen');
           sendJSON(wsA, { type: 'matched', code: entry.room.code });
           sendJSON(wsB, { type: 'matched', code: entry.room.code });
+        } else {
+          if (cA && wsA.readyState === 1) matchQueue.unshift(wsA);
+          if (cB && wsB.readyState === 1) matchQueue.unshift(wsB);
         }
       }
       break;
@@ -2718,6 +2727,13 @@ app.get('/health', (req, res) => {
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.json({ build: 'v78', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[server] Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled Rejection:', reason);
 });
 
 if (require.main === module) {

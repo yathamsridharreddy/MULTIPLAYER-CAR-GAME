@@ -173,7 +173,7 @@ function joinRoom(code, slot) {
 const wantedRoom = urlParam('room');
 const wantedSlot = urlParam('slot');
 if (wantedRoom) joinRoom(wantedRoom, wantedSlot); else showJoinScreen('');
-$('join-btn').addEventListener('click', () => { const c = $('room-input').value.trim(); if (c.length >= 4) joinRoom(c); else $('join-error').textContent = 'Enter the 5-letter room code.'; });
+$('join-btn').addEventListener('click', () => { const c = $('room-input').value.trim(); if (c.length >= 4) joinRoom(c, wantedSlot); else $('join-error').textContent = 'Enter the 5-letter room code.'; });
 $('room-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('join-btn').click(); });
 
 // send input at ~30 Hz
@@ -250,7 +250,7 @@ if (ctrlRematch) {
   const x = $('ios-hint-x'); if (x) x.addEventListener('click', done);
   setTimeout(done, 12000);
 })();
-document.addEventListener('touchmove', (e) => { if (e.scale !== 1) e.preventDefault(); }, { passive: false });
+document.addEventListener('touchmove', (e) => { if (e.scale != null && e.scale !== 1) e.preventDefault(); }, { passive: false });
 function checkOrientation() { $('rotate-hint').classList.toggle('show', window.innerHeight > window.innerWidth); }
 window.addEventListener('resize', checkOrientation);
 checkOrientation();

@@ -31,8 +31,9 @@
 
     // ---- track path (centerline) ----
     let path = [];
-    if (map.track && map.track.points) path = map.track.points;
-    else for (let i = 0; i < 240; i++) { const a = (i / 240) * Math.PI * 2; path.push({ x: map.a * Math.cos(a), z: map.b * Math.sin(a) }); }
+    if (map.points && Array.isArray(map.points) && map.points.length) path = map.points;
+    else if (map.track && map.track.points && Array.isArray(map.track.points) && map.track.points.length) path = map.track.points;
+    else for (let i = 0; i < 240; i++) { const a = (i / 240) * Math.PI * 2; path.push({ x: (map.a || 130) * Math.cos(a), z: (map.b || 85) * Math.sin(a) }); }
     const cv = $('cv'), ctx = cv.getContext('2d');
     const W = cv.width, H = cv.height;
     const bound = Math.max(map.a, map.b) * 1.18;

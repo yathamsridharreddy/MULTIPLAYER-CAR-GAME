@@ -264,4 +264,31 @@ describe('Authoritative Multiplayer Simulation & Rooms', () => {
     assert.equal(extraCtlClient.slot, 0, '7th controller should remain unassigned slot 0');
     assert.equal(extraCtlClient.entry, null, '7th controller entry should be null');
   });
+
+  test('accepts rematch vote from mobile phone controller role', () => {
+    const entry = newRoom('race', 0, 2);
+    const screenWs1 = createMockWS();
+    const screenClient1 = { ws: screenWs1, entry: null, slot: 0, role: null, pid: 'screen-1' };
+    joinRoom(screenClient1, entry, 'screen', { pid: 'screen-1' });
+
+    const screenWs2 = createMockWS();
+    const screenClient2 = { ws: screenWs2, entry: null, slot: 0, role: null, pid: 'screen-2' };
+    joinRoom(screenClient2, entry, 'screen', { pid: 'screen-2' });
+
+    const ctlWs = createMockWS();
+    const ctlClient = { ws: ctlWs, entry: null, slot: 0, role: null, pid: 'ctl-1' };
+    joinRoom(ctlClient, entry, 'controller', { pid: 'ctl-1', slot: 1 });
+
+    assert.equal(entry.rematch.size, 0);
+
+    // Phone controller sends rematch message (1 vote out of 2 screens)
+    handleMessage(ctlClient, { type: 'rematch' });
+    assert.equal(entry.rematch.size, 1);
+    assert.ok(entry.room.events.some((e) => e.type === 'rematch'));
+
+    // Second screen sends rematch -> room restarts
+    handleMessage(screenClient2, { type: 'rematch' });
+    assert.equal(entry.rematch.size, 0);
+    assert.equal(entry.room.state, 'countdown');
+  });
 });
