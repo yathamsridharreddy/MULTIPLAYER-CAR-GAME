@@ -2286,11 +2286,27 @@ function joinRoom(client, entry, role, msg) {
       }
       entry.controllerPids[pid] = client.ws;
     }
+
+    // Explicit slot requested by screen's QR code (e.g. &slot=2 on laptop 2)
     let slot = 0;
-    for (let s = 1; s <= room.cap; s++) {
-      if (!room.controllers[s]) {
-        slot = s;
-        break;
+    const reqSlot = (msg && msg.slot != null) ? parseInt(msg.slot, 10) : 0;
+    if (reqSlot >= 1 && reqSlot <= room.cap) {
+      // If requested slot already had an old controller socket, clean it up
+      for (const [ws, s] of entry.controllers.entries()) {
+        if (s === reqSlot && ws !== client.ws) {
+          try { ws.close(); } catch (e) {}
+          entry.controllers.delete(ws);
+          room.setController(reqSlot, false);
+        }
+      }
+      slot = reqSlot;
+    } else {
+      // Otherwise assign first open controller slot
+      for (let s = 1; s <= room.cap; s++) {
+        if (!room.controllers[s]) {
+          slot = s;
+          break;
+        }
       }
     }
     if (!slot) {

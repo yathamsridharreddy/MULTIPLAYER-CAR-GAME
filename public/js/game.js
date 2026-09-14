@@ -2604,7 +2604,7 @@ function updateLobby(snap) {
   if (SPEC_ROOM) { const ov = $('overlay'); if (ov && latest && latest.state !== 'waiting') ov.classList.add('hidden'); }
   $('room-code').textContent = snap.code;
   const gameLink = location.origin + '/?room=' + snap.code + '&map=' + (snap.map != null ? snap.map : selectedMap); // v64 per-map OG
-  const phoneLink = location.origin + '/controller?room=' + snap.code;
+  const phoneLink = location.origin + '/controller?room=' + snap.code + (mySlot ? '&slot=' + mySlot : '');
   $('game-link').textContent = gameLink;
   $('ctrl-url').textContent = phoneLink;
   drawQR(phoneLink);
@@ -3895,6 +3895,10 @@ const net = new RoomLink({
     $('slot-badge').style.display = '';
     setNetBanner(true);
     applyMyColor();
+    const phoneLink = location.origin + '/controller?room=' + roomCode + '&slot=' + mySlot;
+    const ctrlUrlEl = $('ctrl-url');
+    if (ctrlUrlEl) ctrlUrlEl.textContent = phoneLink;
+    drawQR(phoneLink);
     const qb = $('quickplay-btn');
     if (qb) { qb.disabled = false; qb.textContent = '⚡ QUICK PLAY — find a rival'; }
     if (msg.snapshot) ingestSnapshot(msg.snapshot);

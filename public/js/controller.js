@@ -161,10 +161,18 @@ const net = new RoomLink({
 
 function showJoinScreen(err) { $('join-screen').style.display = 'flex'; $('pads').classList.add('locked'); if (err) $('join-error').textContent = err; }
 function ctrlPid() { try { let p = localStorage.getItem('sr_ctrl_pid'); if (!p) { p = 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('sr_ctrl_pid', p); } return p; } catch (e) { return null; } } // v77 BUG-008
-function joinRoom(code) { $('join-screen').style.display = 'none'; $('pads').classList.remove('locked'); setStatus('Connecting…', 'wait'); net.connect({ type: 'hello', role: 'controller', room: code.toUpperCase().trim(), pid: ctrlPid() }); }
+function joinRoom(code, slot) {
+  $('join-screen').style.display = 'none';
+  $('pads').classList.remove('locked');
+  setStatus('Connecting…', 'wait');
+  const hello = { type: 'hello', role: 'controller', room: code.toUpperCase().trim(), pid: ctrlPid() };
+  if (slot != null && !isNaN(parseInt(slot, 10))) hello.slot = parseInt(slot, 10);
+  net.connect(hello);
+}
 
 const wantedRoom = urlParam('room');
-if (wantedRoom) joinRoom(wantedRoom); else showJoinScreen('');
+const wantedSlot = urlParam('slot');
+if (wantedRoom) joinRoom(wantedRoom, wantedSlot); else showJoinScreen('');
 $('join-btn').addEventListener('click', () => { const c = $('room-input').value.trim(); if (c.length >= 4) joinRoom(c); else $('join-error').textContent = 'Enter the 5-letter room code.'; });
 $('room-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('join-btn').click(); });
 
