@@ -483,7 +483,14 @@ button.ghost.sm { padding: 6px 14px; font-size: 11.5px; letter-spacing: 0.8px; f
 @media (max-width: 760px) { .map-row { flex-direction: column; align-items: center; } .map-btn { max-width: 100%; } }
 
 /* ===== v2: HUD badges ===== */
-#hud-badges { position: absolute; top: 14px; right: 176px; display: flex; gap: 8px; }
+#hud-badges { position: absolute; top: 14px; right: 176px; display: flex; gap: 8px; z-index: 10; pointer-events: auto; }
+.hud-cam-btn {
+  background: rgba(8,12,22,.75); border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px; padding: 6px 14px; font-size: 11px; font-weight: 800;
+  letter-spacing: 1px; color: #7ee7ff; cursor: pointer; backdrop-filter: blur(8px);
+  transition: all .2s ease;
+}
+.hud-cam-btn:hover { background: rgba(0, 229, 255, 0.2); border-color: #7ee7ff; transform: scale(1.05); }
 .ping, #fps-meter {
   background: rgba(8,12,22,.62); border: 1px solid rgba(255,255,255,.14);
   border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 700;

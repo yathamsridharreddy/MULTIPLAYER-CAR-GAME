@@ -4158,20 +4158,31 @@ function maybeSendKeyboard(dt) {
 }
 
 // ---------------------------------------------------------------------------
-// Camera (unchanged)
+// Camera (v84 Modern Dynamic Player-Anchored Chase System)
 // ---------------------------------------------------------------------------
 let camMode = 0;
 let splitScreen = false;
 const lookTarget = new THREE.Vector3(A - 2.8, 1, 0);
-function cycleCamera() { camMode = (camMode + 1) % 3; }
+let smoothedCamAngle = 0;
+let camInit = false;
+const CAM_MODE_NAMES = ['CHASE CAM', 'CLOSE CAM', 'HOOD CAM', 'HELI CAM'];
+
+function cycleCamera() {
+  camMode = (camMode + 1) % 4;
+  toast('🎥 ' + CAM_MODE_NAMES[camMode]);
+}
+
 function aimChaseInstant(cs) {
   const v = carVisuals[cs.s];
   const cx = (v && v.netInit) ? v.netX : cs.x, cz = (v && v.netInit) ? v.netZ : cs.z, ch = (v && v.netInit) ? v.netH : cs.h;
+  smoothedCamAngle = ch;
+  camInit = true;
   const dir = new THREE.Vector3(Math.sin(ch), 0, Math.cos(ch));
   const pos = new THREE.Vector3(cx, 0, cz);
-  camera.position.copy(pos).addScaledVector(dir, -8.2);
-  camera.position.y = 3.2;
-  camera.lookAt(pos.clone().addScaledVector(dir, 5).add(new THREE.Vector3(0, 1.1, 0)));
+  camera.position.copy(pos).addScaledVector(dir, -7.6);
+  camera.position.y = 2.7;
+  lookTarget.copy(pos).addScaledVector(dir, 6.0).add(new THREE.Vector3(0, 1.15, 0));
+  camera.lookAt(lookTarget);
 }
 function renderSplit(dt) {
   const w = window.innerWidth, h = window.innerHeight, hh = Math.floor(h / 2);
@@ -4222,53 +4233,108 @@ function updateCamera(dt, mine, rival) {
     return;
   }
   if (!mine) return;
-  // follow the SAME smoothed positions the car meshes use, so camera and
-  // car never fight each other (that fight reads as shaking)
+
+  // Follow the visual smoothed position of MY car (solid local player anchor)
   const vMe = carVisuals[mine.s], vRi = rival ? carVisuals[rival.s] : null;
   if (vMe && vMe.netInit) mine = { ...mine, x: vMe.netX, z: vMe.netZ, h: vMe.netH };
   if (rival && vRi && vRi.netInit) rival = { ...rival, x: vRi.netX, z: vRi.netZ, h: vRi.netH };
-  const dir = new THREE.Vector3(Math.sin(mine.h), 0, Math.cos(mine.h));
-  let desired, look, sepFov = 0;
-  const dual = rival && rival.p === 1 && camMode !== 2 && latest && latest.state !== 'waiting';
-  if (camMode === 2) {
-    desired = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, 0.4).add(new THREE.Vector3(0, 1.18, 0));
-    look = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, 40).add(new THREE.Vector3(0, 1.0, 0));
-  } else if (dual) {
-    // broadcast cam: scale distance/height/FOV with the gap so BOTH cars stay in frame
-    const mid = new THREE.Vector3((mine.x + rival.x) / 2, 0, (mine.z + rival.z) / 2);
-    const sep = Math.hypot(mine.x - rival.x, mine.z - rival.z);
-    const ax = Math.sin(mine.h) + Math.sin(rival.h), az = Math.cos(mine.h) + Math.cos(rival.h);
-    const dl = Math.hypot(ax, az) || 1;
-    const dir = new THREE.Vector3(ax / dl, 0, az / dl);
-    const dist = clamp(8 + sep * 0.55, 8, 55);
-    const height = clamp(3.5 + sep * 0.5, 3.5, 34);
-    desired = mid.clone().addScaledVector(dir, -dist).add(new THREE.Vector3(0, height, 0));
-    look = mid.clone().add(new THREE.Vector3(0, 0.5, 0));
-    sepFov = clamp(sep * 0.6, 0, 26);
-  } else if (camMode === 1) {
-    desired = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, -14).add(new THREE.Vector3(0, 6.2, 0));
-    look = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, 2).add(new THREE.Vector3(0, 1, 0));
+
+  const carPos = new THREE.Vector3(mine.x, 0, mine.z);
+
+  // Smooth heading angle to eliminate jerky rotation
+  if (!camInit) {
+    smoothedCamAngle = mine.h;
+    camInit = true;
   } else {
-    desired = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, -8.2).add(new THREE.Vector3(0, 3.2, 0));
-    look = new THREE.Vector3(mine.x, 0, mine.z).addScaledVector(dir, 5).add(new THREE.Vector3(0, 1.1, 0));
+    smoothedCamAngle = lerpAngle(smoothedCamAngle, mine.h, 1 - Math.exp(-7.5 * dt));
   }
-  desired.y = Math.max(desired.y, 0.5);
-  const k = camMode === 2 ? 1 : 1 - Math.exp(-5.2 * dt);
-  camera.position.lerp(desired, k);
-  lookTarget.lerp(look, 1 - Math.exp(-9 * dt));
-  const sp = clamp(Math.abs(mine.v) / CFG.maxSpeed, 0, 1.3);
-  const baseShake = sp > 0.72 ? (sp - 0.72) * 0.05 : 0;
-  shakeAmp = Math.max(0, shakeAmp - shakeAmp * 4.2 * dt);
+
+  const dir = new THREE.Vector3(Math.sin(smoothedCamAngle), 0, Math.cos(smoothedCamAngle));
+  const sp = clamp(Math.abs(mine.v || 0) / CFG.maxSpeed, 0, 1.3);
+
+  let desired = new THREE.Vector3();
+  let look = new THREE.Vector3();
+  let dynamicFovBoost = 0;
+
+  // Intelligent Proximity Framing: Subtle, cinematic framing bias ONLY when rival is within close battle range (< 22m)
+  const proxOffset = new THREE.Vector3();
+  const proxLook = new THREE.Vector3();
+  if (rival && rival.p === 1 && latest && latest.state !== 'waiting' && camMode === 0) {
+    const sep = Math.hypot(mine.x - rival.x, mine.z - rival.z);
+    if (sep < 22) {
+      const proxFactor = (1 - sep / 22);
+      // Subtle lateral blend toward competitor (max 10% bias, keeping YOUR car as 90% anchor)
+      const midRel = new THREE.Vector3(rival.x - mine.x, 0, rival.z - mine.z).multiplyScalar(0.10 * proxFactor);
+      proxOffset.copy(midRel);
+      proxLook.copy(midRel).multiplyScalar(1.2);
+      dynamicFovBoost = proxFactor * 4.0;
+    }
+  }
+
+  if (camMode === 0) {
+    // Mode 0: Dynamic Third-Person Chase Cam (Default AAA Racing Standard)
+    const dist = 7.6 + sp * 0.9;
+    const height = 2.7 - sp * 0.25;
+    desired = carPos.clone()
+      .addScaledVector(dir, -dist)
+      .add(new THREE.Vector3(0, height, 0))
+      .add(proxOffset);
+    look = carPos.clone()
+      .addScaledVector(dir, 6.0 + sp * 3.0)
+      .add(new THREE.Vector3(0, 1.15, 0))
+      .add(proxLook);
+  } else if (camMode === 1) {
+    // Mode 1: Close Street / Action Chase Cam
+    const dist = 5.2 + sp * 0.5;
+    const height = 1.9;
+    desired = carPos.clone()
+      .addScaledVector(dir, -dist)
+      .add(new THREE.Vector3(0, height, 0))
+      .add(proxOffset);
+    look = carPos.clone()
+      .addScaledVector(dir, 5.0 + sp * 2.0)
+      .add(new THREE.Vector3(0, 1.05, 0))
+      .add(proxLook);
+  } else if (camMode === 2) {
+    // Mode 2: Hood / Front Bumper Cam (First-Person Perspective)
+    desired = carPos.clone()
+      .addScaledVector(dir, 0.45)
+      .add(new THREE.Vector3(0, 1.15, 0));
+    look = carPos.clone()
+      .addScaledVector(dir, 35.0)
+      .add(new THREE.Vector3(0, 1.0, 0));
+  } else {
+    // Mode 3: Helicopter / Tactical Overview Cam
+    desired = carPos.clone()
+      .addScaledVector(dir, -14.0)
+      .add(new THREE.Vector3(0, 6.8, 0));
+    look = carPos.clone()
+      .addScaledVector(dir, 4.0)
+      .add(new THREE.Vector3(0, 0.8, 0));
+  }
+
+  desired.y = Math.max(desired.y, 0.45);
+  const posLerpRate = camMode === 2 ? 1 : (1 - Math.exp(-6.8 * dt));
+  camera.position.lerp(desired, posLerpRate);
+  lookTarget.lerp(look, 1 - Math.exp(-10.0 * dt));
+
+  // Subtle speed vibration (disabled when Reduced Motion is toggled)
+  const baseShake = sp > 0.75 ? (sp - 0.75) * 0.04 : 0;
+  shakeAmp = Math.max(0, shakeAmp - shakeAmp * 4.5 * dt);
   const amp = prefs.rm ? 0 : (shakeAmp + baseShake);
   if (amp > 0.001) {
     camera.position.x += (Math.random() - 0.5) * amp;
-    camera.position.y += (Math.random() - 0.5) * amp * 0.6;
+    camera.position.y += (Math.random() - 0.5) * amp * 0.4;
     camera.position.z += (Math.random() - 0.5) * amp;
   }
+
   camera.lookAt(lookTarget);
-  const fovTarget = 62 + sp * 13 + (mine.n ? 6 : 0) + (dual ? sepFov : 0);
-  if (Math.abs(camera.fov - fovTarget) > 0.05) {
-    camera.fov = lerp(camera.fov, fovTarget, 1 - Math.exp(-4.5 * dt));
+
+  // Dynamic FOV with speed sensation & nitro
+  const baseFov = camMode === 2 ? 68 : (camMode === 1 ? 64 : 60);
+  const fovTarget = baseFov + sp * 11 + (mine.n ? 5.5 : 0) + dynamicFovBoost;
+  if (Math.abs(camera.fov - fovTarget) > 0.04) {
+    camera.fov = lerp(camera.fov, fovTarget, 1 - Math.exp(-4.8 * dt));
     camera.updateProjectionMatrix();
   }
 }
@@ -4600,8 +4666,20 @@ function drawMinimap(mine, rival) {
   mctx.stroke();
   for (const cs of (latest ? latest.cars.filter((c) => c.p === 1) : [mine])) { // v76
     if (!cs || cs.p !== 1) continue;
-    mctx.fillStyle = '#' + cbCol(cs.s).toString(16).padStart(6, '0');
-    mctx.beginPath(); mctx.arc(cs.x * MSCALE, cs.z * MSCALE, 3.4, 0, Math.PI * 2); mctx.fill();
+    const isMe = cs.s === mySlot;
+    const col = '#' + cbCol(cs.s).toString(16).padStart(6, '0');
+    if (isMe) {
+      // Distinct glowing ring around YOUR car
+      mctx.strokeStyle = '#ffffff';
+      mctx.lineWidth = 1.8;
+      mctx.beginPath();
+      mctx.arc(cs.x * MSCALE, cs.z * MSCALE, 5.2, 0, Math.PI * 2);
+      mctx.stroke();
+    }
+    mctx.fillStyle = col;
+    mctx.beginPath();
+    mctx.arc(cs.x * MSCALE, cs.z * MSCALE, isMe ? 4.2 : 3.2, 0, Math.PI * 2);
+    mctx.fill();
   }
   mctx.restore();
 }
@@ -5012,6 +5090,8 @@ document.querySelectorAll('.map-btn').forEach((b) => b.addEventListener('click',
 $('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); track('share', undefined, { channel: 'code' }); });
 const exitBtn = $('exit-btn');
 if (exitBtn) exitBtn.addEventListener('click', () => net.send({ type: 'reset' }));
+const camBtn = $('cam-btn');
+if (camBtn) camBtn.addEventListener('click', cycleCamera);
 $('copy-game-link').addEventListener('click', () => { copyText($('game-link').textContent); toast('Game link copied — send it to your friend!'); track('share', selectedMap, { channel: 'link' }); });
 
 const waShareBtn = $('wa-share');
