@@ -935,7 +935,7 @@
     if (speed >= 0 && this.nitroActive) cap += CFG.nitroCapBonus;
     if ((speed > 0 && speed > cap) || (speed < 0 && speed < cap)) { this.vx -= dirX * (speed - cap); this.vy -= dirY * (speed - cap); speed = cap; }
     const lat = this.vx * rightX + this.vy * rightY;
-    const weatherGripMod = (room && room.weather && WEATHER_CONDITIONS[room.weather]) ? WEATHER_CONDITIONS[room.weather].gripMod : 1.0;
+    const weatherGripMod = (room && room.weather && WEATHER_CONDITIONS[room.weather]) ? (WEATHER_CONDITIONS[room.weather].gripMul || 1.0) : 1.0;
     const grip = (inp.handbrake ? CFG.gripHandbrake : CFG.grip * this.cls.grip) * weatherGripMod;
     const latAfter = lat * Math.max(0, 1 - grip * dt);
     const fwd = this.vx * dirX + this.vy * dirY;
