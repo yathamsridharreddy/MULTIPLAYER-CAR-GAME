@@ -9,18 +9,23 @@
   <meta property="og:image" content="https://sridhar-drift.vercel.app/img/og-card.png"/>
   <title>Sridhar Rush — Ghost Replay</title>
   <link rel="icon" href="img/logo.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap"/>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { height: 100%; background: #05070c; color: #e8ecf2; font-family: "Segoe UI", system-ui, sans-serif; overflow: hidden; }
-    #wrap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px; }
-    h1 { font-size: 16px; letter-spacing: 2px; }
-    #hud { font-size: 13px; opacity: .85; letter-spacing: .5px; }
-    canvas { background: #070a12; border: 1px solid rgba(255,255,255,.14); border-radius: 14px; max-width: 96vw; max-height: 72vh; }
-    #bar { display: flex; gap: 10px; align-items: center; }
-    button { background: rgba(255,255,255,.08); color: #e8ecf2; border: 1px solid rgba(255,255,255,.2); border-radius: 10px; padding: 8px 14px; font-weight: 700; cursor: pointer; }
-    input[type=range] { width: min(60vw, 420px); accent-color: #35e0ff; }
-    a { color: #35e0ff; text-decoration: none; font-weight: 700; }
-    #err { color: #ff8f7a; font-size: 13px; }
+    html, body { height: 100%; background: #05070c; color: #e8ecf2; font-family: 'Rajdhani', 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+    #wrap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; background: radial-gradient(circle at 50% 40%, #0d1527 0%, #05070c 80%); }
+    h1 { font: 900 18px 'Orbitron', sans-serif; letter-spacing: 2px; color: #ffffff; text-shadow: 0 0 16px rgba(0, 240, 255, 0.4); }
+    #hud { font: 800 14px 'Orbitron', monospace; color: #00f0ff; letter-spacing: 1px; background: rgba(8, 12, 22, 0.7); padding: 4px 16px; border-radius: 999px; border: 1px solid rgba(0, 240, 255, 0.3); }
+    canvas { background: #070a12; border: 1px solid rgba(0, 240, 255, 0.3); border-radius: 16px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 240, 255, 0.15); max-width: 96vw; max-height: 72vh; }
+    #bar { display: flex; gap: 12px; align-items: center; background: rgba(12, 18, 30, 0.85); padding: 10px 18px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.14); backdrop-filter: blur(12px); }
+    button { background: rgba(255, 255, 255, 0.08); color: #e8ecf2; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; padding: 6px 14px; font: 800 12px 'Orbitron', sans-serif; cursor: pointer; transition: all 0.15s ease; }
+    button:hover { background: #00f0ff; color: #05070c; border-color: #00f0ff; box-shadow: 0 0 12px rgba(0, 240, 255, 0.4); }
+    input[type=range] { width: min(50vw, 360px); accent-color: #00f0ff; cursor: pointer; }
+    a { background: linear-gradient(135deg, #00f0ff, #0284c7); color: #05070c; text-decoration: none; font: 900 12px 'Orbitron', sans-serif; letter-spacing: 1px; padding: 7px 16px; border-radius: 999px; box-shadow: 0 0 14px rgba(0, 240, 255, 0.4); transition: all 0.15s ease; }
+    a:hover { transform: translateY(-1px); box-shadow: 0 0 20px rgba(0, 240, 255, 0.6); }
+    #err { color: #ff2e54; font-size: 13px; font-weight: 700; }
   </style>
 </head>
 <body>

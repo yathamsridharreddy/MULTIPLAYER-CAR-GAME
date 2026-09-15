@@ -4,6 +4,7 @@
   "private": true,
   "description": "Sridhar Rush — online multiplayer 3D racing; phones as joysticks.",
   "scripts": {
+    "build": "node scripts/vercel-build.js",
     "start": "node server.js",
     "test": "NODE_PATH=./node_modules node --test test/*.test.js"
   },
