@@ -1955,18 +1955,18 @@ function openGarage() {
   const body = $('garage-body');
   const acc = window.SRAccount;
   if (!(acc && acc.loggedIn())) {
-    body.innerHTML = '<div class="p-empty">Sign in to open your garage — cars, paints, neon and more unlock as you race.<br><br><button id="g-signin" class="big-cta">SIGN IN / CREATE ACCOUNT</button></div>';
+    body.innerHTML = '<div class="p-empty">' + (tI18n('accountSub') || 'Sign in to open your garage — cars, paints, neon and more unlock as you race.') + '<br><br><button id="g-signin" class="big-cta">' + (tI18n('signin') || 'SIGN IN / CREATE ACCOUNT') + '</button></div>';
     const b = $('g-signin'); if (b) b.addEventListener('click', () => { dlg.hidden = true; const ab = $('account-btn'); if (ab) ab.click(); });
     return;
   }
-  body.innerHTML = '<div class="p-empty">Opening garage…</div>';
+  body.innerHTML = '<div class="p-empty">' + (tI18n('loadingCircuit') || 'Opening garage…') + '</div>';
   (async () => {
     const gd = await garageData();
     if (!gd) return;
     const { d, coins } = gd;
     const eq = myEq || { car: 'street_runner', paint: 0, wheels: 0, trail: 0, decal: 0, neon: 0 };
-    let html = '<div class="g-head">🪙 <b>' + coins + '</b> RUSH COINS <span class="g-hint">earn coins by racing · dailies · wins</span></div>';
-    html += '<div class="p-sub">MY CARS</div><div class="g-cars">';
+    let html = '<div class="g-head">🪙 <b>' + coins + '</b> ' + (tI18n('rushCoins') || 'RUSH COINS') + ' <span class="g-hint">earn coins by racing · dailies · wins</span></div>';
+    html += '<div class="p-sub">' + (tI18n('myCars') || 'MY CARS') + '</div><div class="g-cars">';
     for (const c of (window.SRCos ? SRCos.CARS : [])) {
       const un = SRCos.itemUnlocked(c.unlock, d, 'car:' + c.id);
       const sel = eq.car === c.id;
@@ -1974,7 +1974,7 @@ function openGarage() {
         '<div class="g-cn" style="color:' + SRCos.RARITY[c.rarity] + '">' + c.name + '</div>' +
         '<div class="g-cr">' + c.rarity.toUpperCase() + '</div>' +
         '<div class="g-bars">' + c.bars.map((b) => '<i style="width:' + (b * 10) + '%"></i>').join('') + '</div>' +
-        (sel ? '<div class="g-st">SELECTED</div>' : un ? '<button class="ghost sm g-eq" data-car="' + c.id + '">SELECT</button>' : '<div class="g-lock">🔒 ' + SRCos.unlockText(c.unlock) + '</div>') +
+        (sel ? '<div class="g-st">' + (tI18n('selected') || 'SELECTED') + '</div>' : un ? '<button class="ghost sm g-eq" data-car="' + c.id + '">' + (tI18n('select') || 'SELECT') + '</button>' : '<div class="g-lock">🔒 ' + SRCos.unlockText(c.unlock) + '</div>') +
         '</div>';
     }
     html += '</div>';
@@ -1990,7 +1990,11 @@ function openGarage() {
       }
       return h + '</div>';
     };
-    html += sect('PAINT', SRCos.PAINTS, 'paint') + sect('WHEELS', SRCos.WHEELS, 'wheels') + sect('TRAILS', SRCos.TRAILS, 'trail') + sect('DECALS', SRCos.DECALS, 'decal') + sect('NEON', SRCos.NEONS, 'neon');
+    html += sect(tI18n('paint') || 'PAINT', SRCos.PAINTS, 'paint') +
+      sect(tI18n('wheelsCat') || 'WHEELS', SRCos.WHEELS, 'wheels') +
+      sect(tI18n('trailsCat') || 'TRAILS', SRCos.TRAILS, 'trail') +
+      sect(tI18n('decalsCat') || 'DECALS', SRCos.DECALS, 'decal') +
+      sect(tI18n('neonCat') || 'NEON', SRCos.NEONS, 'neon');
     body.innerHTML = html;
     body.querySelectorAll('.g-eq').forEach((b) => b.addEventListener('click', () => {
       net.send({ type: 'equip', eq: Object.assign({}, eq, { car: b.dataset.car }) });
@@ -2015,17 +2019,18 @@ function renderRoomLobby(e) {
   if (!e) return;
   const el = $('room-players'); if (!el) return;
   const ps = e.players || [];
-  $('room-count') && ($('room-count').textContent = ps.length + ' / ' + (e.cap || 6) + ' PLAYERS');
+  $('room-count') && ($('room-count').textContent = tI18n('playersCount', { count: ps.length, cap: e.cap || 6 }) || (ps.length + ' / ' + (e.cap || 6) + ' PLAYERS'));
   el.innerHTML = ps.map((p) => {
     const crewBadge = p.crewTag ? `<span class="syndicate-tag">[${escapeHtml(p.crewTag)}]</span> ` : '';
+    const readyTxt = p.ready ? (tI18n('ready') || 'READY') : (tI18n('notReady') || 'NOT READY');
     return '<div class="rp-row' + (p.slot === mySlot ? ' me' : '') + '"><span class="rp-slot">' + p.slot + '</span>' +
       '<span class="rp-name">' + crewBadge + escapeHtml(p.name) + (p.host ? ' 👑' : '') + '</span>' +
       '<span class="rp-rating">' + (p.rating != null ? p.rating : '—') + '</span>' +
-      '<span class="rp-ready ' + (p.ready ? 'on' : '') + '">' + (p.ready ? 'READY' : 'NOT READY') + '</span></div>';
+      '<span class="rp-ready ' + (p.ready ? 'on' : '') + '">' + readyTxt + '</span></div>';
   }).join('') +
-    (ps.length < (e.cap || 6) ? '<div class="rp-row empty"><span class="rp-slot">·</span><span class="rp-name dim">open slot — share the code</span></div>' : '');
+    (ps.length < (e.cap || 6) ? '<div class="rp-row empty"><span class="rp-slot">·</span><span class="rp-name dim">' + (tI18n('openSlot') || 'open slot — share the code') + '</span></div>' : '');
   const rb = $('ready-btn');
-  if (rb) { rb.hidden = ps.length < 3; rb.textContent = iAmReady ? '✅ READY' : '🏁 READY UP'; }
+  if (rb) { rb.hidden = ps.length < 3; rb.textContent = iAmReady ? ('✅ ' + (tI18n('ready') || 'READY')) : ('🏁 ' + (tI18n('readyUp') || 'READY UP')); }
 }
 window.renderRoomLobby = renderRoomLobby;
 // v73 wiring: profile / ratings access points
@@ -2847,7 +2852,7 @@ async function openBadgesShowcase() {
   const body = $('badges-body');
   if (!body) return;
   dlg.hidden = false;
-  body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:20px;">Loading badges…</div>';
+  body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:20px;">' + (tI18n('loadingCircuit') || 'Loading badges…') + '</div>';
   const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
   try {
     const res = await fetch(`${httpBase()}/api/player/badges?uid=${encodeURIComponent(uid)}`).then(r => r.json());
@@ -2861,11 +2866,11 @@ async function openBadgesShowcase() {
               <div class="badge-card ${unlocked ? 'unlocked' : ''}">
                 <div class="bc-icon">${b.icon || '🎖️'}</div>
                 <div class="bc-title">${escapeHtml(b.title)}</div>
-                <div class="bc-tier">${unlocked ? 'Tier ' + b.tierLevel + ' (' + b.tierName + ')' : 'Locked'}</div>
+                <div class="bc-tier">${unlocked ? (tI18n('tier', { tier: b.tierLevel, tierName: b.tierName }) || ('Tier ' + b.tierLevel + ' (' + b.tierName + ')')) : (tI18n('locked') || 'Locked')}</div>
                 <div class="bc-desc">${escapeHtml(b.desc)}</div>
                 <div class="bc-bar-wrap"><div class="bc-bar-fill" style="width:${pct}%"></div></div>
                 <div style="font-size:10px; color:#8b93a8;">${b.progress}/${b.target}</div>
-                ${unlocked ? `<button class="bc-btn ${b.equipped ? 'active' : ''}" onclick="equipMilestoneBadge('${b.badgeId}')">${b.equipped ? '⭐ EQUIPPED' : 'EQUIP'}</button>` : ''}
+                ${unlocked ? `<button class="bc-btn ${b.equipped ? 'active' : ''}" onclick="equipMilestoneBadge('${b.badgeId}')">${b.equipped ? ('⭐ ' + (tI18n('equipped') || 'EQUIPPED')) : (tI18n('equip') || 'EQUIP')}</button>` : ''}
               </div>
             `;
           }).join('')}
@@ -2886,7 +2891,7 @@ window.equipMilestoneBadge = async function(badgeId) {
       body: JSON.stringify({ uid, badgeId })
     }).then(r => r.json());
     if (res && res.ok) {
-      toast(`🎖️ Equipped badge: ${badgeId}!`);
+      toast(tI18n('equippedBadge', { badge: badgeId }) || `🎖️ Equipped badge: ${badgeId}!`);
       openBadgesShowcase();
     }
   } catch (e) {}
@@ -2899,7 +2904,7 @@ async function openBountiesModal() {
   const body = $('bounties-body');
   if (!body) return;
   dlg.hidden = false;
-  body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:20px;">Loading bounties…</div>';
+  body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:20px;">' + (tI18n('loadingCircuit') || 'Loading bounties…') + '</div>';
   const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
   try {
     const res = await fetch(`${httpBase()}/api/competitions/weekly/bounties?uid=${encodeURIComponent(uid)}`).then(r => r.json());
@@ -2914,10 +2919,10 @@ async function openBountiesModal() {
                   <b style="font-size:13px; color:#fff;">${b.icon || '🏆'} ${escapeHtml(b.title)}</b>
                   <span style="font-size:11px; color:#8b93a8;">${escapeHtml(b.desc)}</span>
                   <div class="lcomp-m-bar" style="width:180px;"><div class="lcomp-m-fill ${b.completed ? 'done' : ''}" style="width:${pct}%"></div></div>
-                  <span style="font-size:10.5px; color:#ffd479;">Rewards: +${b.xpReward} XP · +${b.coinReward} 🪙 · +${b.ptsReward} Pts</span>
+                  <span style="font-size:10.5px; color:#ffd479;">${tI18n('rewardsText', { xp: b.xpReward, coins: b.coinReward, pts: b.ptsReward }) || `Rewards: +${b.xpReward} XP · +${b.coinReward} 🪙 · +${b.ptsReward} Pts`}</span>
                 </div>
                 <div>
-                  ${b.completed && !b.claimed ? `<button class="alc-btn" onclick="claimWeeklyBountyReward('${b.id}')">🎁 CLAIM</button>` : (b.claimed ? '<span style="color:#7ee78a; font-weight:800;">CLAIMED</span>' : `<span style="color:#cfd6dd;">${b.progress}/${b.goal}</span>`)}
+                  ${b.completed && !b.claimed ? `<button class="alc-btn" onclick="claimWeeklyBountyReward('${b.id}')">🎁 ${tI18n('claimBounty') || 'CLAIM'}</button>` : (b.claimed ? `<span style="color:#7ee78a; font-weight:800;">${tI18n('claimed') || 'CLAIMED'}</span>` : `<span style="color:#cfd6dd;">${b.progress}/${b.goal}</span>`)}
                 </div>
               </div>
             `;
@@ -2939,7 +2944,7 @@ window.claimWeeklyBountyReward = async function(bountyId) {
       body: JSON.stringify({ uid, bountyId })
     }).then(r => r.json());
     if (res && res.ok) {
-      toast(`🏆 Bounty claimed! +${res.xpAwarded} XP · +${res.coinsAwarded} Coins!`);
+      toast(tI18n('claimedBounty', { xp: res.xpAwarded, coins: res.coinsAwarded }) || `🏆 Bounty claimed! +${res.xpAwarded} XP · +${res.coinsAwarded} Coins!`);
       openBountiesModal();
       fetchAndRenderRetention();
     }
@@ -2961,7 +2966,7 @@ async function openCrewModal(tab = 'my') {
     if (btn) btn.classList.toggle('active', t === tab);
   });
 
-  body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:30px;">Loading Syndicate…</div>';
+  body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:30px;">' + (tI18n('loadingCircuit') || 'Loading Syndicate…') + '</div>';
   const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
 
   if (tab === 'my') {
@@ -2976,20 +2981,20 @@ async function openCrewModal(tab = 'my') {
                 <span class="syndicate-tag" style="background:${c.color || '#ff3366'};">[${escapeHtml(c.tag)}]</span>
                 <span class="chc-name">${c.badge || '⚡'} ${escapeHtml(c.name)}</span>
               </div>
-              <span style="font:800 11px Orbitron; color:#ffd479;">${c.isLeader ? '👑 LEADER' : 'MEMBER'}</span>
+              <span style="font:800 11px Orbitron; color:#ffd479;">${c.isLeader ? ('👑 ' + (tI18n('leader') || 'LEADER')) : (tI18n('member') || 'MEMBER')}</span>
             </div>
             <div class="chc-motto">"${escapeHtml(c.motto || 'Speed is our only law')}"</div>
             <div class="chc-stats">
-              <div class="chc-stat-col"><span>WEEKLY MILEAGE</span><b>${c.weeklyKm} km</b></div>
-              <div class="chc-stat-col"><span>GRAND PRIX PTS</span><b>${c.weeklyPoints}</b></div>
-              <div class="chc-stat-col"><span>TOTAL MILEAGE</span><b>${c.totalKm} km</b></div>
+              <div class="chc-stat-col"><span>${tI18n('weeklyMileage') || 'WEEKLY MILEAGE'}</span><b>${c.weeklyKm} km</b></div>
+              <div class="chc-stat-col"><span>${tI18n('grandPrixPts') || 'GRAND PRIX PTS'}</span><b>${c.weeklyPoints}</b></div>
+              <div class="chc-stat-col"><span>${tI18n('totalMileage') || 'TOTAL MILEAGE'}</span><b>${c.totalKm} km</b></div>
             </div>
           </div>
 
           <div class="crew-milestone-track">
             <div class="cmt-header">
-              <span>WEEKLY SYNDICATE MILESTONES (TIER ${c.currentTier}/5)</span>
-              <span>${c.progressPct}% TO NEXT</span>
+              <span>${tI18n('weeklyMilestones', { tier: c.currentTier }) || `WEEKLY SYNDICATE MILESTONES (TIER ${c.currentTier}/5)`}</span>
+              <span>${tI18n('pctToNext', { pct: c.progressPct }) || `${c.progressPct}% TO NEXT`}</span>
             </div>
             <div class="cmt-bar-wrap"><div class="cmt-bar-fill" style="width:${c.progressPct}%;"></div></div>
             <div class="cmt-list">
@@ -2997,16 +3002,16 @@ async function openCrewModal(tab = 'my') {
                 <div class="cmt-item ${m.completed ? 'completed' : ''}">
                   <b>T${m.tier} · ${m.reqKm}km</b>
                   <span>+${m.reward.xp} XP · +${m.reward.coins} 🪙</span>
-                  ${m.canClaim ? `<button class="cmt-claim-btn" onclick="claimCrewMilestoneReward(${m.tier})">CLAIM</button>` : (m.claimed ? '<span class="cmt-claim-btn claimed">CLAIMED</span>' : `<span>${m.completed ? '✅ REACHED' : m.reqKm + 'km'}</span>`)}
+                  ${m.canClaim ? `<button class="cmt-claim-btn" onclick="claimCrewMilestoneReward(${m.tier})">${tI18n('claimBounty') || 'CLAIM'}</button>` : (m.claimed ? `<span class="cmt-claim-btn claimed">${tI18n('claimed') || 'CLAIMED'}</span>` : `<span>${m.completed ? '✅ REACHED' : m.reqKm + 'km'}</span>`)}
                 </div>
               `).join('')}
             </div>
           </div>
 
           <div style="margin-top:16px;">
-            <div style="font:800 12px Orbitron; color:#fff; margin-bottom:8px;">👥 CREW ROSTER (${c.members.length} RACERS)</div>
+            <div style="font:800 12px Orbitron; color:#fff; margin-bottom:8px;">${tI18n('crewRoster', { count: c.members.length }) || `👥 CREW ROSTER (${c.members.length} RACERS)`}</div>
             <table class="crew-lb-table">
-              <thead><tr><th>RACER</th><th>ROLE</th><th>WEEKLY DISTANCE</th><th>POINTS</th></tr></thead>
+              <thead><tr><th>${tI18n('racerTh') || 'RACER'}</th><th>${tI18n('roleTh') || 'ROLE'}</th><th>${tI18n('weeklyDistTh') || 'WEEKLY DISTANCE'}</th><th>${tI18n('pointsTh') || 'POINTS'}</th></tr></thead>
               <tbody>
                 ${c.members.map(m => `
                   <tr>
@@ -3024,11 +3029,11 @@ async function openCrewModal(tab = 'my') {
         body.innerHTML = `
           <div style="text-align:center; padding:30px 10px;">
             <div style="font-size:36px; margin-bottom:10px;">🏁</div>
-            <h3 style="font:800 16px Orbitron; color:#fff; margin-bottom:6px;">NO MOTORSPORT CLUB YET</h3>
-            <p style="font-size:12px; color:#8b93a8; max-width:400px; margin:0 auto 18px;">Join a top motorsport club to pool weekly mileage, unlock exclusive team milestone rewards, and compete in the Club Championship!</p>
+            <h3 style="font:800 16px Orbitron; color:#fff; margin-bottom:6px;">${tI18n('noClubYet') || 'NO MOTORSPORT CLUB YET'}</h3>
+            <p style="font-size:12px; color:#8b93a8; max-width:400px; margin:0 auto 18px;">${tI18n('noClubDesc') || 'Join a top motorsport club to pool weekly mileage, unlock exclusive team milestone rewards, and compete in the Club Championship!'}</p>
             <div style="display:flex; justify-content:center; gap:10px;">
-              <button class="big-cta" onclick="openCrewModal('join')">⚡ JOIN A MOTORSPORT CLUB</button>
-              <button class="ghost" onclick="openCrewModal('create')">➕ FOUND A CLUB</button>
+              <button class="big-cta" onclick="openCrewModal('join')">${tI18n('joinClubBtn') || '⚡ JOIN A MOTORSPORT CLUB'}</button>
+              <button class="ghost" onclick="openCrewModal('create')">${tI18n('foundClubBtn') || '➕ FOUND A CLUB'}</button>
             </div>
           </div>
         `;
@@ -3041,7 +3046,7 @@ async function openCrewModal(tab = 'my') {
       const res = await fetch(`${httpBase()}/api/crews`).then(r => r.json());
       const crews = (res && res.crews) || [];
       body.innerHTML = `
-        <div style="margin-bottom:12px; font:700 12px Orbitron; color:#7ee7ff;">SELECT A MOTORSPORT CLUB TO JOIN:</div>
+        <div style="margin-bottom:12px; font:700 12px Orbitron; color:#7ee7ff;">${tI18n('selectClubJoin') || 'SELECT A MOTORSPORT CLUB TO JOIN:'}</div>
         <div class="crew-preset-grid">
           ${crews.map(cr => `
             <div class="crew-preset-card" style="border-color:${cr.color || 'rgba(255,255,255,0.1)'};">
@@ -3535,10 +3540,13 @@ function achCheck(extra) {
 // ---------------------------------------------------------------------------
 // v44: lobby i18n (EN/TE/HI) + Founders Cup panel + 🔥 streak badge. Additive.
 // ---------------------------------------------------------------------------
-function tI18n(k) {
+function tI18n(k, params) {
+  if (typeof window.tI18n === 'function') {
+    return window.tI18n(k, params, prefs.lang);
+  }
   const D = window.SRI18N; if (!D) return null;
   const L = D[prefs.lang] || D.en;
-  return L[k] || D.en[k] || null;
+  return (L && L[k]) || (D.en && D.en[k]) || null;
 }
 function applyI18n() {
   if (!window.SRI18N) return;
@@ -3546,8 +3554,22 @@ function applyI18n() {
     const s = tI18n(el.getAttribute('data-i18n'));
     if (s) el.textContent = s;
   });
-  const lb = $('lang-btn'); if (lb) lb.textContent = '🌐 ' + (window.SRI18N_LABEL[prefs.lang] || 'EN');
+  document.querySelectorAll('[data-i18n-html]').forEach((el) => {
+    const s = tI18n(el.getAttribute('data-i18n-html'));
+    if (s) el.innerHTML = s;
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+    const s = tI18n(el.getAttribute('data-i18n-placeholder'));
+    if (s) el.placeholder = s;
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    const s = tI18n(el.getAttribute('data-i18n-title'));
+    if (s) el.title = s;
+  });
+  const lb = $('lang-btn'); if (lb) lb.textContent = '🌐 ' + ((window.SRI18N_LABEL && window.SRI18N_LABEL[prefs.lang]) || (prefs.lang || 'EN').toUpperCase());
   paintDailyHeader();
+  if (typeof renderProfile === 'function') renderProfile();
+  if (typeof fetchAndRenderRetention === 'function') fetchAndRenderRetention();
 }
 // pure + testable: consecutive play days ending today (or yesterday if not yet played today)
 function computeStreak(days, todayStr) {
@@ -3591,8 +3613,8 @@ function renderCup(rows) {
 (function () {
   const langBtn = $('lang-btn');
   if (langBtn) langBtn.addEventListener('click', () => {
-    const order = ['en', 'te', 'hi'];
-    prefs.lang = order[(order.indexOf(prefs.lang || 'en') + 1) % 3];
+    const order = ['en', 'te', 'hi', 'es'];
+    prefs.lang = order[(order.indexOf(prefs.lang || 'en') + 1) % order.length];
     savePrefs(); applyI18n();
   });
   const cupBtn = $('cup-share');
@@ -3691,20 +3713,20 @@ function processEvents(snap) {
   for (const e of snap.events || []) {
     switch (e.type) {
       case 'count': showCount(String(e.n)); beep(392, 0.14, 'square', 0.24); break;
-      case 'go': showCount('GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); v60OnGo(); break;
+      case 'go': showCount(tI18n('countdownGo') || 'GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); v60OnGo(); break;
       case 'crash': onCrashFX(e.x, e.z, e.s); if (e.slot === mySlot) v60OnCrashMine(); break;
       case 'lap':
         if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); recordPlayDay(); achCheck({ map: snap.map, lapT: e.t }); }
         if (e.slot === mySlot && e.best) v60OnBestLap(snap.map != null ? snap.map : builtMapId, e.t);
         toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
-      case 'finallap': toast(`🔥 P${e.slot}: FINAL LAP!`); beep(660, 0.14, 'square', 0.2); break;
-      case 'elim': setBanner(`❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
+      case 'finallap': toast(`🔥 P${e.slot}: ` + (tI18n('finalLap') || 'FINAL LAP!')); beep(660, 0.14, 'square', 0.2); break;
+      case 'elim': setBanner(tI18n('eliminated', { slot: e.slot }) || `❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
       case 'win':
         if (e.slot === mySlot) {
           track('fin', snap.map != null ? snap.map : builtMapId);
           achCheck({ win: true, map: snap.map });
         }
-        setBanner(e.multi ? `🏁 PLAYER ${e.slot} WINS!` : `🏁 FINISH — ${fmtTime(e.t)}`); confetti(); winJingle(); break;
+        setBanner(e.multi ? (tI18n('playerWins', { slot: e.slot }) || `🏁 PLAYER ${e.slot} WINS!`) : (tI18n('finishTime', { time: fmtTime(e.t) }) || `🏁 FINISH — ${fmtTime(e.t)}`)); confetti(); winJingle(); break;
       case 'pu': { const nm = ['⚡ BOOST', '🛡️ SHIELD', '🌀 SLOW'][e.ptype] || 'PU'; toast(`P${e.slot} grabbed ${nm}!`); beep(980, 0.12, 'square', 0.2); break; }
       case 'respawn': if (e.slot === mySlot) { toast('🔄 Back on track'); beep(220, 0.2, 'sawtooth', 0.18); } break;
       case 'rematch': toast(`🔁 Rematch vote ${e.n}/${e.total}`); break;

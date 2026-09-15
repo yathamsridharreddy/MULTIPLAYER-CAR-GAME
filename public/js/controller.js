@@ -242,7 +242,18 @@ if (ctrlRematch) {
 
 // v45: iOS install hint (iPhones have no native install prompt)
 (function () {
+  if (typeof window.tI18n === 'function') {
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const s = window.tI18n(el.getAttribute('data-i18n'));
+      if (s) el.textContent = s;
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+      const s = window.tI18n(el.getAttribute('data-i18n-placeholder'));
+      if (s) el.placeholder = s;
+    });
+  }
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone;
+
   let seen = false; try { seen = !!localStorage.getItem('sr_ios_hint'); } catch (e) {}
   const el = $('ios-hint'); if (!el || !isIOS || seen) return;
   el.hidden = false;
