@@ -33,6 +33,16 @@ const IDLE_ROOM_MS = 10 * 60 * 1000;
 
 const app = express();
 app.disable('x-powered-by');
+
+// Global CORS & pre-flight handler for cross-origin frontend (e.g. Vercel -> Koyeb)
+app.use((req, res, next) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, apikey, Prefer, X-Requested-With');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.use(express.json());
 
 // ---------------------------------------------------------------------------
