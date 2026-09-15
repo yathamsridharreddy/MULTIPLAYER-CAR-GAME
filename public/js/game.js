@@ -2296,24 +2296,62 @@ function setBanner(text) {
   const b = $('banner'); b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
   clearTimeout(setBanner._t); setBanner._t = setTimeout(() => b.classList.remove('show'), 4200);
 }
-function confetti() {
+function confetti(intensity = 'gold') {
   if (prefs.rm) return;
-  const c = $('confetti'); c.innerHTML = '';
-  const colors = ['#ff5252', '#ffd479', '#42a5f5', '#3ddc84', '#ffffff'];
-  for (let i = 0; i < 90; i++) {
+  const c = $('confetti'); if (!c) return;
+  c.innerHTML = '';
+  const colors = intensity === 'gold'
+    ? ['#ffd479', '#ffaa00', '#ffffff', '#00f0ff', '#ffe699']
+    : ['#ff5252', '#ffd479', '#42a5f5', '#3ddc84', '#ffffff'];
+  const count = intensity === 'gold' ? 110 : 55;
+  for (let i = 0; i < count; i++) {
     const p = document.createElement('i');
     p.style.left = (Math.random() * 100) + 'vw';
     p.style.background = colors[i % colors.length];
-    p.style.animationDelay = (Math.random() * 0.9) + 's';
+    p.style.animationDelay = (Math.random() * 0.8) + 's';
     p.style.animationDuration = (2.2 + Math.random() * 1.8) + 's';
+    p.style.width = (6 + Math.random() * 6) + 'px';
+    p.style.height = (10 + Math.random() * 8) + 'px';
     c.appendChild(p);
   }
-  setTimeout(() => { c.innerHTML = ''; }, 6500);
+  setTimeout(() => { if (c) c.innerHTML = ''; }, 6500);
+}
+function soundUiClick() {
+  if (prefs.mute) return;
+  try {
+    ensureAudio(); if (!audio || !audio.ctx) return;
+    const ctx = audio.ctx, t = ctx.currentTime;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(750, t);
+    osc.frequency.exponentialRampToValueAtTime(350, t + 0.04);
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+    osc.connect(g); g.connect(audio.master);
+    osc.start(t); osc.stop(t + 0.05);
+  } catch (e) {}
+}
+function soundCountdownTick(isGo) {
+  if (prefs.mute) return;
+  try {
+    ensureAudio(); if (!audio || !audio.ctx) return;
+    const ctx = audio.ctx, t = ctx.currentTime;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = isGo ? 'sawtooth' : 'triangle';
+    osc.frequency.setValueAtTime(isGo ? 880 : 440, t);
+    if (isGo) osc.frequency.exponentialRampToValueAtTime(1760, t + 0.3);
+    g.gain.setValueAtTime(isGo ? 0.3 : 0.18, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (isGo ? 0.35 : 0.16));
+    osc.connect(g); g.connect(audio.master);
+    osc.start(t); osc.stop(t + (isGo ? 0.38 : 0.18));
+  } catch (e) {}
 }
 function showCount(txt) {
-  const el = $('count-num'); el.textContent = txt;
-  el.classList.toggle('go', txt === 'GO!');
+  const el = $('count-num'); if (!el) return;
+  el.textContent = txt;
+  const isGo = txt === 'GO!';
+  el.classList.toggle('go', isGo);
   el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+  soundCountdownTick(isGo);
 }
 let pendingSettle = []; // v73 server-settled XP/rating rows
 function showResults(order) {
@@ -2333,6 +2371,18 @@ function showResults(order) {
     rows.appendChild(div);
   });
   $('results-title').textContent = winner ? `🏁 ${escapeHtml(winner.name || ('PLAYER ' + winner.slot))} WINS!` : '🏁 RACE RESULTS';
+  // Podium celebration & fanfare
+  const myRes = order.find((c) => (c.slot || c.s) === mySlot);
+  if (myRes) {
+    const myPos = order.indexOf(myRes) + 1;
+    if (myPos === 1) {
+      confetti('gold');
+      winJingle(true);
+    } else if (myPos === 2 || myPos === 3) {
+      confetti('silver');
+      winJingle(false);
+    }
+  }
   // v65 full result summary: position/time/best lap/PB/rival gap/streak/board rank
   const rs = $('res-summary');
   if (rs && !TT.on) {
@@ -4408,7 +4458,11 @@ function beep(freq, dur = 0.15, type = 'square', vol = 0.22) {
   o.start(); o.stop(ctx.currentTime + dur + 0.05);
 }
 function playHorn() { beep(415, 0.35, 'triangle', 0.28); }
-function winJingle() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.24, 'triangle', 0.26), i * 150)); }
+function winJingle(isFirst = true) {
+  if (prefs.mute) return;
+  const notes = isFirst ? [523.25, 659.25, 783.99, 1046.50, 1318.51] : [440, 554.37, 659.25];
+  notes.forEach((f, i) => setTimeout(() => beep(f, 0.22, 'sine', 0.24), i * 140));
+}
 function updateAudio(mine, rival) {
   if (!audio) return;
   if (audio.ctx.state === 'suspended') { audio.ctx.resume(); return; }
@@ -5183,4 +5237,8 @@ function frame() {
   }
 }
 let bootHidden = false;
+document.addEventListener('click', (e) => {
+  const b = e.target && e.target.closest('button, .mob-choice-btn, .ltab, .btab, .ctab, .mf-pill, .map-card, .weather-btn, .car-card');
+  if (b) soundUiClick();
+}, { passive: true });
 frame();

@@ -68,6 +68,13 @@ class RoomLink {
   send(msg) {
     if (this.open && this.ws && this.ws.readyState === WebSocket.OPEN) { try { this.ws.send(JSON.stringify(msg)); } catch (e) {} }
   }
+  close() {
+    this.closedByUser = true;
+    if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null; }
+    if (this.ws) { try { this.ws.close(); } catch (e) {} this.ws = null; }
+    this.open = false;
+    this.status('disconnected');
+  }
   isOpen() { return this.open && this.ws && this.ws.readyState === WebSocket.OPEN; }
 }
 

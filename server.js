@@ -1657,7 +1657,7 @@ async function settleRace(entryOrRoom) {
   const today = new Date().toISOString().slice(0, 10);
   let dailyMap = -1; try { dailyMap = dailyInfo().map; } catch (e) {}
   const uids = humans.map((h) => h.uid);
-  const uq = uids.map((u) => 'user_id=eq.' + u).join('&');
+  const uq = uids.length === 1 ? 'user_id=eq.' + encodeURIComponent(uids[0]) : 'user_id=in.(' + uids.map(encodeURIComponent).join(',') + ')';
   let stats = {}, recs = {}, achHave = {}, mapCount = {}, seasXp = {}, season = null;
   if (sbOn()) {
     try { const r = await fetch(SB_URL + '/rest/v1/seasons?order=id.desc&limit=1&select=id,name,end_at', { headers: sbHdr() }); if (r.ok) { const j = await r.json(); season = j[0] || null; } } catch (e) {}
@@ -2417,7 +2417,10 @@ function handleMessage(client, msg) {
       break;
 
     case 'input': {
-      client.msgs = (client.msgs || 0) + 1; if (client.msgs > 240) { try { client.ws.close(); } catch (e) {} return; } // v76 spam guard
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (client._msgSec !== nowSec) { client._msgSec = nowSec; client._msgCount = 0; }
+      client._msgCount = (client._msgCount || 0) + 1;
+      if (client._msgCount > 180) return; // throttle flood
       if (!client.entry) return;
       const room = client.entry.room;
       if (client.role === 'controller' && client.slot) {
@@ -2689,7 +2692,7 @@ const tickInterval = setInterval(() => {
     }
 
     // garbage-collect abandoned rooms
-    if (entry.screens.size === 0 && entry.controllers.size === 0 && now - (entry.lastHuman || 0) > IDLE_ROOM_MS) {
+    if (entry.screens.size === 0 && entry.controllers.size === 0 && (now - (entry.room.lastActivity || 0) > 60 * 1000 || now - (entry.lastHuman || 0) > IDLE_ROOM_MS)) {
       rooms.delete(code); // v77 BUG-004: bots can no longer keep abandoned rooms alive
       console.log(`[room ${code}] closed (idle)`);
     }
@@ -2697,7 +2700,7 @@ const tickInterval = setInterval(() => {
 }, TICK_MS);
 if (tickInterval.unref) tickInterval.unref();
 
-app.get('/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.json({ ok: true, rooms: rooms.size, tickHz: core.CFG.tickHz });
 });
@@ -2705,7 +2708,7 @@ app.get('/health', (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v78', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v85', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
