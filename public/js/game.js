@@ -3541,12 +3541,16 @@ function achCheck(extra) {
 // v44: lobby i18n (EN/TE/HI) + Founders Cup panel + 🔥 streak badge. Additive.
 // ---------------------------------------------------------------------------
 function tI18n(k, params) {
-  if (typeof window.tI18n === 'function') {
-    return window.tI18n(k, params, prefs.lang);
+  const lang = (typeof prefs !== 'undefined' && prefs.lang) || 'en';
+  const D = window.SRI18N || {};
+  const L = D[lang] || D.en || {};
+  let res = L[k] != null ? L[k] : ((D.en && D.en[k] != null) ? D.en[k] : k);
+  if (params && typeof params === 'object') {
+    Object.keys(params).forEach((p) => {
+      res = String(res).replace(new RegExp('\\{' + p + '\\}', 'g'), params[p]);
+    });
   }
-  const D = window.SRI18N; if (!D) return null;
-  const L = D[prefs.lang] || D.en;
-  return (L && L[k]) || (D.en && D.en[k]) || null;
+  return res;
 }
 function applyI18n() {
   if (!window.SRI18N) return;

@@ -1308,8 +1308,8 @@ window.SRI18N_LABEL = {
  * @param {string} [lang] Optional override language
  */
 window.tI18n = function(k, params, lang) {
-  const curLang = lang || (window.prefs && window.prefs.lang) || localStorage.getItem('sr_lang') || 'en';
-  const D = window.SRI18N || {};
+  const curLang = lang || (typeof prefs !== 'undefined' && prefs.lang) || (typeof window !== 'undefined' && window.prefs && window.prefs.lang) || (typeof localStorage !== 'undefined' && localStorage.getItem('sr_lang')) || 'en';
+  const D = (typeof window !== 'undefined' && window.SRI18N) || {};
   const L = D[curLang] || D.en || {};
   let res = L[k] != null ? L[k] : ((D.en && D.en[k] != null) ? D.en[k] : k);
   if (params && typeof params === 'object') {
