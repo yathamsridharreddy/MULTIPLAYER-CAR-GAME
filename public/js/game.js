@@ -1284,10 +1284,15 @@ for (let i = 0; i < 50; i++) {
   const spr = new THREE.Sprite(mat); spr.visible = false; scene.add(spr);
   flamePool.push({ spr, mat, life: 0 });
 }
-function spawnFlame(wp) {
+function spawnFlame(x, y, z) {
   const p = flamePool.find((q) => q.life <= 0); if (!p) return;
   p.life = 0.14 + Math.random() * 0.08;
-  p.spr.position.copy(wp); p.spr.scale.setScalar(0.5 + Math.random() * 0.5); p.spr.visible = true;
+  if (typeof x === 'object' && x !== null) {
+    p.spr.position.copy(x);
+  } else {
+    p.spr.position.set(x, y, z);
+  }
+  p.spr.scale.setScalar(0.5 + Math.random() * 0.5); p.spr.visible = true;
 }
 
 // v83 Weather particles: water spray, snow spray, falling rain, blizzard snow
@@ -1435,11 +1440,12 @@ const skidGeo = new THREE.PlaneGeometry(0.26, 0.95); skidGeo.rotateX(-Math.PI / 
 const skidMesh = new THREE.InstancedMesh(skidGeo, new THREE.MeshBasicMaterial({ color: 0x0c0d10, transparent: true, opacity: 0.5, depthWrite: false }), SKID_MAX);
 skidMesh.count = 0; scene.add(skidMesh);
 let skidIdx = 0;
-const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sup = new THREE.Vector3(0, 1, 0);
+const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sup = new THREE.Vector3(0, 1, 0), _spos = new THREE.Vector3(), _sone = new THREE.Vector3(1, 1, 1);
 function spawnSkid(x, z, heading) {
   if (Math.abs(CORE.radialDistToTrack(x, z, A, B).d) > RH + 0.5) return;
   _sq.setFromAxisAngle(_sup, heading);
-  _sm.compose(new THREE.Vector3(x, 0.035 + (skidIdx % 4) * 0.0015, z), _sq, new THREE.Vector3(1, 1, 1));
+  _spos.set(x, 0.035 + (skidIdx % 4) * 0.0015, z);
+  _sm.compose(_spos, _sq, _sone);
   skidMesh.setMatrixAt(skidIdx % SKID_MAX, _sm);
   skidIdx++;
   skidMesh.count = Math.min(SKID_MAX, skidIdx);
@@ -2249,7 +2255,15 @@ function interpState(slot) {
   return {
     s: slot, x: lerp(ca.x, cb.x, alpha), z: lerp(ca.z, cb.z, alpha), h: lerpAngle(ca.h, cb.h, alpha),
     v: lerp(ca.v, cb.v, alpha), sl: lerp(ca.sl, cb.sl, alpha), st: cb.st, th: cb.th,
-    n: cb.n, m: cb.m, lap: cb.lap, ll: ca.ll, best: cb.best, fin: cb.fin, ft: cb.ft, p: cb.p, pr: cb.pr, drift: cb.drift || 0, elim: cb.elim || 0
+    n: cb.n, m: cb.m, lap: cb.lap, ll: ca.ll, best: cb.best, fin: cb.fin, ft: cb.ft, p: cb.p, pr: cb.pr,
+    drift: cb.drift || 0, elim: cb.elim || 0,
+    col: cb.col != null ? cb.col : ca.col,
+    dc: cb.dc != null ? cb.dc : ca.dc,
+    wh: cb.wh != null ? cb.wh : ca.wh,
+    tr: cb.tr != null ? cb.tr : ca.tr,
+    ne: cb.ne != null ? cb.ne : ca.ne,
+    sp: cb.sp != null ? cb.sp : ca.sp,
+    nm: cb.nm || ca.nm || ''
   };
 }
 function standingsFrom(snap) {
@@ -4106,16 +4120,29 @@ function cycleCamera() {
   toast('🎥 ' + CAM_MODE_NAMES[camMode]);
 }
 
+const _pfCamPos = new THREE.Vector3();
+const _pfLookTarget = new THREE.Vector3();
+const _camCarPos = new THREE.Vector3();
+const _camDir = new THREE.Vector3();
+const _camDesired = new THREE.Vector3();
+const _camLook = new THREE.Vector3();
+const _camProxOffset = new THREE.Vector3();
+const _camProxLook = new THREE.Vector3();
+const _camMidRel = new THREE.Vector3();
+const _camUpVec = new THREE.Vector3();
+const _aimDir = new THREE.Vector3();
+const _aimPos = new THREE.Vector3();
+
 function aimChaseInstant(cs) {
   const v = carVisuals[cs.s];
   const cx = (v && v.netInit) ? v.netX : cs.x, cz = (v && v.netInit) ? v.netZ : cs.z, ch = (v && v.netInit) ? v.netH : cs.h;
   smoothedCamAngle = ch;
   camInit = true;
-  const dir = new THREE.Vector3(Math.sin(ch), 0, Math.cos(ch));
-  const pos = new THREE.Vector3(cx, 0, cz);
-  camera.position.copy(pos).addScaledVector(dir, -7.6);
+  _aimDir.set(Math.sin(ch), 0, Math.cos(ch));
+  _aimPos.set(cx, 0, cz);
+  camera.position.copy(_aimPos).addScaledVector(_aimDir, -7.6);
   camera.position.y = 2.7;
-  lookTarget.copy(pos).addScaledVector(dir, 6.0).add(new THREE.Vector3(0, 1.15, 0));
+  lookTarget.copy(_aimPos).addScaledVector(_aimDir, 6.0).add(_camUpVec.set(0, 1.15, 0));
   camera.lookAt(lookTarget);
 }
 function renderSplit(dt) {
@@ -4164,10 +4191,10 @@ function updateCamera(dt, mine, rival) {
     photoFinishTimer -= dt;
     if (photoFinishTimer <= 0) photoFinishActive = false;
     const finishPos = (curMap && curMap.points) ? curMap.points[0] : { x: A, z: 0 };
-    const pfCamPos = new THREE.Vector3(finishPos.x + 6.5, 1.8, finishPos.z - 4.2);
-    const pfLookTarget = new THREE.Vector3(finishPos.x, 0.6, finishPos.z);
-    camera.position.lerp(pfCamPos, 1 - Math.exp(-6 * dt));
-    lookTarget.lerp(pfLookTarget, 1 - Math.exp(-8 * dt));
+    _pfCamPos.set(finishPos.x + 6.5, 1.8, finishPos.z - 4.2);
+    _pfLookTarget.set(finishPos.x, 0.6, finishPos.z);
+    camera.position.lerp(_pfCamPos, 1 - Math.exp(-6 * dt));
+    lookTarget.lerp(_pfLookTarget, 1 - Math.exp(-8 * dt));
     camera.lookAt(lookTarget);
     return;
   }
@@ -4175,37 +4202,38 @@ function updateCamera(dt, mine, rival) {
 
   // Follow the visual smoothed position of MY car (solid local player anchor)
   const vMe = carVisuals[mine.s], vRi = rival ? carVisuals[rival.s] : null;
-  if (vMe && vMe.netInit) mine = { ...mine, x: vMe.netX, z: vMe.netZ, h: vMe.netH };
-  if (rival && vRi && vRi.netInit) rival = { ...rival, x: vRi.netX, z: vRi.netZ, h: vRi.netH };
+  const mineX = (vMe && vMe.netInit) ? vMe.netX : mine.x;
+  const mineZ = (vMe && vMe.netInit) ? vMe.netZ : mine.z;
+  const mineH = (vMe && vMe.netInit) ? vMe.netH : mine.h;
+  const rivalX = (vRi && vRi.netInit) ? vRi.netX : (rival ? rival.x : 0);
+  const rivalZ = (vRi && vRi.netInit) ? vRi.netZ : (rival ? rival.z : 0);
 
-  const carPos = new THREE.Vector3(mine.x, 0, mine.z);
+  _camCarPos.set(mineX, 0, mineZ);
 
   // Smooth heading angle to eliminate jerky rotation
   if (!camInit) {
-    smoothedCamAngle = mine.h;
+    smoothedCamAngle = mineH;
     camInit = true;
   } else {
-    smoothedCamAngle = lerpAngle(smoothedCamAngle, mine.h, 1 - Math.exp(-7.5 * dt));
+    smoothedCamAngle = lerpAngle(smoothedCamAngle, mineH, 1 - Math.exp(-7.5 * dt));
   }
 
-  const dir = new THREE.Vector3(Math.sin(smoothedCamAngle), 0, Math.cos(smoothedCamAngle));
+  _camDir.set(Math.sin(smoothedCamAngle), 0, Math.cos(smoothedCamAngle));
   const sp = clamp(Math.abs(mine.v || 0) / CFG.maxSpeed, 0, 1.3);
 
-  let desired = new THREE.Vector3();
-  let look = new THREE.Vector3();
+  _camProxOffset.set(0, 0, 0);
+  _camProxLook.set(0, 0, 0);
   let dynamicFovBoost = 0;
 
   // Intelligent Proximity Framing: Subtle, cinematic framing bias ONLY when rival is within close battle range (< 22m)
-  const proxOffset = new THREE.Vector3();
-  const proxLook = new THREE.Vector3();
   if (rival && rival.p === 1 && latest && latest.state !== 'waiting' && camMode === 0) {
-    const sep = Math.hypot(mine.x - rival.x, mine.z - rival.z);
+    const sep = Math.hypot(mineX - rivalX, mineZ - rivalZ);
     if (sep < 22) {
       const proxFactor = (1 - sep / 22);
       // Subtle lateral blend toward competitor (max 10% bias, keeping YOUR car as 90% anchor)
-      const midRel = new THREE.Vector3(rival.x - mine.x, 0, rival.z - mine.z).multiplyScalar(0.10 * proxFactor);
-      proxOffset.copy(midRel);
-      proxLook.copy(midRel).multiplyScalar(1.2);
+      _camMidRel.set(rivalX - mineX, 0, rivalZ - mineZ).multiplyScalar(0.10 * proxFactor);
+      _camProxOffset.copy(_camMidRel);
+      _camProxLook.copy(_camMidRel).multiplyScalar(1.2);
       dynamicFovBoost = proxFactor * 4.0;
     }
   }
@@ -4214,48 +4242,48 @@ function updateCamera(dt, mine, rival) {
     // Mode 0: Dynamic Third-Person Chase Cam (Default AAA Racing Standard)
     const dist = 7.6 + sp * 0.9;
     const height = 2.7 - sp * 0.25;
-    desired = carPos.clone()
-      .addScaledVector(dir, -dist)
-      .add(new THREE.Vector3(0, height, 0))
-      .add(proxOffset);
-    look = carPos.clone()
-      .addScaledVector(dir, 6.0 + sp * 3.0)
-      .add(new THREE.Vector3(0, 1.15, 0))
-      .add(proxLook);
+    _camDesired.copy(_camCarPos)
+      .addScaledVector(_camDir, -dist)
+      .add(_camUpVec.set(0, height, 0))
+      .add(_camProxOffset);
+    _camLook.copy(_camCarPos)
+      .addScaledVector(_camDir, 6.0 + sp * 3.0)
+      .add(_camUpVec.set(0, 1.15, 0))
+      .add(_camProxLook);
   } else if (camMode === 1) {
     // Mode 1: Close Street / Action Chase Cam
     const dist = 5.2 + sp * 0.5;
     const height = 1.9;
-    desired = carPos.clone()
-      .addScaledVector(dir, -dist)
-      .add(new THREE.Vector3(0, height, 0))
-      .add(proxOffset);
-    look = carPos.clone()
-      .addScaledVector(dir, 5.0 + sp * 2.0)
-      .add(new THREE.Vector3(0, 1.05, 0))
-      .add(proxLook);
+    _camDesired.copy(_camCarPos)
+      .addScaledVector(_camDir, -dist)
+      .add(_camUpVec.set(0, height, 0))
+      .add(_camProxOffset);
+    _camLook.copy(_camCarPos)
+      .addScaledVector(_camDir, 5.0 + sp * 2.0)
+      .add(_camUpVec.set(0, 1.05, 0))
+      .add(_camProxLook);
   } else if (camMode === 2) {
     // Mode 2: Hood / Front Bumper Cam (First-Person Perspective)
-    desired = carPos.clone()
-      .addScaledVector(dir, 0.45)
-      .add(new THREE.Vector3(0, 1.15, 0));
-    look = carPos.clone()
-      .addScaledVector(dir, 35.0)
-      .add(new THREE.Vector3(0, 1.0, 0));
+    _camDesired.copy(_camCarPos)
+      .addScaledVector(_camDir, 0.45)
+      .add(_camUpVec.set(0, 1.15, 0));
+    _camLook.copy(_camCarPos)
+      .addScaledVector(_camDir, 35.0)
+      .add(_camUpVec.set(0, 1.0, 0));
   } else {
     // Mode 3: Helicopter / Tactical Overview Cam
-    desired = carPos.clone()
-      .addScaledVector(dir, -14.0)
-      .add(new THREE.Vector3(0, 6.8, 0));
-    look = carPos.clone()
-      .addScaledVector(dir, 4.0)
-      .add(new THREE.Vector3(0, 0.8, 0));
+    _camDesired.copy(_camCarPos)
+      .addScaledVector(_camDir, -14.0)
+      .add(_camUpVec.set(0, 6.8, 0));
+    _camLook.copy(_camCarPos)
+      .addScaledVector(_camDir, 4.0)
+      .add(_camUpVec.set(0, 0.8, 0));
   }
 
-  desired.y = Math.max(desired.y, 0.45);
+  _camDesired.y = Math.max(_camDesired.y, 0.45);
   const posLerpRate = camMode === 2 ? 1 : (1 - Math.exp(-6.8 * dt));
-  camera.position.lerp(desired, posLerpRate);
-  lookTarget.lerp(look, 1 - Math.exp(-10.0 * dt));
+  camera.position.lerp(_camDesired, posLerpRate);
+  lookTarget.lerp(_camLook, 1 - Math.exp(-10.0 * dt));
 
   // Subtle speed vibration (disabled when Reduced Motion is toggled)
   const baseShake = sp > 0.75 ? (sp - 0.75) * 0.04 : 0;
@@ -4405,7 +4433,7 @@ function updateAudio(mine, rival) {
     e.exGain.gain.setTargetAtTime(0.05 + thr * 0.22 + rpm * 0.1, t, 0.08);
     let vol = 0.05 + sp * 0.1 + thr * 0.12 + (cs.n ? 0.05 : 0);
     if (i === 1) {
-      const dist = camera.position.distanceTo(new THREE.Vector3(cs.x, 0, cs.z));
+      const dist = Math.hypot(camera.position.x - cs.x, camera.position.z - cs.z);
       vol *= clamp(1 - dist / 160, 0, 1) * 0.8;
     }
     e.engGain.gain.setTargetAtTime(vol, t, 0.07);
@@ -4482,14 +4510,15 @@ function placeCar(slot, cs, dt) {
         // never sit past the drawn fence, at any angle or smoothing lag.
         // v69 perf: warm-started windowed queries + fast reject when the car
         // is mid-road (nose can reach at most center-distance + 2.6).
-        const probes = [[0, limC], [2.6, limP], [-2.4, limP]];
         const nC = T.nearest(v.netX, v.netZ, v._th); v._th = nC.th;
         if (!(nC.d <= limC && nC.d + 2.6 <= limP)) {
           for (let iter = 0; iter < 3; iter++) {
             let maxOver = 0, pnx = 0, pnz = 0;
-            for (const pr of probes) {
-              const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0], v._th);
-              const over = n.d - pr[1];
+            for (let pIdx = 0; pIdx < 3; pIdx++) {
+              const pr0 = pIdx === 0 ? 0 : (pIdx === 1 ? 2.6 : -2.4);
+              const pr1 = pIdx === 0 ? limC : limP;
+              const n = T.nearest(v.netX + dirX * pr0, v.netZ + dirZ * pr0, v._th);
+              const over = n.d - pr1;
               if (over > maxOver) { maxOver = over; pnx = n.nx; pnz = n.nz; }
             }
             if (maxOver <= 1e-7) break;
@@ -4497,16 +4526,23 @@ function placeCar(slot, cs, dt) {
           }
           for (let it = 0; it < 6; it++) {
             let worst = 0;
-            for (const pr of probes) {
-              const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0], v._th);
-              const over = n.d - pr[1];
+            for (let pIdx = 0; pIdx < 3; pIdx++) {
+              const pr0 = pIdx === 0 ? 0 : (pIdx === 1 ? 2.6 : -2.4);
+              const pr1 = pIdx === 0 ? limC : limP;
+              const n = T.nearest(v.netX + dirX * pr0, v.netZ + dirZ * pr0, v._th);
+              const over = n.d - pr1;
               if (over > worst) worst = over;
               if (over > 1e-7) { v.netX -= n.nx * over; v.netZ -= n.nz * over; }
             }
             if (worst <= 1e-7) break;
           }
           let worst = 0;
-          for (const pr of probes) { const n = T.nearest(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0], v._th); if (n.d - pr[1] > worst) worst = n.d - pr[1]; }
+          for (let pIdx = 0; pIdx < 3; pIdx++) {
+            const pr0 = pIdx === 0 ? 0 : (pIdx === 1 ? 2.6 : -2.4);
+            const pr1 = pIdx === 0 ? limC : limP;
+            const n = T.nearest(v.netX + dirX * pr0, v.netZ + dirZ * pr0, v._th);
+            if (n.d - pr1 > worst) worst = n.d - pr1;
+          }
           if (worst > 1e-4) { const nc = T.nearest(v.netX, v.netZ, v._th); v.netX = nc.cx; v.netZ = nc.cz; v._th = nc.th; } // hard guarantee
         }
       } else {
@@ -4514,9 +4550,11 @@ function placeCar(slot, cs, dt) {
         // Map 0: v53 2-pass converge (historic behavior, untouched)
         for (let iter = 0; iter < 2; iter++) {
           let maxOver = 0, sx = 0, sz = 0;
-          for (const pr of [[0, limC], [2.6, limP], [-2.4, limP]]) {
-            const n = proj(v.netX + dirX * pr[0], v.netZ + dirZ * pr[0]);
-            const over = Math.abs(n.lat) - pr[1];
+          for (let pIdx = 0; pIdx < 3; pIdx++) {
+            const pr0 = pIdx === 0 ? 0 : (pIdx === 1 ? 2.6 : -2.4);
+            const pr1 = pIdx === 0 ? limC : limP;
+            const n = proj(v.netX + dirX * pr0, v.netZ + dirZ * pr0);
+            const over = Math.abs(n.lat) - pr1;
             if (over > maxOver) {
               maxOver = over;
               const cd = Math.hypot(v.netX - n.cx, v.netZ - n.cz) || 1;
@@ -4576,7 +4614,7 @@ function placeCar(slot, cs, dt) {
     for (const sx of [-0.55, 0.55]) {
       const fx = cs.x + sx * Math.cos(cs.h) - 2.45 * Math.sin(cs.h);
       const fz = cs.z - sx * Math.sin(cs.h) - 2.45 * Math.cos(cs.h);
-      spawnFlame(new THREE.Vector3(fx, 0.42, fz));
+      spawnFlame(fx, 0.42, fz);
     }
   }
 }
