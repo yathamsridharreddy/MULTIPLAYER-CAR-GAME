@@ -9,6 +9,12 @@
   const $ = (id) => document.getElementById(id);
   const id = new URLSearchParams(location.search).get('g');
   const err = (m) => { const e = $('err'); e.hidden = false; e.textContent = m; };
+  if (typeof window.tI18n === 'function') {
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const s = window.tI18n(el.getAttribute('data-i18n'));
+      if (s) el.textContent = s;
+    });
+  }
   if (!id) { err('No replay id in the link.'); return; }
 
   let base = String(window.SERVER_URL || 'local').trim();

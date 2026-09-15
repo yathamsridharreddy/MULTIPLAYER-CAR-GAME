@@ -25,18 +25,19 @@
 </head>
 <body>
   <div id="wrap">
-    <h1>🎥 GHOST REPLAY — <span id="who">…</span></h1>
+    <h1><span data-i18n="ghostReplay">🎥 GHOST REPLAY</span> — <span id="who">…</span></h1>
     <div id="hud">—</div>
     <canvas id="cv" width="900" height="620"></canvas>
     <div id="bar">
       <button id="play">⏸</button>
       <input id="scrub" type="range" min="0" max="1000" value="0"/>
       <button id="spd">×1</button>
-      <a id="open-game" href="/">🏁 RACE THIS GHOST</a>
+      <a id="open-game" href="/" data-i18n="raceThisGhost">🏁 RACE THIS GHOST</a>
     </div>
     <p id="err" hidden></p>
   </div>
   <script src="js/config.js"></script>
+  <script src="js/i18n.js?v=84"></script>
   <script src="js/game-core.js?v=84"></script>
   <script src="js/replay.js?v=84"></script>
 </body>
