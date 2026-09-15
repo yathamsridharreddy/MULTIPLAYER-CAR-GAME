@@ -63,3 +63,28 @@ button.tool.on { border-color: #35d0ff; color: #35d0ff; box-shadow: 0 0 10px rgb
 #rotate-hint.show { opacity: 1; }
 
 #ios-hint { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 90; background: #101828; border: 1px solid rgba(255,255,255,.2); border-radius: 12px; padding: 10px 14px; font-size: 12px; max-width: 92vw; display: flex; gap: 10px; align-items: center; }
+
+#ctrl-rematch-wrap {
+  position: fixed;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+}
+.ctrl-rematch-btn {
+  background: linear-gradient(135deg, #00e5ff, #7ee78a);
+  color: #05070c;
+  border: none;
+  border-radius: 999px;
+  font: 900 15px system-ui;
+  padding: 12px 28px;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.6);
+  animation: pulse 1s infinite alternate;
+}
+@keyframes pulse {
+  0% { transform: scale(0.98); }
+  100% { transform: scale(1.04); }
+}

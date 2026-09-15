@@ -113,15 +113,15 @@ const net = new RoomLink({
   onWelcome(msg) {
     state.slot = msg.slot;
     $('pads').classList.remove('locked');
-    document.body.dataset.player = msg.slot === 2 ? 'p2' : 'p1';
-    $('player-label').textContent = msg.slot === 1 ? 'PLAYER 1' : 'PLAYER 2';
+    document.body.dataset.player = 'p' + msg.slot;
+    $('player-label').textContent = 'PLAYER ' + msg.slot;
     $('player-label').style.display = '';
     $('room-tag').textContent = 'ROOM ' + msg.code;
     setStatus('Connected · Player ' + msg.slot, 'ok');
     vibrate(30);
   },
   onMessage(msg) {
-    if (msg.type === 'full') { state.full = true; setStatus('Room full — 2 joysticks already', 'err'); $('full-note').style.display = ''; return; }
+    if (msg.type === 'full') { state.full = true; setStatus('Room full — max joysticks already', 'err'); $('full-note').style.display = ''; return; }
     if (msg.type === 'error' && msg.code === 'no-room') { setStatus('Room not found', 'err'); showJoinScreen('Room not found — check the code.'); return; }
     if (msg.type === 'telemetry' && msg.data) {
       const d = msg.data;
@@ -132,8 +132,17 @@ const net = new RoomLink({
       if (d.rank) bits.push(d.rank);
       if (d.best) bits.push('Best ' + d.best);
       $('lap-info').textContent = bits.join('  ·  ');
-      if (d.state === 'countdown') setStatus('Get ready…', 'wait');
-      else setStatus('Connected · Player ' + state.slot + (d.rank ? ' · ' + d.rank : ''), 'ok');
+      if (d.state === 'countdown') {
+        setStatus('Get ready…', 'wait');
+        const rm = $('ctrl-rematch-wrap'); if (rm) rm.style.display = 'none';
+      } else if (d.state === 'finished') {
+        setStatus('Race finished!', 'ok');
+        const rm = $('ctrl-rematch-wrap'); if (rm) rm.style.display = 'flex';
+        const rmb = $('ctrl-rematch-btn'); if (rmb) rmb.textContent = '🔁 REMATCH NOW';
+      } else {
+        setStatus('Connected · Player ' + state.slot + (d.rank ? ' · ' + d.rank : ''), 'ok');
+        const rm = $('ctrl-rematch-wrap'); if (rm) rm.style.display = 'none';
+      }
     if (d.banner && d.banner !== lastBanner) { lastBanner = d.banner; showBanner(d.banner); }
     for (const p of hapticEvents(d, hPrev)) vibrate(p);
     return;
@@ -152,11 +161,19 @@ const net = new RoomLink({
 
 function showJoinScreen(err) { $('join-screen').style.display = 'flex'; $('pads').classList.add('locked'); if (err) $('join-error').textContent = err; }
 function ctrlPid() { try { let p = localStorage.getItem('sr_ctrl_pid'); if (!p) { p = 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('sr_ctrl_pid', p); } return p; } catch (e) { return null; } } // v77 BUG-008
-function joinRoom(code) { $('join-screen').style.display = 'none'; $('pads').classList.remove('locked'); setStatus('Connecting…', 'wait'); net.connect({ type: 'hello', role: 'controller', room: code.toUpperCase().trim(), pid: ctrlPid() }); }
+function joinRoom(code, slot) {
+  $('join-screen').style.display = 'none';
+  $('pads').classList.remove('locked');
+  setStatus('Connecting…', 'wait');
+  const hello = { type: 'hello', role: 'controller', room: code.toUpperCase().trim(), pid: ctrlPid() };
+  if (slot != null && !isNaN(parseInt(slot, 10))) hello.slot = parseInt(slot, 10);
+  net.connect(hello);
+}
 
 const wantedRoom = urlParam('room');
-if (wantedRoom) joinRoom(wantedRoom); else showJoinScreen('');
-$('join-btn').addEventListener('click', () => { const c = $('room-input').value.trim(); if (c.length >= 4) joinRoom(c); else $('join-error').textContent = 'Enter the 5-letter room code.'; });
+const wantedSlot = urlParam('slot');
+if (wantedRoom) joinRoom(wantedRoom, wantedSlot); else showJoinScreen('');
+$('join-btn').addEventListener('click', () => { const c = $('room-input').value.trim(); if (c.length >= 4) joinRoom(c, wantedSlot); else $('join-error').textContent = 'Enter the 5-letter room code.'; });
 $('room-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('join-btn').click(); });
 
 // send input at ~30 Hz
@@ -196,7 +213,11 @@ function trackCtl(e, m) {
       if (!/^(https?):\/\//i.test(cfg)) cfg = 'https://' + cfg;
       cfg = cfg.replace(/\/+$/, '');
     } else cfg = '';
-    fetch(cfg + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ e, m }) }).catch(() => {});
+    const pid = ctrlPid();
+    let body = { e, pid };
+    if (typeof m === 'object' && m !== null) Object.assign(body, m);
+    else if (m !== undefined) body.m = m;
+    fetch(cfg + '/a', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) }).catch(() => {});
   } catch (err) {}
 }
 let ctrlLat = -1;
@@ -209,6 +230,16 @@ let lastErrCtl = '';
 window.addEventListener('error', (ev) => { const m = String((ev && ev.message) || 'error'); if (m === lastErrCtl) return; lastErrCtl = m; trackCtl('err', m); });
 window.addEventListener('unhandledrejection', (ev) => trackCtl('err', 'promise: ' + String((ev.reason && ev.reason.message) || ev.reason || 'rejection')));
 
+// v82: 1-tap Rematch from mobile phone controller
+const ctrlRematch = $('ctrl-rematch-btn');
+if (ctrlRematch) {
+  ctrlRematch.addEventListener('click', () => {
+    vibrate(40);
+    net.send({ type: 'rematch' });
+    ctrlRematch.textContent = '✅ REMATCH REQUESTED';
+  });
+}
+
 // v45: iOS install hint (iPhones have no native install prompt)
 (function () {
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone;
@@ -219,7 +250,7 @@ window.addEventListener('unhandledrejection', (ev) => trackCtl('err', 'promise: 
   const x = $('ios-hint-x'); if (x) x.addEventListener('click', done);
   setTimeout(done, 12000);
 })();
-document.addEventListener('touchmove', (e) => { if (e.scale !== 1) e.preventDefault(); }, { passive: false });
+document.addEventListener('touchmove', (e) => { if (e.scale != null && e.scale !== 1) e.preventDefault(); }, { passive: false });
 function checkOrientation() { $('rotate-hint').classList.toggle('show', window.innerHeight > window.innerWidth); }
 window.addEventListener('resize', checkOrientation);
 checkOrientation();

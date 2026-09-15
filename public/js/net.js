@@ -21,15 +21,18 @@ class RoomLink {
     this.hello = null;
     this.delay = 800;
     this.closedByUser = false;
+    this._retryTimer = null;
   }
   status(s) { if (this.handlers.onStatus) this.handlers.onStatus(s); }
   connect(hello) {
     if (hello) this.hello = hello;
     this.closedByUser = false;
+    if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null; }
     this._dial();
   }
   _dial() {
     if (this.closedByUser) return;
+    if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null; }
     this.status('connecting');
     let ws;
     try { ws = new WebSocket(serverWsUrl()); } catch (e) { return this._retry(); }
@@ -57,14 +60,15 @@ class RoomLink {
   }
   _retry() {
     if (this.closedByUser) return;
+    if (this._retryTimer) clearTimeout(this._retryTimer);
     const self = this;
-    setTimeout(() => self._dial(), this.delay);
+    this._retryTimer = setTimeout(() => self._dial(), this.delay);
     this.delay = Math.min(this.delay * 1.7, 8000);
   }
   send(msg) {
-    if (this.open && this.ws) { try { this.ws.send(JSON.stringify(msg)); } catch (e) {} }
+    if (this.open && this.ws && this.ws.readyState === WebSocket.OPEN) { try { this.ws.send(JSON.stringify(msg)); } catch (e) {} }
   }
-  isOpen() { return this.open; }
+  isOpen() { return this.open && this.ws && this.ws.readyState === WebSocket.OPEN; }
 }
 
 function urlParam(name) {

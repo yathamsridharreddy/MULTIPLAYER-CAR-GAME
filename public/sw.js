@@ -1,5 +1,5 @@
 /* ============================================================================
-   SRIDHAR RUSH — service worker (v36)
+   SRIDHAR RUSH — service worker (v84)
    Makes the game installable (home-screen app) and loads repeat visits fast.
    Purely additive: if this file is missing/broken the site works exactly as before.
 
@@ -9,24 +9,24 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v78';
+const CACHE = 'sridhar-rush-v84';
 
 const CORE = [
   '/', '/controller',
-  '/css/style.css?v=78', '/css/controller.css?v=78',
-  '/js/game-core.js?v=78', '/js/progression.js?v=78', '/js/cosmetics.js?v=78', '/js/net.js?v=78', '/js/game.js?v=78', '/js/controller.js?v=78', '/js/account.js?v=78', '/js/i18n.js?v=78',
+  '/css/style.css?v=84', '/css/controller.css?v=84',
+  '/js/game-core.js?v=84', '/js/progression.js?v=84', '/js/cosmetics.js?v=84', '/js/net.js?v=84', '/js/game.js?v=84', '/js/controller.js?v=84', '/js/account.js?v=84', '/js/i18n.js?v=84',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
   '/js/vendor/post/RenderPass.js', '/js/vendor/post/UnrealBloomPass.js',
-  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=78',
+  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=84',
   '/icon.svg', '/img/icon-192.png', '/img/icon-512.png',
   '/img/map-highland.webp', '/img/map-neon.webp', '/img/map-island.webp',
   '/img/map-canyon.webp', '/img/map-snow.webp'
 ];
 
 // live data — always straight from the network, never stored
-const NOCACHE = ['/js/config.js', '/version', '/health', '/lb', '/recent', '/daily', '/cup'];
+const NOCACHE = ['/js/config.js', '/version', '/health', '/lb', '/recent', '/daily', '/cup', '/ghost', '/a'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -50,7 +50,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   let url; try { url = new URL(req.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return;      // external requests untouched
-  if (NOCACHE.includes(url.pathname)) return;           // live endpoints untouched
+  if (NOCACHE.includes(url.pathname) || url.pathname.startsWith('/api/')) return;           // live endpoints untouched
 
   if (req.mode === 'navigate') {
     // HTML: fresh when online, cached copy when offline
