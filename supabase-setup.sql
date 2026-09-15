@@ -331,16 +331,8 @@ alter table public.season_rewards_claimed enable row level security;
 create policy "season claim own read" on public.season_rewards_claimed for select using (auth.uid() = user_id);
 
 -- ----------------------------------------------------------------------------
--- v82: Pro Licenses, Badges, Revenge Targets & Weekly Syndicate Bounties
+-- v82: Badges, Revenge Targets & Weekly Syndicate Bounties
 -- ----------------------------------------------------------------------------
-create table if not exists public.player_licenses (
-  user_id      uuid not null references auth.users(id) on delete cascade primary key,
-  license_type text not null default 'pro_license',
-  completed_at timestamptz not null default now()
-);
-alter table public.player_licenses enable row level security;
-create policy "licenses own read" on public.player_licenses for select using (auth.uid() = user_id);
-
 create table if not exists public.player_badges (
   user_id      uuid not null references auth.users(id) on delete cascade,
   badge_id     text not null,

@@ -1122,16 +1122,6 @@ function ttHudUpdate(mine) {
 function showTTResults(order, finalT) {
   const ov = $('tt-overlay'); if (!ov || TT.done) return;
   TT.done = true;
-  if (currentAcademyLesson) {
-    try {
-      const les = JSON.parse(localStorage.getItem('sr_academy_lessons') || '{}');
-      les[currentAcademyLesson] = true;
-      localStorage.setItem('sr_academy_lessons', JSON.stringify(les));
-      toast('🎓 Academy Lesson Completed!');
-    } catch (e) {}
-    currentAcademyLesson = null;
-    const hEl = $('academy-hint-banner'); if (hEl) hEl.style.display = 'none';
-  }
   const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
   const M = (CORE.MAPS[mapId] || {}).name || 'TRACK';
   let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
@@ -2309,16 +2299,6 @@ function showCount(txt) {
 let pendingSettle = []; // v73 server-settled XP/rating rows
 function showResults(order) {
   if (TT.on) return; // v61: TT/practice use their own overlay
-  if (currentAcademyLesson) {
-    try {
-      const les = JSON.parse(localStorage.getItem('sr_academy_lessons') || '{}');
-      les[currentAcademyLesson] = true;
-      localStorage.setItem('sr_academy_lessons', JSON.stringify(les));
-      toast('🎓 Academy Lesson Completed!');
-    } catch (e) {}
-    currentAcademyLesson = null;
-    const hEl = $('academy-hint-banner'); if (hEl) hEl.style.display = 'none';
-  }
   lastResults = order;
   const rows = $('results-rows'); rows.innerHTML = '';
   const medals = ['🥇', '🥈', ''];
@@ -2756,9 +2736,7 @@ async function fetchAndRenderRetention() {
       if (bBtn) {
         bBtn.textContent = act.cta;
         bBtn.onclick = () => {
-          if (act.actionKey === 'academy') {
-            const ab = $('academy-btn'); if (ab) ab.click();
-          } else if (act.actionKey === 'daily' || act.actionKey === 'streak') {
+          if (act.actionKey === 'daily' || act.actionKey === 'streak' || act.id === 'streak') {
             const dp = $('daily-play'); if (dp) dp.click();
             const sb = $('start-btn'); if (sb) sb.click();
           } else if (act.actionKey === 'revenge') {
@@ -2861,106 +2839,6 @@ async function fetchAndRenderRetention() {
     retentionPollBusy = false;
   }
 }
-
-// v82 Driving Academy Modal Controller
-let currentAcademyLesson = null;
-async function openDrivingAcademy() {
-  const dlg = $('academy-dlg');
-  if (!dlg) return;
-  const body = $('academy-body');
-  if (!body) return;
-  dlg.hidden = false;
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
-  let completed = false;
-  try {
-    const res = await fetch(`${httpBase()}/api/player/badges?uid=${encodeURIComponent(uid)}`).then(r => r.json());
-    if (res && res.ok && res.badges) {
-      const lp = res.badges.find(b => b.id === 'pro_license' || b.badgeId === 'pro_license');
-      if (lp && lp.tierLevel >= 1) completed = true;
-    }
-  } catch (e) {}
-
-  const lessons = (window.SRProg && SRProg.ACADEMY_LESSONS) ? SRProg.ACADEMY_LESSONS : [
-    { id: 'lesson_1_steering', title: 'Apex & Precision Steering', desc: 'Master the racing line: steer smoothly around apexes without hitting outer barriers.' },
-    { id: 'lesson_2_nitro', title: 'Nitro Exit Acceleration', desc: 'Trigger Nitro boosts out of high-speed turns to reach top straightaway velocity.' },
-    { id: 'lesson_3_drafting', title: 'Slipstream & Clean Overtake', desc: 'Follow the target car in its aerodynamic slipstream draft and execute a clean pass.' }
-  ];
-
-  let completedLessons = {};
-  try { completedLessons = JSON.parse(localStorage.getItem('sr_academy_lessons') || '{}'); } catch (e) {}
-  const allLessonsDone = lessons.every(l => completedLessons[l.id] || completed);
-
-  let html = lessons.map((les, idx) => {
-    const isDone = completed || completedLessons[les.id];
-    return `
-      <div class="academy-lesson-card ${isDone ? 'completed' : ''}">
-        <div class="alc-info">
-          <span class="alc-title">${idx + 1}. ${les.icon || '🎯'} ${escapeHtml(les.title)}</span>
-          <span class="alc-desc">${escapeHtml(les.desc)}</span>
-          <span class="alc-reward">Reward: +${les.rewardXp || 50} XP · +${les.rewardCoins || 50} 🪙</span>
-        </div>
-        <button class="alc-btn" onclick="startAcademyLesson('${les.id}')">${isDone ? '✅ COMPLETED' : 'START LESSON'}</button>
-      </div>
-    `;
-  }).join('');
-
-  if (completed) {
-    html += `
-      <div class="license-cert-card">
-        <div class="lcc-title">🎖️ OFFICIAL PRO RACER LICENSE</div>
-        <div class="lcc-sub">Certified Driver · Ready for Competitive Ranked, Revenge Duels &amp; Founders Cup</div>
-      </div>
-    `;
-  } else {
-    html += `
-      <div class="license-cert-card">
-        <div class="lcc-title">🎓 PRO LICENSE EXAMINATION</div>
-        <div class="lcc-sub">Complete all 3 lessons to earn your official Pro Racing License + 200 Rush Coins &amp; 200 XP!</div>
-        <button id="academy-claim-btn" class="big-cta" ${allLessonsDone ? '' : ''}>🏆 CLAIM PRO RACING LICENSE</button>
-      </div>
-    `;
-  }
-  body.innerHTML = html;
-  const cBtn = $('academy-claim-btn');
-  if (cBtn) {
-    cBtn.onclick = async () => {
-      cBtn.disabled = true;
-      cBtn.textContent = 'Claiming…';
-      try {
-        const res = await fetch(`${httpBase()}/api/player/license/complete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ uid })
-        }).then(r => r.json());
-        if (res && res.ok) {
-          toast('🎉 PRO RACING LICENSE EARNED! +200 Rush Coins & +200 XP!');
-          openDrivingAcademy();
-          fetchAndRenderRetention();
-        } else {
-          toast(res.msg || 'License claimed!');
-        }
-      } catch (e) {
-        toast('Connection error claiming license.');
-      }
-    };
-  }
-}
-
-window.startAcademyLesson = function(lessonId) {
-  const dlg = $('academy-dlg'); if (dlg) dlg.hidden = true;
-  currentAcademyLesson = lessonId;
-  selectedMap = 0;
-  net.send({ type: 'map', map: 0 });
-  const hintEl = $('academy-hint-banner');
-  if (hintEl) {
-    hintEl.style.display = '';
-    if (lessonId === 'lesson_1_steering') hintEl.textContent = '🎓 LESSON 1: Apex Steering — Steer smoothly through turns using WASD / Left Joystick!';
-    else if (lessonId === 'lesson_2_nitro') hintEl.textContent = '🎓 LESSON 2: Nitro Exit — Tap Nitro / Shift out of hairpins to reach 180+ km/h!';
-    else hintEl.textContent = '🎓 LESSON 3: Race Speed — Complete a clean fast lap without barrier collisions!';
-  }
-  toast(`🎓 Starting Academy Lesson! Follow the track guide.`);
-  const sb = $('start-btn'); if (sb) sb.click();
-};
 
 // v82 Milestone Badges Modal Controller
 async function openBadgesShowcase() {
@@ -3315,13 +3193,10 @@ window.handleCreateCrewSubmit = async function(e) {
 };
 
 window.openCrewModal = openCrewModal;
-window.openDrivingAcademy = openDrivingAcademy;
 window.openBadgesShowcase = openBadgesShowcase;
 window.openBountiesModal = openBountiesModal;
 
 // Wire up modal openers and close buttons
-const acadBtn = $('academy-btn'); if (acadBtn) acadBtn.addEventListener('click', openDrivingAcademy);
-const acadClose = $('academy-close'); if (acadClose) acadClose.addEventListener('click', () => { $('academy-dlg').hidden = true; });
 const bdgBtn = $('badges-btn'); if (bdgBtn) bdgBtn.addEventListener('click', openBadgesShowcase);
 const bdgClose = $('badges-close'); if (bdgClose) bdgClose.addEventListener('click', () => { $('badges-dlg').hidden = true; });
 const bntBtn = $('bounties-btn'); if (bntBtn) bntBtn.addEventListener('click', openBountiesModal);

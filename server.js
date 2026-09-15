@@ -886,10 +886,9 @@ app.get('/api/player/competitive-stats', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// v81/v82 Rivals, Daily Missions, Streaks, Seasons, Badges & Academy API
+// v81/v82 Rivals, Daily Missions, Streaks, Seasons, Badges & Retention API
 // ---------------------------------------------------------------------------
 const memPlayerMissions = new Map(); // `${dateKey}:${uid}` -> Map<missionId, { progress, completed, claimed }>
-const memPlayerLicense = new Map();  // uid -> { completed, at }
 const memEquippedBadges = new Map(); // uid -> badgeId
 const memRevengeTargets = new Map(); // uid -> [ { targetUid, targetName, mapId, targetRating, issuedAt } ]
 const memWeeklyBounties = new Map(); // `${weekKey}:${uid}` -> Map<bountyId, { progress, completed, claimed }>
@@ -1138,39 +1137,12 @@ app.get('/api/ghost/best', async (req, res) => {
   return res.json({ ok: true, ghost: null });
 });
 
-// v82 Driving Academy / License Completion
-app.post('/api/player/license/complete', async (req, res) => {
-  res.set('Access-Control-Allow-Origin', '*');
-  const b = req.body || {};
-  const uid = req.query.uid || b.uid;
-  if (!uid) return res.status(400).json({ ok: false, error: 'MISSING_UID' });
-
-  const existing = memPlayerLicense.get(uid);
-  if (existing) {
-    return res.json({ ok: true, alreadyCompleted: true, bonus: prog.LICENSE_COMPLETION_BONUS });
-  }
-
-  memPlayerLicense.set(uid, { completed: true, completedAt: new Date().toISOString() });
-  const st = memPlayerStats.get(uid) || { rating: 1000, peak_rating: 1000, xp: 0, streak: 0, best_streak: 0, races: 0, wins: 0, podiums: 0, daily_days: 0, last_daily: '' };
-  st.xp = (st.xp || 0) + prog.LICENSE_COMPLETION_BONUS.xp;
-  memPlayerStats.set(uid, st);
-
-  return res.json({
-    ok: true,
-    claimed: true,
-    completed: true,
-    coinsAwarded: prog.LICENSE_COMPLETION_BONUS.coins,
-    xpAwarded: prog.LICENSE_COMPLETION_BONUS.xp,
-    bonus: prog.LICENSE_COMPLETION_BONUS
-  });
-});
-
 // v82 Badges & Profile Showcase
 app.get('/api/player/badges', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   const uid = req.query.uid || req.query.pid || 'guest';
   let st = memPlayerStats.get(uid) || { rating: 1000, peak_rating: 1000, xp: 0, races: 0, wins: 0, streak: 0, best_streak: 0 };
-  const badges = prog.evaluateBadges(Object.assign({}, st, { license_done: !!memPlayerLicense.get(uid) }));
+  const badges = prog.evaluateBadges(st);
   const equipped = memEquippedBadges.get(uid) || 'speed_demon';
   badges.forEach(b => {
     b.equipped = (b.id === equipped || b.badgeId === equipped);
@@ -1317,14 +1289,12 @@ app.get('/api/player/next-action', async (req, res) => {
   const streakInfo = prog.getStreakMilestoneInfo(st.streak || 0);
   streakInfo.racedToday = st.last_daily === today;
   const missions = getOrInitMissions(today, uid);
-  const licenseDone = !!memPlayerLicense.get(uid);
   const tr = prog.tier(st.rating || 1000);
 
   const nextAction = prog.getNextBestAction({
     streakInfo,
     missions,
     rivals,
-    licenseDone,
     nextTier: tr.next
   });
 
@@ -1943,8 +1913,7 @@ async function settleRace(entryOrRoom) {
       rivals_passed: (st.rivals_passed || 0) + (overtakenRival ? 1 : 0),
       ghosts_beaten: (st.ghosts_beaten || 0) + (pr ? 1 : 0),
       clean_races: (st.clean_races || 0) + (h.c.finished && !h.c.collisions ? 1 : 0),
-      nitro_count: (st.nitro_count || 0) + (h.c.nitroCount || (h.c.nitro ? 1 : 0)),
-      license_done: !!memPlayerLicense.get(h.uid)
+      nitro_count: (st.nitro_count || 0) + (h.c.nitroCount || (h.c.nitro ? 1 : 0))
     };
     const badgeEvaluations = prog.evaluateBadges(statsForBadges);
 
@@ -2770,7 +2739,6 @@ module.exports = {
   memDailyComp,
   memWeeklyComp,
   memPlayerMissions,
-  memPlayerLicense,
   memEquippedBadges,
   memRevengeTargets,
   memWeeklyBounties,

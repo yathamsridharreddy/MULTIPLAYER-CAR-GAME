@@ -183,4 +183,38 @@ describe('Authoritative Race Lifecycle & Simulation', () => {
     ]);
     assert.equal(finCallCount, 1, '1-lap race finish must fire fin exactly once');
   });
+
+  test('verifies physics, collision, and progression across all 5 maps in all 4 weather modes', () => {
+    const dt = 1 / 30;
+    for (let mapId = 0; mapId < 5; mapId++) {
+      for (const weather of ['dry', 'wet', 'blizzard', 'night']) {
+        const room = new core.RaceRoom(`MAP_V_${mapId}_${weather}`, 'race', mapId, 2, weather);
+        room.setBot(true);
+        room.start();
+
+        // 3 seconds countdown
+        for (let t = 0; t < 95; t++) {
+          room.update(dt);
+        }
+        assert.equal(room.state, 'racing');
+
+        // Race with bot for 15 seconds (450 ticks)
+        for (let t = 0; t < 450; t++) {
+          room.setInput(1, { steer: 0, throttle: 1, brake: 0, handbrake: false, nitro: false });
+          room.update(dt);
+        }
+
+        const c1 = room.cars[0];
+        const c2 = room.cars[1];
+
+        // Ensure no NaNs exist in any car physics vectors
+        assert.ok(!isNaN(c1.x) && !isNaN(c1.z) && !isNaN(c1.vx) && !isNaN(c1.vy) && !isNaN(c1.heading), `Map ${mapId} ${weather}: Car 1 has NaN`);
+        assert.ok(!isNaN(c2.x) && !isNaN(c2.z) && !isNaN(c2.vx) && !isNaN(c2.vy) && !isNaN(c2.heading), `Map ${mapId} ${weather}: Car 2 has NaN`);
+
+        // Ensure cars advanced along the track
+        assert.ok(c1.progress > 0.05, `Map ${mapId} ${weather}: Car 1 should make positive progress (got ${c1.progress})`);
+        assert.ok(c2.progress > 0.1, `Map ${mapId} ${weather}: Bot Car 2 should navigate track (got ${c2.progress})`);
+      }
+    }
+  });
 });

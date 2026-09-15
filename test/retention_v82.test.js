@@ -6,14 +6,13 @@ const {
   app,
   settleRace,
   memPlayerStats,
-  memPlayerLicense,
   memEquippedBadges,
   memRevengeTargets,
   memWeeklyBounties,
   getOrInitWeeklyBounties
 } = require('../server.js');
 
-describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Action', () => {
+describe('Retention V82 Suite: Badges, Bounties, Revenge & Next Best Action', () => {
   let server;
   let baseUrl;
 
@@ -75,54 +74,14 @@ describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Ac
 
   beforeEach(() => {
     memPlayerStats.clear();
-    memPlayerLicense.clear();
     memEquippedBadges.clear();
     memRevengeTargets.clear();
     memWeeklyBounties.clear();
   });
 
-  describe('1. Driving Academy & Pro License', () => {
-    it('contains 3 distinct academy lessons with progressive skill targets', () => {
-      assert.strictEqual(prog.ACADEMY_LESSONS.length, 3);
-      assert.strictEqual(prog.ACADEMY_LESSONS[0].id, 'lesson_1_steering');
-      assert.strictEqual(prog.ACADEMY_LESSONS[1].id, 'lesson_2_nitro');
-      assert.strictEqual(prog.ACADEMY_LESSONS[2].id, 'lesson_3_drafting');
-    });
-
-    it('awards pro license bonus of 200 Rush Coins and 200 XP upon completion', () => {
-      assert.strictEqual(prog.LICENSE_COMPLETION_BONUS.coins, 200);
-      assert.strictEqual(prog.LICENSE_COMPLETION_BONUS.xp, 200);
-      assert.strictEqual(prog.LICENSE_COMPLETION_BONUS.badgeId, 'pro_license');
-    });
-
-    it('completes pro license idempotently via server endpoint /api/player/license/complete', async () => {
-      const uid = 'test_racer_academy';
-      memPlayerStats.set(uid, { uid, rating: 1000, xp: 100, wins: 0 });
-
-      // First completion
-      const res1 = await httpPost('/api/player/license/complete', { uid });
-      assert.strictEqual(res1.status, 200);
-      assert.strictEqual(res1.json.ok, true);
-      assert.strictEqual(res1.json.claimed, true);
-      assert.strictEqual(res1.json.coinsAwarded, 200);
-      assert.strictEqual(res1.json.xpAwarded, 200);
-
-      // Check stats cache updated
-      const st = memPlayerStats.get(uid);
-      assert.strictEqual(st.xp, 300);
-      assert.ok(memPlayerLicense.get(uid).completed);
-
-      // Second completion (idempotent - already completed)
-      const res2 = await httpPost('/api/player/license/complete', { uid });
-      assert.strictEqual(res2.status, 200);
-      assert.strictEqual(res2.json.ok, true);
-      assert.strictEqual(res2.json.alreadyCompleted, true);
-    });
-  });
-
-  describe('2. Tiered Milestone Badges & Showcase', () => {
-    it('defines 8 milestone badges with 4 tiers each', () => {
-      assert.strictEqual(prog.BADGE_DEFINITIONS.length, 8);
+  describe('1. Tiered Milestone Badges & Showcase', () => {
+    it('defines 7 milestone badges with 4 tiers each', () => {
+      assert.strictEqual(prog.BADGE_DEFINITIONS.length, 7);
       for (const badge of prog.BADGE_DEFINITIONS) {
         assert.ok(badge.id);
         assert.ok(badge.name);
@@ -140,8 +99,7 @@ describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Ac
         rivals_passed: 0,
         ghosts_beaten: 0,
         clean_races: 0,
-        nitro_count: 5,
-        license_done: false
+        nitro_count: 5
       };
       const rookieBadges = prog.evaluateBadges(rookieStats);
       const nitroBadge = rookieBadges.find(b => b.id === 'nitro_junkie');
@@ -155,16 +113,12 @@ describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Ac
         rivals_passed: 12,
         ghosts_beaten: 10,
         clean_races: 15,
-        nitro_count: 60,
-        license_done: true
+        nitro_count: 60
       };
       const veteranBadges = prog.evaluateBadges(veteranStats);
       const speedBadge = veteranBadges.find(b => b.id === 'speed_demon');
       assert.strictEqual(speedBadge.tierLevel, 2);
       assert.strictEqual(speedBadge.tierName, 'Silver');
-
-      const licenseBadge = veteranBadges.find(b => b.id === 'pro_license');
-      assert.strictEqual(licenseBadge.tierLevel, 1);
     });
 
     it('allows player to equip and query badges via server API', async () => {
@@ -188,7 +142,7 @@ describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Ac
     });
   });
 
-  describe('3. Weekly Syndicate Bounties', () => {
+  describe('2. Weekly Syndicate Bounties', () => {
     it('generates deterministic 3 bounties for any given week key', () => {
       const bountiesW1 = prog.getWeeklyBounties('2026-W36');
       const bountiesW1Repeat = prog.getWeeklyBounties('2026-W36');
@@ -243,7 +197,7 @@ describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Ac
     });
   });
 
-  describe('4. Revenge Match Mechanics', () => {
+  describe('3. Revenge Match Mechanics', () => {
     it('evaluates revenge match victory with 1.5x Bounty (+50% XP and coins)', () => {
       const targetUid = 'rival_player_99';
       const winnerUid = 'hero_player';
@@ -283,23 +237,9 @@ describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Ac
     });
   });
 
-  describe('5. Prioritized Next Best Action Engine', () => {
-    it('recommends Driving Academy for players without a pro license', () => {
+  describe('4. Prioritized Next Best Action Engine', () => {
+    it('prioritizes streak protection when daily race is pending', () => {
       const state = {
-        licenseDone: false,
-        streakInfo: { racedToday: false, currentStreak: 1 },
-        missions: [],
-        rivals: {}
-      };
-      const act = prog.getNextBestAction(state);
-      assert.strictEqual(act.id, 'license');
-      assert.strictEqual(act.actionType, 'academy');
-      assert.ok(act.title.includes('Driving Academy'));
-    });
-
-    it('prioritizes streak protection when streak is at risk and license is done', () => {
-      const state = {
-        licenseDone: true,
         streakInfo: { racedToday: false, currentStreak: 5, nextMilestone: 7 },
         missions: [],
         rivals: {}
@@ -310,9 +250,19 @@ describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Ac
       assert.ok(act.title.includes('5-Day Streak'));
     });
 
+    it('prioritizes claimable missions when reward is available', () => {
+      const state = {
+        streakInfo: { racedToday: true, currentStreak: 5 },
+        missions: [{ id: 'm1', title: 'Top Speed', xp: 50, coins: 25, completed: true, claimed: false }],
+        rivals: {}
+      };
+      const act = prog.getNextBestAction(state);
+      assert.strictEqual(act.id, 'mission_claim');
+      assert.strictEqual(act.actionType, 'claim_mission');
+    });
+
     it('serves dynamic next best action via /api/player/next-action endpoint', async () => {
       const uid = 'action_user_01';
-      memPlayerLicense.set(uid, true); // license already done
 
       const res = await httpGet(`/api/player/next-action?uid=${encodeURIComponent(uid)}`);
       assert.strictEqual(res.status, 200);
@@ -323,7 +273,7 @@ describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Ac
     });
   });
 
-  describe('6. Multi-Target Ghost Target API', () => {
+  describe('5. Multi-Target Ghost Target API', () => {
     it('serves track record ghost target via /api/ghost/target?target=record', async () => {
       const res = await httpGet('/api/ghost/target?map=0&target=record');
       assert.strictEqual(res.status, 200);
@@ -344,7 +294,7 @@ describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Ac
     });
   });
 
-  describe('7. Authoritative Settlement Integration with Badges, Bounties and Revenge', () => {
+  describe('6. Authoritative Settlement Integration with Badges, Bounties and Revenge', () => {
     it('settles race with weekly bounty progression and revenge bonus calculations', async () => {
       const uid1 = 'settle_user_1';
       const uid2 = 'settle_user_2';
@@ -391,7 +341,7 @@ describe('Retention V82 Suite: Academy, Badges, Bounties, Revenge & Next Best Ac
 
       // Badge evaluations included
       assert.ok(r1.badges);
-      assert.strictEqual(r1.badges.length, 8);
+      assert.strictEqual(r1.badges.length, 7);
 
       // Weekly bounty updates included
       assert.ok(r1.bountyUpdates);

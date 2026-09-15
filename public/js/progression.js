@@ -425,52 +425,12 @@
         return `📅 I set ${timeStr} in today's Daily Cup on Sridhar Rush! Race today's challenge: ${link}`;
       case 'revenge_challenge':
         return `⚔️ REVENGE MATCH: You beat me on ${trackName} — think you can do it again? Accept my revenge challenge: ${link}`;
-      case 'license_complete':
-        return `🎓 Just earned my Pro Racing License on Sridhar Rush! Think you can out-drive a certified racer? ${link}`;
       default:
         return `🏁 Race with me in Sridhar Rush! Real-time 3D competitive arcade racing: ${link}`;
     }
   }
 
-  // ---- 6. Driving Academy / Onboarding License ----
-  const ACADEMY_LESSONS = [
-    {
-      id: 'lesson_1_steering',
-      title: 'Apex & Precision Steering',
-      desc: 'Master the racing line: steer smoothly around apexes without hitting outer barriers.',
-      targetMs: 25000,
-      rewardXp: 50,
-      rewardCoins: 50,
-      icon: '🎯'
-    },
-    {
-      id: 'lesson_2_nitro',
-      title: 'Nitro Exit Acceleration',
-      desc: 'Trigger Nitro boosts out of high-speed turns to reach top straightaway velocity.',
-      targetMs: 20000,
-      rewardXp: 75,
-      rewardCoins: 50,
-      icon: '⚡'
-    },
-    {
-      id: 'lesson_3_drafting',
-      title: 'Slipstream & Clean Overtake',
-      desc: 'Follow the target car in its aerodynamic slipstream draft and execute a clean pass.',
-      targetMs: 18000,
-      rewardXp: 75,
-      rewardCoins: 100,
-      icon: '🏎️'
-    }
-  ];
-
-  const LICENSE_COMPLETION_BONUS = {
-    xp: 200,
-    coins: 200,
-    title: 'Licensed Pro',
-    badgeId: 'pro_license'
-  };
-
-  // ---- 7. Milestone Badges & Showcase ----
+  // ---- 6. Milestone Badges & Showcase ----
   const BADGE_DEFINITIONS = [
     {
       id: 'speed_demon',
@@ -555,15 +515,6 @@
         { level: 3, name: 'Gold', req: 250, label: '250 Boosts', xp: 220, coins: 110 },
         { level: 4, name: 'Diamond', req: 500, label: '500 Boosts', xp: 500, coins: 250 }
       ]
-    },
-    {
-      id: 'pro_license',
-      name: 'Licensed Pro',
-      icon: '🎓',
-      desc: 'Graduate from the Driving Academy with full racing certification',
-      tiers: [
-        { level: 1, name: 'Certified', req: 1, label: 'Academy Graduate', xp: 200, coins: 200 }
-      ]
     }
   ];
 
@@ -576,7 +527,6 @@
     const ghostsBeaten = Math.max(0, parseInt(stats.ghosts_beaten, 10) || 0);
     const cleanRaces = Math.max(0, parseInt(stats.clean_races, 10) || 0);
     const nitroCount = Math.max(0, parseInt(stats.nitro_count, 10) || 0);
-    const licenseDone = !!(stats.license_done || stats.academy_done);
 
     const values = {
       speed_demon: topSpeed,
@@ -585,8 +535,7 @@
       rival_slayer: rivalsPassed,
       phantom_master: ghostsBeaten,
       clean_driver: cleanRaces,
-      nitro_junkie: nitroCount,
-      pro_license: licenseDone ? 1 : 0
+      nitro_junkie: nitroCount
     };
 
     return BADGE_DEFINITIONS.map((def) => {
@@ -681,21 +630,10 @@
     };
   }
 
-  // ---- 10. Prioritized Next Best Action Guide ----
+  // ---- 9. Prioritized Next Best Action Guide ----
   function getNextBestAction(playerContext) {
     playerContext = playerContext || {};
-    const { streakInfo, missions, rivals, licenseDone, nextTier } = playerContext;
-
-    if (!licenseDone) {
-      return {
-        id: 'license',
-        title: 'Complete Driving Academy',
-        desc: 'Earn your official Pro License + 200 starter Coins & 200 XP!',
-        actionType: 'academy',
-        cta: '🎓 START ACADEMY',
-        badge: 'NEW RACER'
-      };
-    }
+    const { streakInfo, missions, rivals, nextTier } = playerContext;
 
     if (streakInfo && !streakInfo.racedToday) {
       return {
@@ -738,23 +676,34 @@
         id: 'rival_overtake',
         title: `Overtake ${rivals.nextRival.name} (#${rivals.nextRival.rank})`,
         desc: `Only ${rivals.nextRival.ratingGap} rating points behind! Win to take their rank.`,
-        actionType: 'ranked',
-        cta: '⚔️ RACE RIVAL',
-        badge: 'RIVAL NEAR'
+        actionType: 'quickplay',
+        cta: '⚔️ PASS RIVAL',
+        badge: 'RIVAL BATTLE'
+      };
+    }
+
+    if (nextTier) {
+      return {
+        id: 'tier_climb',
+        title: `Climb to ${nextTier.name}`,
+        desc: `${nextTier.gap} rating points to reach ${nextTier.name}!`,
+        actionType: 'quickplay',
+        cta: '🏆 CLIMB DIVISION',
+        badge: 'RANKED'
       };
     }
 
     return {
-      id: 'climb_ranked',
-      title: 'Climb Ranked Ladder',
-      desc: nextTier ? `Compete in Rated multiplayer to advance toward ${nextTier}!` : 'Dominate the Global Rating Leaderboard!',
+      id: 'quick_race',
+      title: 'Jump into a Quick Race',
+      desc: 'Compete in high-speed arcade multiplayer and level up your career.',
       actionType: 'quickplay',
-      cta: '⚡ PLAY RANKED',
-      badge: 'LADDER'
+      cta: '🏎️ QUICK RACE',
+      badge: 'MULTIPLAYER'
     };
   }
 
-  // ---- 11. Racing Syndicate Crews ----
+  // ---- 10. Racing Syndicate Crews ----
   const CREW_MILESTONES = [
     { tier: 1, reqKm: 25,  reqMeters: 25000,   name: 'Rookie Milestone',    reward: { xp: 150, coins: 75, badge: '🔰' }, desc: '25 km team mileage' },
     { tier: 2, reqKm: 75,  reqMeters: 75000,   name: 'Club Division',      reward: { xp: 350, coins: 150, title: 'SYNDICATE ROOKIE' }, desc: '75 km team mileage' },
@@ -833,7 +782,6 @@
     STREAK_MILESTONES, getStreakMilestoneInfo, evaluateStreakTransition,
     SEASON_REWARDS, getCurrentSeason, checkDivisionTransition,
     formatCompetitiveShare, formatShareMessage: formatCompetitiveShare,
-    ACADEMY_LESSONS, LICENSE_COMPLETION_BONUS,
     BADGE_DEFINITIONS, evaluateBadges,
     WEEKLY_BOUNTY_CATALOG, getWeeklyBounties, evaluateWeeklyBountyProgress,
     evaluateRevengeMatch, getNextBestAction,

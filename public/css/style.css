@@ -998,23 +998,6 @@ body.spec #overlay, body.spec .share-row, body.spec #quickplay-btn { display: no
   border-color: rgba(255, 82, 82, 0.5);
 }
 
-.academy-hint-banner {
-  position: fixed;
-  top: 96px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: linear-gradient(135deg, rgba(0, 229, 255, 0.25), rgba(18, 25, 43, 0.95));
-  border: 1px solid rgba(0, 229, 255, 0.6);
-  color: #fff;
-  padding: 6px 16px;
-  border-radius: 20px;
-  font: 700 12px system-ui;
-  z-index: 20;
-  backdrop-filter: blur(6px);
-  box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
-  text-align: center;
-}
-
 /* Results Retention Cards */
 .res-retention-card {
   background: rgba(18, 25, 43, 0.9);
@@ -1227,8 +1210,8 @@ body.spec #overlay, body.spec .share-row, body.spec #quickplay-btn { display: no
   margin-left: 4px;
 }
 
-/* v82 Driving Academy & Badges Modals */
-.academy-body, .badges-body {
+/* v82 Badges & Milestone Showcase Modals */
+.badges-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1236,63 +1219,6 @@ body.spec #overlay, body.spec .share-row, body.spec #quickplay-btn { display: no
   max-height: 420px;
   overflow-y: auto;
   padding-right: 4px;
-}
-.academy-lesson-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: rgba(20, 28, 48, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  padding: 12px 14px;
-  text-align: left;
-}
-.academy-lesson-card.completed {
-  border-color: rgba(126, 231, 138, 0.4);
-  background: rgba(126, 231, 138, 0.06);
-}
-.alc-info {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.alc-title {
-  font: 800 13px Orbitron, system-ui;
-  color: #fff;
-}
-.alc-desc {
-  font-size: 11px;
-  color: #8b93a8;
-}
-.alc-reward {
-  font: 700 10.5px system-ui;
-  color: #ffd479;
-}
-.alc-btn {
-  background: #00e5ff;
-  color: #05070c;
-  border: none;
-  padding: 6px 14px;
-  border-radius: 8px;
-  font: 800 11px Orbitron, system-ui;
-  cursor: pointer;
-}
-.license-cert-card {
-  background: linear-gradient(135deg, rgba(255, 212, 121, 0.15), rgba(0, 229, 255, 0.1));
-  border: 2px solid rgba(255, 212, 121, 0.5);
-  border-radius: 14px;
-  padding: 16px;
-  text-align: center;
-}
-.lcc-title {
-  font: 800 16px Orbitron, system-ui;
-  color: #ffd479;
-  margin-bottom: 4px;
-}
-.lcc-sub {
-  font-size: 12px;
-  color: #cfd6dd;
-  margin-bottom: 12px;
 }
 
 .badges-grid {
