@@ -2341,7 +2341,7 @@ const ordinal = (n) => ['1st', '2nd', '3rd'][n - 1] || n + 'th';
 let shakeAmp = 0;
 function onCrashFX(x, z, strength) {
   spawnSparks(x, z, strength);
-  shakeAmp = Math.min(0.8, shakeAmp + 0.14 + strength * 0.3);
+  shakeAmp = Math.min(0.35, shakeAmp + 0.05 + strength * 0.15);
   const f = $('hitflash');
   f.style.opacity = Math.min(0.55, 0.2 + strength * 0.4);
   clearTimeout(onCrashFX._t);
@@ -4494,8 +4494,9 @@ function updateCamera(dt, mine, rival) {
   lookTarget.lerp(_camLook, 1 - Math.exp(-10.0 * dt));
 
   // Subtle speed vibration (disabled when Reduced Motion is toggled)
-  const baseShake = sp > 0.75 ? (sp - 0.75) * 0.04 : 0;
-  shakeAmp = Math.max(0, shakeAmp - shakeAmp * 4.5 * dt);
+  // Subtle speed vibration (disabled when Reduced Motion is toggled)
+  const baseShake = sp > 0.85 ? (sp - 0.85) * 0.03 : 0;
+  shakeAmp = Math.max(0, shakeAmp - shakeAmp * 8.5 * dt);
   const amp = prefs.rm ? 0 : (shakeAmp + baseShake);
   if (amp > 0.001) {
     camera.position.x += (Math.random() - 0.5) * amp;
@@ -4729,9 +4730,15 @@ function placeCar(slot, cs, dt) {
             for (let pIdx = 0; pIdx < 3; pIdx++) {
               const pr0 = pIdx === 0 ? 0 : (pIdx === 1 ? 2.6 : -2.4);
               const pr1 = pIdx === 0 ? limC : limP;
-              const n = T.nearest(v.netX + dirX * pr0, v.netZ + dirZ * pr0, v._th);
+              const px = v.netX + dirX * pr0, pz = v.netZ + dirZ * pr0;
+              const n = T.nearest(px, pz, v._th);
               const over = n.d - pr1;
-              if (over > maxOver) { maxOver = over; pnx = n.nx; pnz = n.nz; }
+              if (over > maxOver) {
+                maxOver = over;
+                const nd = n.d > 1e-6 ? n.d : 1;
+                pnx = (px - n.cx) / nd;
+                pnz = (pz - n.cz) / nd;
+              }
             }
             if (maxOver <= 1e-7) break;
             v.netX -= pnx * maxOver; v.netZ -= pnz * maxOver;
@@ -4741,10 +4748,14 @@ function placeCar(slot, cs, dt) {
             for (let pIdx = 0; pIdx < 3; pIdx++) {
               const pr0 = pIdx === 0 ? 0 : (pIdx === 1 ? 2.6 : -2.4);
               const pr1 = pIdx === 0 ? limC : limP;
-              const n = T.nearest(v.netX + dirX * pr0, v.netZ + dirZ * pr0, v._th);
+              const px = v.netX + dirX * pr0, pz = v.netZ + dirZ * pr0;
+              const n = T.nearest(px, pz, v._th);
               const over = n.d - pr1;
               if (over > worst) worst = over;
-              if (over > 1e-7) { v.netX -= n.nx * over; v.netZ -= n.nz * over; }
+              if (over > 1e-7 && n.d > 1e-6) {
+                const nx = (px - n.cx) / n.d, nz = (pz - n.cz) / n.d;
+                v.netX -= nx * over; v.netZ -= nz * over;
+              }
             }
             if (worst <= 1e-7) break;
           }
@@ -4752,10 +4763,18 @@ function placeCar(slot, cs, dt) {
           for (let pIdx = 0; pIdx < 3; pIdx++) {
             const pr0 = pIdx === 0 ? 0 : (pIdx === 1 ? 2.6 : -2.4);
             const pr1 = pIdx === 0 ? limC : limP;
-            const n = T.nearest(v.netX + dirX * pr0, v.netZ + dirZ * pr0, v._th);
+            const px = v.netX + dirX * pr0, pz = v.netZ + dirZ * pr0;
+            const n = T.nearest(px, pz, v._th);
             if (n.d - pr1 > worst) worst = n.d - pr1;
           }
-          if (worst > 1e-4) { const nc = T.nearest(v.netX, v.netZ, v._th); v.netX = nc.cx; v.netZ = nc.cz; v._th = nc.th; } // hard guarantee
+          if (worst > 1e-4) {
+            const nc = T.nearest(v.netX, v.netZ, v._th); v._th = nc.th;
+            if (nc.d > limC && nc.d > 1e-6) {
+              const cOver = nc.d - limC;
+              const nx = (v.netX - nc.cx) / nc.d, nz = (v.netZ - nc.cz) / nc.d;
+              v.netX -= nx * cOver; v.netZ -= nz * cOver;
+            }
+          }
         }
       } else {
         const proj = (px, pz) => CORE.ellipseProj(px, pz, T.a, T.b);
