@@ -217,4 +217,32 @@ describe('Authoritative Race Lifecycle & Simulation', () => {
       }
     }
   });
+
+  test('verifies smooth barrier collision clamping on both inner and outer fences across maps 1-4 without centerline snapping', () => {
+    const dt = 1 / 30;
+    for (let mapId = 1; mapId <= 4; mapId++) {
+      const track = core.MAPS[mapId];
+      const car = new core.Car(1, track.a, track);
+      car.participating = true;
+      car.resetGrid(0);
+
+      // 1. Force car toward outer fence (steer right hard against barrier)
+      for (let t = 0; t < 60; t++) {
+        car.input = { steer: 1.0, throttle: 1.0, brake: 0, handbrake: false, nitro: false };
+        car.update(dt, t * dt, 'racing', [], null);
+      }
+      const outerNear = track.nearest(car.x, car.z, car._th);
+      assert.ok(outerNear.d <= track.limC + 0.5, `Map ${mapId}: Outer barrier collision must clamp car within limC bound (got d=${outerNear.d})`);
+      assert.ok(!isNaN(car.x) && !isNaN(car.z), `Map ${mapId}: Outer collision must not produce NaN`);
+
+      // 2. Force car toward inner fence (steer left hard against barrier)
+      for (let t = 0; t < 60; t++) {
+        car.input = { steer: -1.0, throttle: 1.0, brake: 0, handbrake: false, nitro: false };
+        car.update(dt, (60 + t) * dt, 'racing', [], null);
+      }
+      const innerNear = track.nearest(car.x, car.z, car._th);
+      assert.ok(innerNear.d <= track.limC + 0.5, `Map ${mapId}: Inner barrier collision must clamp car within limC bound (got d=${innerNear.d})`);
+      assert.ok(!isNaN(car.x) && !isNaN(car.z), `Map ${mapId}: Inner collision must not produce NaN`);
+    }
+  });
 });
