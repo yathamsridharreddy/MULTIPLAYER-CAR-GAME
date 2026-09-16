@@ -1659,8 +1659,9 @@ function wireLobbyV2() {
       prefs.cls = b.dataset.cls; savePrefs();
       document.querySelectorAll('.cls-btn').forEach((x) => x.classList.toggle('active', x === b));
       sendMeta();
-      const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !s;
-      if (s) loadEquipped();
+      const isAuth = (window.SRAccount && typeof SRAccount.loggedIn === 'function' && SRAccount.loggedIn());
+      const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !isAuth;
+      if (isAuth) loadEquipped();
     });
   });
   document.querySelectorAll('.laps-btn').forEach((b) => {
@@ -1710,8 +1711,9 @@ function wireLobbyV2() {
       prefs.cos[k] = v; savePrefs();
       document.querySelectorAll('.cos-btn[data-cos="' + k + '"]').forEach((x) => x.classList.toggle('active', x === b));
       sendMeta();
-      const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !s;
-      if (s) loadEquipped();
+      const isAuth = (window.SRAccount && typeof SRAccount.loggedIn === 'function' && SRAccount.loggedIn());
+      const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !isAuth;
+      if (isAuth) loadEquipped();
     });
   });
   const muteEl = $('set-mute'); if (muteEl) { muteEl.checked = !!prefs.mute; muteEl.addEventListener('change', () => { prefs.mute = muteEl.checked; savePrefs(); setAudio(); }); }
@@ -2093,6 +2095,19 @@ window.renderRoomLobby = renderRoomLobby;
   const rbtn = $('ready-btn'); if (rbtn) rbtn.addEventListener('click', () => { iAmReady = !iAmReady; net.send({ type: 'ready', on: iAmReady }); renderRoomLobby({ players: window.__lastLobby || [], cap: 6 }); });
   const gc = $('garage-close'); if (gc) gc.addEventListener('click', () => { const d = $('garage-dlg'); if (d) d.hidden = true; });
   const fc = $('friends-close'); if (fc) fc.addEventListener('click', () => { const d = $('friends-dlg'); if (d) d.hidden = true; });
+
+  // Generic backdrop dismissal for all modal dialogs
+  document.querySelectorAll('.dlg').forEach((d) => {
+    d.addEventListener('click', (e) => {
+      if (e.target === d) { d.hidden = true; d.classList.add('hidden'); }
+    });
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.dlg').forEach((d) => { d.hidden = true; d.classList.add('hidden'); });
+      const tut = $('tutorial'); if (tut) tut.style.display = 'none';
+    }
+  });
 })();
 function switchLobbyTab(t) {
   const tabs = ['race', 'rank', 'prof', 'sett'];
