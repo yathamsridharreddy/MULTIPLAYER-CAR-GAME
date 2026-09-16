@@ -139,6 +139,54 @@
     return { re, d: Math.hypot(x, z) - re };
   }
 
+  // Exact deterministic 3D elevation profile for every track
+  function getTrackElevation(track, th) {
+    if (!track) return 0;
+    const id = track.id != null ? track.id : 0;
+    if (id === 1) return 6.5 * Math.sin(2 * th + 0.3) + 3.2 * Math.cos(3 * th) - 1.8 * Math.sin(th);
+    if (id === 2) return 7.8 * Math.sin(th - 0.4) + 4.0 * Math.cos(2 * th) + 1.6 * Math.sin(4 * th);
+    if (id === 3) return 10.5 * Math.sin(th + 0.8) + 4.8 * Math.cos(2 * th + 1.2) - 2.8 * Math.sin(3 * th);
+    if (id === 4) return 12.5 * Math.sin(th - 1.0) + 5.8 * Math.cos(2 * th) + 3.2 * Math.sin(3 * th + 0.5);
+    // Map 0 / default (Highland)
+    return 4.8 * Math.sin(th) + 2.5 * Math.cos(2 * th - 0.4) - 1.2 * Math.sin(3 * th);
+  }
+
+  // Exact deterministic continuous 3D terrain heightfield with smooth track blending
+  function getTerrainHeight(track, x, z) {
+    if (!track) return 0;
+    const id = track.id != null ? track.id : 0;
+    let th = 0, latDist = 0;
+    if (track.type === 'spline' && track.nearest) {
+      const n = track.nearest(x, z);
+      th = n.th;
+      latDist = Math.abs(n.d);
+    } else {
+      th = Math.atan2(z, x);
+      const rad = radialDistToTrack(x, z, track.a, track.b);
+      latDist = Math.abs(rad.d);
+    }
+    const yRoad = getTrackElevation(track, th);
+    let yNat = 0;
+    if (id === 1) {
+      yNat = 0.5 * Math.sin(x * 0.02) * Math.cos(z * 0.02);
+    } else if (id === 2) {
+      yNat = Math.max(-1.5, 12.0 * Math.sin(x * 0.011) * Math.cos(z * 0.011) + 16.0 * Math.sin(x * 0.005 + z * 0.007) - 4.5);
+    } else if (id === 3) {
+      yNat = 14.0 * Math.sin(x * 0.012) + 16.0 * Math.cos(z * 0.014) + 7.0 * Math.sin((x - z) * 0.022);
+    } else if (id === 4) {
+      yNat = 20.0 * Math.sin(x * 0.009 + 1.0) * Math.cos(z * 0.009) + 14.0 * Math.sin(z * 0.016 - 0.5) + 6.0 * Math.cos((x + z) * 0.02);
+    } else {
+      yNat = 8.0 * Math.sin(x * 0.014 + 0.5) * Math.cos(z * 0.016 - 0.3) + 13.0 * Math.sin(x * 0.006 - z * 0.008) + 4.5 * Math.cos((x + z) * 0.024);
+    }
+    const roadMargin = RH + 1.5;
+    const blendDist = 28.0;
+    if (latDist <= roadMargin) return yRoad;
+    if (latDist >= roadMargin + blendDist) return yNat;
+    const t = (latDist - roadMargin) / blendDist;
+    const w = t * t * (3 - 2 * t);
+    return (1 - w) * yRoad + w * yNat;
+  }
+
   // EXACT ellipse coordinate: lat L means the car sits on the offset ellipse
   // (a+L, b+L) — the SAME parametric family every ellipse-map visual is drawn
   // with (road edges ±8, curbs ±8.6, walls ±11.6). Using it for physics makes
@@ -1249,5 +1297,5 @@
     return (h >>> 0).toString(36);
   })();
 
-  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode, GEOM_ID, pickupSpots, WEATHER_CONDITIONS };
+  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode, GEOM_ID, pickupSpots, WEATHER_CONDITIONS, getTrackElevation, getTerrainHeight };
 });
