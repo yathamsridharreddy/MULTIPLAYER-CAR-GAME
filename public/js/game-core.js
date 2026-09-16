@@ -178,13 +178,13 @@
     } else {
       yNat = 8.0 * Math.sin(x * 0.014 + 0.5) * Math.cos(z * 0.016 - 0.3) + 13.0 * Math.sin(x * 0.006 - z * 0.008) + 4.5 * Math.cos((x + z) * 0.024);
     }
-    const roadMargin = RH + 1.5;
-    const blendDist = 28.0;
-    if (latDist <= roadMargin) return yRoad;
+    const roadMargin = RH + 1.2;
+    const blendDist = 26.0;
+    if (latDist <= roadMargin) return yRoad - 0.08;
     if (latDist >= roadMargin + blendDist) return yNat;
     const t = (latDist - roadMargin) / blendDist;
     const w = t * t * (3 - 2 * t);
-    return (1 - w) * yRoad + w * yNat;
+    return (1 - w) * (yRoad - 0.08) + w * yNat;
   }
 
   // EXACT ellipse coordinate: lat L means the car sits on the offset ellipse
