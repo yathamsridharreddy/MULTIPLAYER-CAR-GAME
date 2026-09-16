@@ -485,8 +485,28 @@ function updateClouds(dt) {
 }
 
 // ---------------------------------------------------------------------------
-// 3D Ribbon & Track Geometry Engine
+// 3D Surface & Track Geometry Engine
 // ---------------------------------------------------------------------------
+function getSurfaceY(map, x, z) {
+  if (!map) return 0;
+  let th = 0, latDist = 0;
+  if (map.type === 'spline' && map.nearest) {
+    const n = map.nearest(x, z);
+    th = n.th;
+    latDist = Math.abs(n.d);
+  } else {
+    th = Math.atan2(z, x);
+    const rad = CORE.radialDistToTrack(x, z, map.a, map.b);
+    latDist = Math.abs(rad.d);
+  }
+  const yRoad = CORE.getTrackElevation(map, th) + 0.08;
+  if (latDist <= RH + 1.2) return yRoad;
+  const yTerr = CORE.getTerrainHeight(map, x, z);
+  const t = Math.min(1, (latDist - (RH + 1.2)) / 6.0);
+  const w = t * t * (3 - 2 * t);
+  return (1 - w) * yRoad + w * yTerr;
+}
+
 function ribbon3D(pts, offset, halfW, yOffset, mat, map) {
   const n = pts.length;
   const pos = [];
@@ -499,16 +519,22 @@ function ribbon3D(pts, offset, halfW, yOffset, mat, map) {
     const nx = -tz, nz = tx;
     const lx = p.x + nx * (offset - halfW), lz = p.z + nz * (offset - halfW);
     const rx = p.x + nx * (offset + halfW), rz = p.z + nz * (offset + halfW);
-    const ly = CORE.getTerrainHeight(map, lx, lz) + (yOffset || 0.02);
-    const ry = CORE.getTerrainHeight(map, rx, rz) + (yOffset || 0.02);
-    pos.push(rx, ry, rz, lx, ly, lz);
+    let th = 0;
+    if (map && map.type === "spline" && map.nearest) {
+      th = map.nearest(p.x, p.z).th;
+    } else {
+      th = Math.atan2(p.z, p.x);
+    }
+    const roadY = map ? (CORE.getTrackElevation(map, th) + (yOffset || 0.08)) : (yOffset || 0.08);
+    pos.push(rx, roadY, rz, lx, roadY, lz);
     const vCoord = cumLen * 0.08;
     uvs.push(1, vCoord, 0, vCoord);
     cumLen += L;
   }
   for (let i = 0; i < n; i++) {
     const a = 2 * i, b = 2 * i + 1, c = 2 * ((i + 1) % n), d = 2 * ((i + 1) % n) + 1;
-    idx.push(a, b, c, b, d, c);
+    // Upward-facing winding
+    idx.push(a, c, b, b, c, d);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -614,21 +640,22 @@ function build3DTerrain(map, T) {
 // 3D Elevated Track, Curbs, Dashes & Barriers
 // ---------------------------------------------------------------------------
 function build3DTrackAndRoad(map, T) {
-  const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8 });
+  const lineMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e2, roughness: 0.8, side: THREE.DoubleSide });
   const asphaltMat = new THREE.MeshStandardMaterial({
     map: asphaltTexture(T.night ? "#16181e" : "#2a2d32"),
     roughness: 0.92,
-    metalness: 0.05
+    metalness: 0.05,
+    side: THREE.DoubleSide
   });
 
   const pts = getTrackPts(map, 512);
 
   // 1. Road Surface Ribbon
-  ribbon3D(pts, 0, RH, 0.02, asphaltMat, map);
+  ribbon3D(pts, 0, RH, 0.08, asphaltMat, map);
 
   // 2. White Edge Lines
-  ribbon3D(getOffsetPts(map, RH - 0.7, 512), 0, 0.18, 0.045, lineMat, map);
-  ribbon3D(getOffsetPts(map, -(RH - 0.7), 512), 0, 0.18, 0.045, lineMat, map);
+  ribbon3D(getOffsetPts(map, RH - 0.7, 512), 0, 0.18, 0.10, lineMat, map);
+  ribbon3D(getOffsetPts(map, -(RH - 0.7), 512), 0, 0.18, 0.10, lineMat, map);
 
   // 3. Yellow/White Dashed Centerline
   {
@@ -643,7 +670,7 @@ function build3DTrackAndRoad(map, T) {
       const dy = CORE.getTerrainHeight(map, q.x, q.z) - CORE.getTerrainHeight(map, p.x, p.z);
       const pitch = -Math.atan2(dy, Math.hypot(q.x - p.x, q.z - p.z) || 1);
       const y = CORE.getTerrainHeight(map, p.x, p.z);
-      dashes.push({ x: p.x, y: y + 0.045, z: p.z, yaw, pitch });
+      dashes.push({ x: p.x, y: y + 0.10, z: p.z, yaw, pitch });
     }
     const inst = new THREE.InstancedMesh(dashGeo, dashMat, dashes.length);
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Euler = new THREE.Euler(), V = new THREE.Vector3(), S = new THREE.Vector3(1, 1, 1);
@@ -660,8 +687,8 @@ function build3DTrackAndRoad(map, T) {
   // 4. Red & White Alternating Rumble Curbs
   {
     const curbGeo = new THREE.BoxGeometry(1.0, 0.08, 2.6);
-    const curbR = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.85 });
-    const curbW = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.85 });
+    const curbR = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.85, side: THREE.DoubleSide });
+    const curbW = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.85, side: THREE.DoubleSide });
 
     const makeCurbLine = (side) => {
       const cpts = getOffsetPts(map, (RH + 0.6) * side, 1024);
@@ -677,7 +704,7 @@ function build3DTrackAndRoad(map, T) {
           const dy = CORE.getTerrainHeight(map, q.x, q.z) - CORE.getTerrainHeight(map, p.x, p.z);
           const pitch = -Math.atan2(dy, Math.hypot(q.x - p.x, q.z - p.z) || 1);
           const y = CORE.getTerrainHeight(map, p.x, p.z);
-          items.push({ x: p.x, y: y + 0.045, z: p.z, yaw, pitch });
+          items.push({ x: p.x, y: y + 0.10, z: p.z, yaw, pitch });
         }
       }
       const ir = new THREE.InstancedMesh(curbGeo, curbR, Math.ceil(items.length / 2));
@@ -748,8 +775,8 @@ function build3DTrackAndRoad(map, T) {
       g.fillRect(i * 16, j * 16, 16, 16);
     }
     const tex = new THREE.CanvasTexture(c); tex.magFilter = THREE.NearestFilter; tex.encoding = THREE.sRGBEncoding;
-    const line = new THREE.Mesh(new THREE.PlaneGeometry(RH * 2, 2.6), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.75 }));
-    line.rotation.x = -Math.PI / 2; line.rotation.z = -yaw; line.position.set(p0.x, y0 + 0.06, p0.z);
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(RH * 2, 2.6), new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.75 }));
+    line.rotation.x = -Math.PI / 2; line.rotation.z = -yaw; line.position.set(p0.x, y0 + 0.10, p0.z);
     worldGroup.add(line);
 
     const poleMat = new THREE.MeshStandardMaterial({ color: 0xd8dbe2, metalness: 0.7, roughness: 0.35 });
@@ -783,6 +810,17 @@ function build3DTrackAndRoad(map, T) {
 function buildHouseModel(b, seed, night, theme) {
   const grp = new THREE.Group();
   const w = b.w, d = b.d, h = b.h;
+
+  // Solid foundation plinth extending deep underground (5m) so building sits firmly anchored on slopes
+  const foundGeo = new THREE.BoxGeometry(w + 0.4, 5.0, d + 0.4);
+  const foundMat = new THREE.MeshStandardMaterial({
+    color: theme === "desert" ? 0x8a5b3a : (theme === "island" ? 0x9098a0 : 0x2e3238),
+    roughness: 0.95
+  });
+  const foundation = new THREE.Mesh(foundGeo, foundMat);
+  foundation.position.y = -2.5 + 0.1;
+  foundation.receiveShadow = true;
+  grp.add(foundation);
 
   if (theme === "neon") {
     // Urban Downtown High-Rise / Skyscraper Archetype
@@ -1053,10 +1091,21 @@ function buildRoadsideInfrastructure(map, T, W) {
       const m = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.7 });
       if (T.night) { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = tex; m.emissiveIntensity = 0.7; }
       const board = new THREE.Mesh(new THREE.PlaneGeometry(11, 2.7), m);
-      board.position.set(x, y + 2.0, z);
+      board.position.set(x, y + 3.4, z);
       board.rotation.y = Math.atan2(-x, -z);
       board.castShadow = true;
       worldGroup.add(board);
+
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x4a4d52, metalness: 0.6, roughness: 0.4 });
+      const postGeo = new THREE.CylinderGeometry(0.16, 0.22, 6, 8);
+      const postYaw = Math.atan2(-x, -z);
+      const pxOff = Math.cos(postYaw) * 3.8, pzOff = -Math.sin(postYaw) * 3.8;
+      for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(postGeo, postMat);
+        post.position.set(x + pxOff * side, y + 1.8, z + pzOff * side);
+        post.castShadow = true;
+        worldGroup.add(post);
+      }
     });
   }
 
@@ -1685,7 +1734,7 @@ function ghostUpdate(raceTime) {
   if (ghostIdx >= ghostData.length || ghostData[ghostIdx][0] > raceTime) ghostIdx = 0;
   while (ghostIdx < ghostData.length - 1 && ghostData[ghostIdx + 1][0] < raceTime) ghostIdx++;
   const s = ghostData[ghostIdx][0] <= raceTime ? ghostData[ghostIdx] : ghostData[ghostData.length - 1];
-  const gy = curMap ? CORE.getTerrainHeight(curMap, s[1], s[2]) : 0; ghostGroup.position.set(s[1], gy, s[2]); ghostGroup.rotation.y = s[3];
+  const gy = curMap ? getSurfaceY(curMap, s[1], s[2]) : 0; ghostGroup.position.set(s[1], gy, s[2]); ghostGroup.rotation.y = s[3];
 
   // Live in-race ghost delta indicator
   if (chip && latest && latest.cars) {
@@ -1776,7 +1825,8 @@ for (let i = 0; i < 50; i++) {
 function spawnWaterSpray(x, z, vx, vz) {
   const p = waterSprayPool.find((q) => q.life <= 0); if (!p) return;
   p.life = p.maxLife = 0.35 + Math.random() * 0.25;
-  p.spr.position.set(x + (Math.random() - 0.5) * 0.3, 0.2, z + (Math.random() - 0.5) * 0.3);
+  const wy = (curMap ? getSurfaceY(curMap, x, z) : 0) + 0.2;
+  p.spr.position.set(x + (Math.random() - 0.5) * 0.3, wy, z + (Math.random() - 0.5) * 0.3);
   p.vx = vx * 0.15 + (Math.random() - 0.5) * 2.2; p.vz = vz * 0.15 + (Math.random() - 0.5) * 2.2;
   p.vy = 1.2 + Math.random() * 1.8;
   p.spr.scale.setScalar(0.7 + Math.random() * 0.5); p.spr.visible = true;
@@ -1791,7 +1841,8 @@ for (let i = 0; i < 50; i++) {
 function spawnSnowSpray(x, z, vx, vz) {
   const p = snowSprayPool.find((q) => q.life <= 0); if (!p) return;
   p.life = p.maxLife = 0.45 + Math.random() * 0.3;
-  p.spr.position.set(x + (Math.random() - 0.5) * 0.3, 0.2, z + (Math.random() - 0.5) * 0.3);
+  const sy = (curMap ? getSurfaceY(curMap, x, z) : 0) + 0.2;
+  p.spr.position.set(x + (Math.random() - 0.5) * 0.3, sy, z + (Math.random() - 0.5) * 0.3);
   p.vx = vx * 0.1 + (Math.random() - 0.5) * 1.8; p.vz = vz * 0.1 + (Math.random() - 0.5) * 1.8;
   p.vy = 0.8 + Math.random() * 1.4;
   p.spr.scale.setScalar(0.6 + Math.random() * 0.5); p.spr.visible = true;
@@ -1913,9 +1964,16 @@ skidMesh.count = 0; scene.add(skidMesh);
 let skidIdx = 0;
 const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sup = new THREE.Vector3(0, 1, 0), _spos = new THREE.Vector3(), _sone = new THREE.Vector3(1, 1, 1);
 function spawnSkid(x, z, heading) {
-  if (Math.abs(CORE.radialDistToTrack(x, z, A, B).d) > RH + 0.5) return;
+  let latDist = 0;
+  if (curMap && curMap.type === 'spline' && curMap.nearest) {
+    latDist = Math.abs(curMap.nearest(x, z).d);
+  } else {
+    latDist = Math.abs(CORE.radialDistToTrack(x, z, A, B).d);
+  }
+  if (latDist > RH + 0.5) return;
+  const roadY = curMap ? getSurfaceY(curMap, x, z) : 0.035;
   _sq.setFromAxisAngle(_sup, heading);
-  _spos.set(x, 0.035 + (skidIdx % 4) * 0.0015, z);
+  _spos.set(x, roadY + 0.02 + (skidIdx % 4) * 0.0015, z);
   _sm.compose(_spos, _sq, _sone);
   skidMesh.setMatrixAt(skidIdx % SKID_MAX, _sm);
   skidIdx++;
@@ -5228,22 +5286,22 @@ function placeCar(slot, cs, dt) {
       }
     }
   }
-  const curY = curMap ? CORE.getTerrainHeight(curMap, v.netX, v.netZ) : 0;
+  const curY = curMap ? getSurfaceY(curMap, v.netX, v.netZ) : 0;
   const fwdDirX = Math.sin(v.netH), fwdDirZ = Math.cos(v.netH);
-  const yFwd = curMap ? CORE.getTerrainHeight(curMap, v.netX + fwdDirX * 1.5, v.netZ + fwdDirZ * 1.5) : 0;
-  const yBwd = curMap ? CORE.getTerrainHeight(curMap, v.netX - fwdDirX * 1.5, v.netZ - fwdDirZ * 1.5) : 0;
+  const yFwd = curMap ? getSurfaceY(curMap, v.netX + fwdDirX * 1.5, v.netZ + fwdDirZ * 1.5) : 0;
+  const yBwd = curMap ? getSurfaceY(curMap, v.netX - fwdDirX * 1.5, v.netZ - fwdDirZ * 1.5) : 0;
   const roadPitch = -Math.atan2(yFwd - yBwd, 3.0);
 
   const latDirX = Math.cos(v.netH), latDirZ = -Math.sin(v.netH);
-  const yRight = curMap ? CORE.getTerrainHeight(curMap, v.netX + latDirX * 1.0, v.netZ + latDirZ * 1.0) : 0;
-  const yLeft = curMap ? CORE.getTerrainHeight(curMap, v.netX - latDirX * 1.0, v.netZ - latDirZ * 1.0) : 0;
+  const yRight = curMap ? getSurfaceY(curMap, v.netX + latDirX * 1.0, v.netZ + latDirZ * 1.0) : 0;
+  const yLeft = curMap ? getSurfaceY(curMap, v.netX - latDirX * 1.0, v.netZ - latDirZ * 1.0) : 0;
   const roadRoll = Math.atan2(yRight - yLeft, 2.0);
 
   v.group.position.set(v.netX, curY, v.netZ);
   v.group.rotation.y = v.netH;
 
   // Dynamic body roll, suspension pitch, and terrain grade
-  const isBraking = (cs.th != null && cs.th < 0) || (cs.v < -0.2) || (slot === mySlot && keys.has(KeyS));
+  const isBraking = (cs.th != null && cs.th < 0) || (cs.v < -0.2) || (slot === mySlot && keys.has('KeyS'));
   if (v.tailMat) {
     v.tailMat.emissiveIntensity = isBraking ? 3.6 : 1.8;
     v.tailMat.color.setHex(isBraking ? 0xff0000 : 0xff1515);
