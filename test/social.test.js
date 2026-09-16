@@ -70,45 +70,39 @@ describe('Social Features, Challenges & Daily Rotations', () => {
     }
   });
 
-  test('evaluates mobile room join routing to controller view without breaking desktop or other links', () => {
-    function shouldRouteToController({ url, width, height, hasTouch, userAgent }) {
+  test('evaluates room join routing without breaking desktop or mobile links', () => {
+    function shouldRouteToController({ url }) {
       const u = new URL(url, 'http://localhost');
       const wantedRoom = u.searchParams.get('room');
-      const SPEC_ROOM = u.searchParams.get('watch');
-      const isTouchPhone = hasTouch && (width <= 768 || height <= 500 || /Android|iPhone|iPad|iPod/i.test(userAgent));
-      
-      return !!(wantedRoom && isTouchPhone && !SPEC_ROOM && !u.searchParams.get('ch') && !u.searchParams.get('g') && !u.searchParams.get('screen'));
+      return !!(wantedRoom && u.searchParams.get('controller'));
     }
 
-    // 1. Mobile phone (iOS/Android) joining room link -> SHOULD route to controller
-    const iPhonePortrait = { url: '/?room=ABCD', width: 390, height: 844, hasTouch: true, userAgent: 'iPhone' };
-    assert.equal(shouldRouteToController(iPhonePortrait), true, 'Mobile phone joining room should route to controller');
+    // 1. Explicit controller link -> SHOULD route to controller
+    const explicitCtrl = { url: '/?room=ABCD&controller=1' };
+    assert.equal(shouldRouteToController(explicitCtrl), true, 'Explicit controller parameter should route to controller');
 
-    const androidLandscape = { url: '/?room=ABCD', width: 800, height: 390, hasTouch: true, userAgent: 'Android' };
-    assert.equal(shouldRouteToController(androidLandscape), true, 'Mobile phone in landscape should route to controller');
+    // 2. Room game link -> loads game screen for both mobile and desktop
+    const mobileGameLink = { url: '/?room=ABCD' };
+    assert.equal(shouldRouteToController(mobileGameLink), false, 'Room link without controller param loads full screen game');
 
-    // 2. Desktop PC joining room link -> must NOT route (stays on desktop screen)
-    const desktopPC = { url: '/?room=ABCD', width: 1920, height: 1080, hasTouch: false, userAgent: 'Windows' };
+    // 3. Desktop PC joining room link -> stays on desktop screen
+    const desktopPC = { url: '/?room=ABCD' };
     assert.equal(shouldRouteToController(desktopPC), false, 'Desktop PC should stay on screen');
 
-    // 3. Touch laptop / iPad with explicit ?screen=1 -> must NOT route
-    const touchLaptop = { url: '/?room=ABCD&screen=1', width: 1366, height: 768, hasTouch: true, userAgent: 'Windows' };
-    assert.equal(shouldRouteToController(touchLaptop), false, 'Touch device with screen override should stay on screen');
-
-    // 4. Spectator link ?watch=ABCD -> must NOT route
-    const specLink = { url: '/?watch=ABCD', width: 390, height: 844, hasTouch: true, userAgent: 'iPhone' };
+    // 4. Spectator link ?watch=ABCD -> must NOT route to controller
+    const specLink = { url: '/?watch=ABCD' };
     assert.equal(shouldRouteToController(specLink), false, 'Spectator link must stay in spectator view');
 
     // 5. Challenge link ?ch=42 -> must NOT route
-    const challengeLink = { url: '/?ch=42', width: 390, height: 844, hasTouch: true, userAgent: 'iPhone' };
+    const challengeLink = { url: '/?ch=42' };
     assert.equal(shouldRouteToController(challengeLink), false, 'Challenge link must load challenge circuit');
 
     // 6. Ghost replay link ?g=ghost-1 -> must NOT route
-    const ghostLink = { url: '/?g=ghost-1', width: 390, height: 844, hasTouch: true, userAgent: 'iPhone' };
+    const ghostLink = { url: '/?g=ghost-1' };
     assert.equal(shouldRouteToController(ghostLink), false, 'Ghost replay link must load ghost circuit');
 
     // 7. Regular homepage / -> must NOT route
-    const normalHome = { url: '/', width: 390, height: 844, hasTouch: true, userAgent: 'iPhone' };
+    const normalHome = { url: '/' };
     assert.equal(shouldRouteToController(normalHome), false, 'Normal homepage load must stay on homepage');
   });
 

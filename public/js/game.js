@@ -2742,7 +2742,7 @@ function showResults(order) {
 function updateLobby(snap) {
   if (SPEC_ROOM) { const ov = $('overlay'); if (ov && latest && latest.state !== 'waiting') ov.classList.add('hidden'); }
   $('room-code').textContent = snap.code;
-  const gameLink = location.origin + '/?room=' + snap.code + '&map=' + (snap.map != null ? snap.map : selectedMap); // v64 per-map OG
+  const gameLink = location.origin + '/?room=' + snap.code;
   const phoneLink = location.origin + '/controller?room=' + snap.code + (mySlot ? '&slot=' + mySlot : '');
   $('game-link').textContent = gameLink;
   $('ctrl-url').textContent = phoneLink;
@@ -3904,12 +3904,10 @@ function processEvents(snap) {
 const wantedRoom = urlParam('room');
 const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 
-// Route mobile phone/touch devices opening a room link to the mobile controller pad
+// Route mobile devices explicitly requesting controller pad (?controller=1)
 (function () {
   if (typeof window === 'undefined') return;
-  const isTouchPhone = ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0))
-    && (window.innerWidth <= 768 || window.innerHeight <= 500 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
-  if (wantedRoom && isTouchPhone && !SPEC_ROOM && !urlParam('ch') && !urlParam('g') && !urlParam('screen')) {
+  if (wantedRoom && urlParam('controller')) {
     location.replace('/controller.html?room=' + encodeURIComponent(wantedRoom));
   }
 })();
