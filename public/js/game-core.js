@@ -968,7 +968,7 @@
       // v68: a driver actively giving throttle at the fence is NOT stuck —
       // quick 3 s rescue only when coasting/parked; throttle-pinned gets 8 s.
       const stuckLimit = raw.throttle > 0.15 ? 8 : 3;
-      if ((this._stuck > stuckLimit || Math.abs(near3.lat) > 12) && this._safe && this.participating) {
+      if ((this._stuck > stuckLimit || Math.abs(near3.lat) > 25) && this._safe && this.participating) {
         this.x = this._safe.x; this.z = this._safe.z; this.heading = this._safe.h;
         this.vx = 0; this.vy = 0; this._stuck = 0; this._nearIdx = null; this._th = null;
         ev.respawn = { slot: this.slot };
@@ -1168,70 +1168,34 @@
     }
 
     // ===== MAPS 1-4 — v68 RADIAL-X exact engine =====
-    // The field is analytic (true distance + exact signed lateral), so pushing
-    // the car along the true normal FROM the centerline TO the probe point
-    // smoothly resolves any barrier penetration on both inner and outer fences.
+    // Mirrors Map 0's rock-solid 3-pass convergence with center normal
     const limC = T.limC, limP = T.limP;
     const probes = [[0, limC], [PROBE_NOSE, limP], [PROBE_TAIL, limP]];
     let crash = null;
-    // 1) exact-normal sweeps on the worst probe
     for (let iter = 0; iter < 3; iter++) {
-      let maxOver = 0, pnx = 0, pnz = 0;
-      for (const pr of probes) {
-        const px = car.x + dirX * pr[0], pz = car.z + dirY * pr[0];
-        const n = T.nearest(px, pz, car._th); // v69 warm
-        if (pr[0] === 0) car._th = n.th;
-        const over = n.d - pr[1];
-        if (over > maxOver) {
-          maxOver = over;
-          const nd = n.d > 1e-6 ? n.d : 1;
-          pnx = (px - n.cx) / nd;
-          pnz = (pz - n.cz) / nd;
-        }
-      }
-      if (maxOver <= 1e-7) break;
-      car.x -= pnx * maxOver; car.z -= pnz * maxOver;
-      if (iter === 0) {
-        const vAway = car.vx * pnx + car.vy * pnz; // outward speed into the fence
-        if (vAway > 0) {
-          if (vAway > 9) crash = { x: car.x + pnx, z: car.z + pnz, s: Math.min(1, vAway / 26) };
-          car.vx -= pnx * vAway * 1.5; car.vy -= pnz * vAway * 1.5;
-          car.vx *= 0.9; car.vy *= 0.9;
-        }
-      }
-    }
-    // 2) per-probe exact corrections until converged
-    for (let it = 0; it < 6; it++) {
-      let worst = 0;
+      let maxOver = 0;
       for (const pr of probes) {
         const px = car.x + dirX * pr[0], pz = car.z + dirY * pr[0];
         const n = T.nearest(px, pz, car._th);
+        if (pr[0] === 0) car._th = n.th;
         const over = n.d - pr[1];
-        if (over > worst) worst = over;
-        if (over > 1e-7 && n.d > 1e-6) {
-          const nx = (px - n.cx) / n.d, nz = (pz - n.cz) / n.d;
-          car.x -= nx * over; car.z -= nz * over;
+        if (over > maxOver) maxOver = over;
+      }
+      if (maxOver <= 0) break;
+      const c0 = T.nearest(car.x, car.z, car._th);
+      car._th = c0.th;
+      let nx = car.x - c0.cx, nz = car.z - c0.cz;
+      const cd = Math.hypot(nx, nz) || 1;
+      nx /= cd; nz /= cd;
+      car.x -= nx * maxOver; car.z -= nz * maxOver;
+      if (iter === 0) {
+        const vAway = car.vx * nx + car.vy * nz; // outward speed towards barrier
+        if (vAway > 0) {
+          if (vAway > 9) crash = { x: car.x, z: car.z, s: Math.min(1, vAway / 26) };
+          car.vx -= nx * vAway * 1.5; car.vy -= nz * vAway * 1.5;
+          car.vx *= 0.9; car.vy *= 0.9;
         }
       }
-      if (worst <= 1e-7) break;
-    }
-    // 3) HARD GUARANTEE — clamp center safely within limits without snapping
-    let worst = 0;
-    for (const pr of probes) {
-      const px = car.x + dirX * pr[0], pz = car.z + dirY * pr[0];
-      const n = T.nearest(px, pz, car._th);
-      if (n.d - pr[1] > worst) worst = n.d - pr[1];
-    }
-    if (worst > 1e-4) {
-      const nc = T.nearest(car.x, car.z, car._th); car._th = nc.th;
-      if (nc.d > limC && nc.d > 1e-6) {
-        const cOver = nc.d - limC;
-        const nx = (car.x - nc.cx) / nc.d, nz = (car.z - nc.cz) / nc.d;
-        car.x -= nx * cOver; car.z -= nz * cOver;
-        const vAway = car.vx * nx + car.vy * nz;
-        if (vAway > 0) { car.vx -= nx * vAway; car.vy -= nz * vAway; }
-      }
-      if (!crash && Math.hypot(car.vx, car.vy) > 9) crash = { x: car.x, z: car.z, s: 0.6 };
     }
     return crash;
   }

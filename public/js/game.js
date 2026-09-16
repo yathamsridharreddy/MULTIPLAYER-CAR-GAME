@@ -4494,7 +4494,6 @@ function updateCamera(dt, mine, rival) {
   lookTarget.lerp(_camLook, 1 - Math.exp(-10.0 * dt));
 
   // Subtle speed vibration (disabled when Reduced Motion is toggled)
-  // Subtle speed vibration (disabled when Reduced Motion is toggled)
   const baseShake = sp > 0.85 ? (sp - 0.85) * 0.03 : 0;
   shakeAmp = Math.max(0, shakeAmp - shakeAmp * 8.5 * dt);
   const amp = prefs.rm ? 0 : (shakeAmp + baseShake);
@@ -4718,62 +4717,26 @@ function placeCar(slot, cs, dt) {
       const limP = spline ? (T.limP != null ? T.limP : RH + 3.35) : RH + 3.35;
       const dirX = Math.sin(v.netH), dirZ = Math.cos(v.netH);
       if (spline && T.nearest) {
-        // v68 RADIAL-X: same exact engine as the server (true distance +
-        // exact normals + converge + hard guarantee) — the displayed car can
-        // never sit past the drawn fence, at any angle or smoothing lag.
-        // v69 perf: warm-started windowed queries + fast reject when the car
-        // is mid-road (nose can reach at most center-distance + 2.6).
+        // Maps 1-4: 2-pass converge matching Map 0
         const nC = T.nearest(v.netX, v.netZ, v._th); v._th = nC.th;
         if (!(nC.d <= limC && nC.d + 2.6 <= limP)) {
-          for (let iter = 0; iter < 3; iter++) {
-            let maxOver = 0, pnx = 0, pnz = 0;
+          for (let iter = 0; iter < 2; iter++) {
+            let maxOver = 0;
             for (let pIdx = 0; pIdx < 3; pIdx++) {
               const pr0 = pIdx === 0 ? 0 : (pIdx === 1 ? 2.6 : -2.4);
               const pr1 = pIdx === 0 ? limC : limP;
               const px = v.netX + dirX * pr0, pz = v.netZ + dirZ * pr0;
               const n = T.nearest(px, pz, v._th);
               const over = n.d - pr1;
-              if (over > maxOver) {
-                maxOver = over;
-                const nd = n.d > 1e-6 ? n.d : 1;
-                pnx = (px - n.cx) / nd;
-                pnz = (pz - n.cz) / nd;
-              }
+              if (over > maxOver) maxOver = over;
             }
-            if (maxOver <= 1e-7) break;
-            v.netX -= pnx * maxOver; v.netZ -= pnz * maxOver;
-          }
-          for (let it = 0; it < 6; it++) {
-            let worst = 0;
-            for (let pIdx = 0; pIdx < 3; pIdx++) {
-              const pr0 = pIdx === 0 ? 0 : (pIdx === 1 ? 2.6 : -2.4);
-              const pr1 = pIdx === 0 ? limC : limP;
-              const px = v.netX + dirX * pr0, pz = v.netZ + dirZ * pr0;
-              const n = T.nearest(px, pz, v._th);
-              const over = n.d - pr1;
-              if (over > worst) worst = over;
-              if (over > 1e-7 && n.d > 1e-6) {
-                const nx = (px - n.cx) / n.d, nz = (pz - n.cz) / n.d;
-                v.netX -= nx * over; v.netZ -= nz * over;
-              }
-            }
-            if (worst <= 1e-7) break;
-          }
-          let worst = 0;
-          for (let pIdx = 0; pIdx < 3; pIdx++) {
-            const pr0 = pIdx === 0 ? 0 : (pIdx === 1 ? 2.6 : -2.4);
-            const pr1 = pIdx === 0 ? limC : limP;
-            const px = v.netX + dirX * pr0, pz = v.netZ + dirZ * pr0;
-            const n = T.nearest(px, pz, v._th);
-            if (n.d - pr1 > worst) worst = n.d - pr1;
-          }
-          if (worst > 1e-4) {
-            const nc = T.nearest(v.netX, v.netZ, v._th); v._th = nc.th;
-            if (nc.d > limC && nc.d > 1e-6) {
-              const cOver = nc.d - limC;
-              const nx = (v.netX - nc.cx) / nc.d, nz = (v.netZ - nc.cz) / nc.d;
-              v.netX -= nx * cOver; v.netZ -= nz * cOver;
-            }
+            if (maxOver <= 0) break;
+            const c0 = T.nearest(v.netX, v.netZ, v._th);
+            v._th = c0.th;
+            let sx = v.netX - c0.cx, sz = v.netZ - c0.cz;
+            const cd = Math.hypot(sx, sz) || 1;
+            sx /= cd; sz /= cd;
+            v.netX -= sx * maxOver; v.netZ -= sz * maxOver;
           }
         }
       } else {
