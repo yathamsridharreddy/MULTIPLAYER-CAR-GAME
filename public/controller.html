@@ -12,7 +12,10 @@
   <link rel="apple-touch-icon" href="icon.svg"/>
   <title>Sridhar Rush — Controller</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕹️</text></svg>"/>
-  <link rel="stylesheet" href="css/controller.css?v=78"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap"/>
+  <link rel="stylesheet" href="css/controller.css?v=85"/>
 </head>
 <body data-player="p0">
   <script>
@@ -22,7 +25,7 @@
   </script>
   <div id="topbar">
     <div id="status-col">
-      <div id="status" class="pill wait">Connecting…</div>
+      <div id="status" class="pill wait" data-i18n="ctrlConnecting">Connecting…</div>
       <div id="room-tag"></div>
     </div>
     <div id="telemetry">
@@ -42,49 +45,54 @@
   <div id="pads" class="locked">
     <div class="stick-zone" id="zone-left">
       <div class="stick-base"><div class="stick-knob" id="knob-left"></div></div>
-      <div class="stick-label">STEER</div>
+      <div class="stick-label" data-i18n="ctrlSteer">STEER</div>
     </div>
 
     <div id="buttons">
-      <button id="btn-nitro" class="btn nitro">🔥 NITRO</button>
-      <button id="btn-hb" class="btn big">DRIFT</button>
+      <button id="btn-nitro" class="btn nitro" data-i18n="ctrlNitro">🔥 NITRO</button>
+      <button id="btn-hb" class="btn big" data-i18n="ctrlDrift">DRIFT</button>
       <div class="btn-row">
-        <button id="btn-gyro" class="btn sm">GYRO</button>
-        <button id="btn-cam" class="btn sm">CAM</button>
-        <button id="btn-reset" class="btn sm">RST</button>
-        <button id="btn-horn" class="btn sm">HORN</button>
+        <button id="btn-gyro" class="btn sm" data-i18n="ctrlGyro">GYRO</button>
+        <button id="btn-cam" class="btn sm" data-i18n="ctrlCam">CAM</button>
+        <button id="btn-reset" class="btn sm" data-i18n="ctrlRst">RST</button>
+        <button id="btn-horn" class="btn sm" data-i18n="ctrlHorn">HORN</button>
       </div>
     </div>
 
     <div class="stick-zone" id="zone-right">
       <div class="stick-base"><div class="stick-knob" id="knob-right"></div></div>
-      <div class="stick-label">▲ GAS · BRAKE ▼</div>
+      <div class="stick-label" data-i18n="ctrlGasBrake">▲ GAS · BRAKE ▼</div>
     </div>
   </div>
 
   <div id="phone-banner"></div>
 
+  <div id="ctrl-rematch-wrap" style="display:none">
+    <button id="ctrl-rematch-btn" class="ctrl-rematch-btn" data-i18n="ctrlRematch">🔁 REMATCH NOW</button>
+  </div>
+
   <div id="join-screen" style="display:none">
     <div id="join-card">
-      <h2>🕹️ JOIN A RACE</h2>
-      <p>Enter the 5-letter room code shown on the laptop screen.</p>
+      <h2 data-i18n="ctrlJoinTitle">🕹️ JOIN A RACE</h2>
+      <p data-i18n="ctrlJoinDesc">Enter the 5-letter room code shown on the laptop screen.</p>
       <input id="room-input" maxlength="5" placeholder="XXXXX" autocomplete="off" autocapitalize="characters"/>
-      <button id="join-btn">JOIN</button>
+      <button id="join-btn" data-i18n="ctrlJoinBtn">JOIN</button>
       <p id="join-error"></p>
     </div>
   </div>
 
   <div id="full-note" style="display:none">
-    <p>😕 Both joystick slots are taken (2 phones max).</p>
+    <p>😕 All joystick slots are taken (up to 6 phones max).</p>
     <p>Ask a player to close their controller page, then reload this one.</p>
   </div>
 
-  <div id="rotate-hint">🔄 Rotate your phone for the best layout</div>
+  <div id="rotate-hint" data-i18n="ctrlRotate">🔄 Rotate your phone for the best layout</div>
   <div id="ios-hint" hidden>📱 iPhone tip: tap <b>Share ⬆</b> then <b>“Add to Home Screen”</b> — instant joystick app! <button id="ios-hint-x" class="ghost sm">OK</button></div>
 
   <script src="js/config.js"></script>
-  <script src="js/net.js?v=78"></script>
-  <script src="js/controller.js?v=78"></script>
+  <script src="js/i18n.js?v=85"></script>
+  <script src="js/net.js?v=85"></script>
+  <script src="js/controller.js?v=85"></script>
   <script>
   // PWA (v36): register service worker (makes the joystick installable on the phone)
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
