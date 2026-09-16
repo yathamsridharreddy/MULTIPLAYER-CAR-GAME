@@ -41,7 +41,7 @@ class RoomLink {
     ws.onmessage = (ev) => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
-      if (msg.type === 'welcome') {
+      if (msg.type === 'welcome' || msg.type === 'lobby_welcome') {
         self.ws = ws; self.open = true; self.delay = 800;
         self.status('connected');
         if (self.handlers.onWelcome) self.handlers.onWelcome(msg);
