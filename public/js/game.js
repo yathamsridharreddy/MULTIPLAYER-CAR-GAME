@@ -3915,7 +3915,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v78';
+const BUILD = 'v87';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -3928,14 +3928,18 @@ const BUILD = 'v78';
       // v77 BUG-011: cosmetic-only deploys — reload idle tabs on BUILD mismatch (once per build)
       if (!geomMismatch && v && v.build && v.build !== BUILD && !sessionStorage.getItem('sr_br_' + v.build) && (!latest || latest.state === 'waiting')) {
         sessionStorage.setItem('sr_br_' + v.build, '1');
-        location.replace(location.pathname + '?r=' + Date.now());
+        const u = new URL(location.href);
+        u.searchParams.set('r', Date.now());
+        location.replace(u.pathname + u.search + u.hash);
         return;
       }
       if (geomMismatch) {
         const key = 'sr_reload_' + (v.build || 'x');
         if (!sessionStorage.getItem(key)) {
           sessionStorage.setItem(key, '1');
-          location.replace(location.pathname + '?r=' + Date.now());
+          const u = new URL(location.href);
+          u.searchParams.set('r', Date.now());
+          location.replace(u.pathname + u.search + u.hash);
           return;
         }
         const d = document.createElement('div');
@@ -5287,6 +5291,18 @@ document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click'
 }));
 document.querySelectorAll('.map-btn').forEach((b) => b.addEventListener('click', () => net.send({ type: 'map', map: parseInt(b.dataset.map, 10) })));
 $('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); track('share', undefined, { channel: 'code' }); });
+const joinRoomBtn = $('join-room-btn');
+if (joinRoomBtn) {
+  joinRoomBtn.addEventListener('click', () => {
+    const promptMsg = (typeof tI18n === 'function' ? tI18n('enterRoomCode') : null) || 'Enter 5-letter Room Code to join:';
+    const code = prompt(promptMsg);
+    if (code && code.trim().length >= 4) {
+      const cleanCode = code.trim().toUpperCase();
+      const isMobileTouch = ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)) && (window.innerWidth <= 768 || window.innerHeight <= 500 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+      location.href = '/?room=' + encodeURIComponent(cleanCode) + (isMobileTouch ? '&screen=1' : '');
+    }
+  });
+}
 const exitBtn = $('exit-btn');
 if (exitBtn) exitBtn.addEventListener('click', () => net.send({ type: 'reset' }));
 const camBtn = $('cam-btn');
