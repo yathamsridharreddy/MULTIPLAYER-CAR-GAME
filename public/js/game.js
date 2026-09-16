@@ -970,9 +970,8 @@ function createCar(paintColor, num, accent) {
     metalness: 0.9,
     roughness: 0.05,
     clearcoat: 1.0,
-    transmission: 0.65,
     transparent: true,
-    opacity: 0.85
+    opacity: 0.82
   });
   const carbon = new THREE.MeshStandardMaterial({
     color: 0x121418,
@@ -1022,7 +1021,7 @@ function createCar(paintColor, num, accent) {
 
   // Dual projector LED headlights & transparent lens cover
   const headMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0xfff0c0, emissiveIntensity: 2.8 });
-  const headLensMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 0.8, transparent: true, opacity: 0.6, roughness: 0.1 });
+  const headLensMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, roughness: 0.1 });
   const tailMat = new THREE.MeshStandardMaterial({ color: 0xff1515, emissive: 0xff1515, emissiveIntensity: 2.0 });
 
   for (const sx of [-1, 1]) {
