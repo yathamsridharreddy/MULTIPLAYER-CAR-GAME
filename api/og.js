@@ -9,7 +9,6 @@ module.exports = (req, res) => {
   const img = base + '/img/og-map-' + maps[m] + '.png';
   const u = new URL(req.url, base);
   u.searchParams.delete('map');
-  u.searchParams.delete('room');
   const target = base + '/' + (u.searchParams.toString() ? '?' + u.searchParams.toString() : '');
   res.setHeader('Content-Type', 'text/html');
   res.end('<!doctype html><html><head>' +

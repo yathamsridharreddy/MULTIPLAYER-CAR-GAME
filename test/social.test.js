@@ -274,5 +274,24 @@ describe('Social Features, Challenges & Daily Rotations', () => {
     assert.ok(tgUrl.includes(encodeURIComponent('https://sridharrush.com/?room=ALPHA&map=2')));
     assert.ok(tgUrl.includes(encodeURIComponent('🏎️ Race with me in Sridhar Rush!')));
   });
+
+  test('api/og social preview endpoint preserves room parameter when redirecting users', (t, done) => {
+    const ogHandler = require('../api/og.js');
+    const req = {
+      url: '/?room=K9XP2&map=1',
+      query: { room: 'K9XP2', map: '1' }
+    };
+    let responseHtml = '';
+    const res = {
+      setHeader: () => {},
+      end: (content) => {
+        responseHtml = content;
+        assert.ok(responseHtml.includes('K9XP2'), 'Redirect script must preserve room code K9XP2');
+        assert.ok(responseHtml.includes('location.replace("https://sridhar-drift.vercel.app/?room=K9XP2")'), 'Target URL must contain room query parameter');
+        done();
+      }
+    };
+    ogHandler(req, res);
+  });
 });
 
