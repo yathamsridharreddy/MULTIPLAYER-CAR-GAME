@@ -951,15 +951,34 @@ buildWorld(CORE.MAPS[0]);
 camera.position.set(A - 3, 3.4, -14);
 
 // ---------------------------------------------------------------------------
-// Car visuals (unchanged)
+// Car visuals (AAA High-Definition Procedural GT Supercar)
 // ---------------------------------------------------------------------------
 function createCar(paintColor, num, accent) {
   const g = new THREE.Group();
   const body = new THREE.Group();
   g.add(body);
-  const paint = new THREE.MeshPhysicalMaterial({ color: paintColor, metalness: 0.6, roughness: 0.2, clearcoat: 1.0, clearcoatRoughness: 0.05, envMapIntensity: 1.0 });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0x0c1118, metalness: 0.9, roughness: 0.08, clearcoat: 1 });
-  const carbon = new THREE.MeshStandardMaterial({ color: 0x101216, metalness: 0.5, roughness: 0.6 });
+  const paint = new THREE.MeshPhysicalMaterial({
+    color: paintColor,
+    metalness: 0.68,
+    roughness: 0.18,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.04,
+    envMapIntensity: 1.25
+  });
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0x0a101d,
+    metalness: 0.9,
+    roughness: 0.05,
+    clearcoat: 1.0,
+    transmission: 0.65,
+    transparent: true,
+    opacity: 0.85
+  });
+  const carbon = new THREE.MeshStandardMaterial({
+    color: 0x121418,
+    metalness: 0.5,
+    roughness: 0.45
+  });
   const s = new THREE.Shape();
   s.moveTo(-2.30, 0.16); s.lineTo(-2.42, 0.62); s.lineTo(-2.28, 0.92); s.lineTo(-1.10, 0.98);
   s.lineTo(-0.45, 1.16); s.lineTo(0.30, 1.00); s.lineTo(1.25, 0.66); s.lineTo(2.25, 0.50);
@@ -967,9 +986,13 @@ function createCar(paintColor, num, accent) {
   const bodyGeo = new THREE.ExtrudeGeometry(s, { depth: 1.56, bevelEnabled: true, bevelThickness: 0.16, bevelSize: 0.16, bevelSegments: 4, steps: 1, curveSegments: 6 });
   bodyGeo.translate(0, 0, -0.78); bodyGeo.rotateY(-Math.PI / 2);
   body.add(new THREE.Mesh(bodyGeo, paint));
+
+  // Sculpted aerodynamic cockpit canopy
   const canopy = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), glass);
   canopy.scale.set(0.78, 0.42, 1.45); canopy.position.set(0, 0.88, -0.35);
   body.add(canopy);
+
+  // Carbon high-downforce rear aerodynamic wing
   const wing = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.06, 0.55), carbon);
   wing.position.set(0, 1.35, -2.25); wing.rotation.x = -0.12; body.add(wing);
   for (const sx of [-0.95, 0.95]) {
@@ -980,6 +1003,8 @@ function createCar(paintColor, num, accent) {
     const stay = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.42, 0.08), carbon);
     stay.position.set(sx, 1.1, -2.3); stay.rotation.x = 0.35; body.add(stay);
   }
+
+  // Front carbon splitter with aerodynamic side winglets
   const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.05, 0.5), carbon);
   splitter.position.set(0, 0.10, 2.62); body.add(splitter);
   for (const sx of [-1, 1]) {
@@ -990,13 +1015,21 @@ function createCar(paintColor, num, accent) {
     const intake = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.6), carbon);
     intake.position.set(sx * 0.95, 0.55, -1.1); body.add(intake);
   }
+
+  // Rear aerodynamic diffuser channels
   const diff = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.06, 0.6), carbon);
   diff.position.set(0, 0.16, -2.55); diff.rotation.x = 0.4; body.add(diff);
-  const headMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0xffeeb0, emissiveIntensity: 2.3 });
-  const tailMat = new THREE.MeshStandardMaterial({ color: 0xff1111, emissive: 0xff1111, emissiveIntensity: 1.9 });
+
+  // Dual projector LED headlights & transparent lens cover
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0xfff0c0, emissiveIntensity: 2.8 });
+  const headLensMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 0.8, transparent: true, opacity: 0.6, roughness: 0.1 });
+  const tailMat = new THREE.MeshStandardMaterial({ color: 0xff1515, emissive: 0xff1515, emissiveIntensity: 2.0 });
+
   for (const sx of [-1, 1]) {
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.09, 0.22), headMat);
     head.position.set(sx * 0.62, 0.58, 2.42); head.rotation.y = -sx * 0.35; head.rotation.z = sx * 0.12; body.add(head);
+    const lens = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.11, 0.24), headLensMat);
+    lens.position.set(sx * 0.62, 0.58, 2.43); lens.rotation.y = -sx * 0.35; lens.rotation.z = sx * 0.12; body.add(lens);
     const stay = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 0.05), carbon);
     stay.position.set(sx * 0.88, 0.93, 0.55); body.add(stay);
     const mir = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.16), carbon);
@@ -1004,11 +1037,19 @@ function createCar(paintColor, num, accent) {
     const vent = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.5), carbon);
     vent.position.set(sx * 0.38, 0.86, 1.35); vent.rotation.x = 0.28; body.add(vent);
   }
+
+  // Full-width continuous LED brake lightbar + high-mount brake light
   const tailBar = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.05), tailMat);
   tailBar.position.set(0, 0.78, -2.62); body.add(tailBar);
+  const highBrake = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.04, 0.04), tailMat);
+  highBrake.position.set(0, 1.15, -1.82); body.add(highBrake);
+
+  // Dual stainless steel exhaust pipes with blued titanium finish
   const exGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.3, 10); exGeo.rotateX(Math.PI / 2);
-  const exMat = new THREE.MeshStandardMaterial({ color: 0x8a8f98, metalness: 0.95, roughness: 0.3 });
+  const exMat = new THREE.MeshStandardMaterial({ color: 0x8a8f98, metalness: 0.95, roughness: 0.25 });
   for (const sx of [-0.35, 0.35]) { const ex = new THREE.Mesh(exGeo, exMat); ex.position.set(sx, 0.35, -2.6); body.add(ex); }
+
+  // Race Number roundel decal
   const rc = document.createElement('canvas'); rc.width = rc.height = 128;
   const rg = rc.getContext('2d');
   rg.fillStyle = '#f4f4f4'; rg.beginPath(); rg.arc(64, 64, 62, 0, PI2); rg.fill();
@@ -1023,17 +1064,23 @@ function createCar(paintColor, num, accent) {
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.1, 3.6), new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.4 }));
     stripe.position.set(sx * 0.96, 0.32, -0.1); body.add(stripe);
   }
+
+  // Multi-spoke alloy wheels with ventilated brake discs and colored calipers
   const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 20); wheelGeo.rotateZ(Math.PI / 2);
   const hubGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.31, 12); hubGeo.rotateZ(Math.PI / 2);
+  const discGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.04, 16); discGeo.rotateZ(Math.PI / 2);
   const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.92 });
   const hubMat = new THREE.MeshStandardMaterial({ color: 0xb9bec7, metalness: 0.9, roughness: 0.3 });
-  const calMat = new THREE.MeshStandardMaterial({ color: accent, metalness: 0.3, roughness: 0.4 });
+  const discMat = new THREE.MeshStandardMaterial({ color: 0xb0b5bc, metalness: 0.92, roughness: 0.28 });
+  const calMat = new THREE.MeshStandardMaterial({ color: accent, metalness: 0.4, roughness: 0.35 });
   const capGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.32, 10); capGeo.rotateZ(Math.PI / 2);
   const wheels = [];
   [[0.98, 1.45], [-0.98, 1.45], [0.98, -1.45], [-0.98, -1.45]].forEach(([x, z], i) => {
     const pivot = new THREE.Group(); pivot.position.set(x, 0.35, z);
     const spin = new THREE.Group();
-    spin.add(new THREE.Mesh(wheelGeo, wheelMat), new THREE.Mesh(hubGeo, hubMat), new THREE.Mesh(capGeo, calMat));
+    const disc = new THREE.Mesh(discGeo, discMat);
+    disc.position.set(x > 0 ? -0.1 : 0.1, 0, 0);
+    spin.add(new THREE.Mesh(wheelGeo, wheelMat), new THREE.Mesh(hubGeo, hubMat), new THREE.Mesh(capGeo, calMat), disc);
     const cal = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.26, 0.3), calMat);
     cal.position.set(x > 0 ? -0.16 : 0.16, 0, 0.24);
     pivot.add(spin, cal);
@@ -1041,7 +1088,7 @@ function createCar(paintColor, num, accent) {
     wheels.push({ pivot, spin, front: i < 2 });
   });
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  return { group: g, body, wheels, paint, hubMat, calMat };
+  return { group: g, body, wheels, paint, hubMat, calMat, headMat, tailMat, glassMat: glass };
 }
 const carVisuals = {}; // v76: lazy up to 6
 const SLOT_HEX = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7];
@@ -4248,6 +4295,85 @@ function updateCamera(dt, mine, rival) {
     camera.lookAt(lookTarget);
     return;
   }
+
+  // 1. Lobby & Garage 3D Cinematic Showcase Orbit
+  if (latest && latest.state === 'waiting') {
+    const vMe = mine ? carVisuals[mine.s] : carVisuals[1];
+    const targetX = (vMe && vMe.netInit) ? vMe.netX : (mine ? mine.x : (curMap ? curMap.a - 3 : 0));
+    const targetZ = (vMe && vMe.netInit) ? vMe.netZ : (mine ? mine.z : -6);
+    const t = performance.now() * 0.00042;
+    const orbitRadius = 7.4;
+    const orbitHeight = 2.0 + Math.sin(t * 0.9) * 0.35;
+    _camDesired.set(
+      targetX + Math.cos(t) * orbitRadius,
+      orbitHeight,
+      targetZ + Math.sin(t) * orbitRadius
+    );
+    _camLook.set(targetX, 0.75, targetZ);
+    camera.position.lerp(_camDesired, 1 - Math.exp(-4.2 * dt));
+    lookTarget.lerp(_camLook, 1 - Math.exp(-7.5 * dt));
+    camera.lookAt(lookTarget);
+    if (Math.abs(camera.fov - 58) > 0.05) {
+      camera.fov = lerp(camera.fov, 58, 1 - Math.exp(-4.0 * dt));
+      camera.updateProjectionMatrix();
+    }
+    return;
+  }
+
+  // 2. Starting Grid Countdown Pan (Dramatic 3.. 2.. 1.. Camera Sweep)
+  if (latest && latest.state === 'countdown' && latest.count != null) {
+    const vMe = mine ? carVisuals[mine.s] : carVisuals[1];
+    const targetX = (vMe && vMe.netInit) ? vMe.netX : (mine ? mine.x : (curMap ? curMap.a : 0));
+    const targetZ = (vMe && vMe.netInit) ? vMe.netZ : (mine ? mine.z : 0);
+    const targetH = (vMe && vMe.netInit) ? vMe.netH : (mine ? mine.h : 0);
+    const countRatio = clamp(latest.count / 3.0, 0, 1);
+    const panAngle = targetH + countRatio * 1.8 - 0.2;
+    const panDist = 6.2 + countRatio * 2.8;
+    const panHeight = 1.4 + (1 - countRatio) * 1.3;
+    _camDesired.set(
+      targetX - Math.sin(panAngle) * panDist,
+      panHeight,
+      targetZ - Math.cos(panAngle) * panDist
+    );
+    _camLook.set(
+      targetX + Math.sin(targetH) * (2.0 + (1 - countRatio) * 4.0),
+      0.9,
+      targetZ + Math.cos(targetH) * (2.0 + (1 - countRatio) * 4.0)
+    );
+    camera.position.lerp(_camDesired, 1 - Math.exp(-5.5 * dt));
+    lookTarget.lerp(_camLook, 1 - Math.exp(-8.5 * dt));
+    camera.lookAt(lookTarget);
+    const cdFov = 56 + (1 - countRatio) * 6;
+    if (Math.abs(camera.fov - cdFov) > 0.05) {
+      camera.fov = lerp(camera.fov, cdFov, 1 - Math.exp(-4.5 * dt));
+      camera.updateProjectionMatrix();
+    }
+    return;
+  }
+
+  // 3. Post-Race Victory Podium Celebration Orbit
+  if (latest && latest.state === 'finished') {
+    const vMe = mine ? carVisuals[mine.s] : carVisuals[1];
+    const targetX = (vMe && vMe.netInit) ? vMe.netX : (mine ? mine.x : (curMap ? curMap.a : 0));
+    const targetZ = (vMe && vMe.netInit) ? vMe.netZ : (mine ? mine.z : 0);
+    const t = performance.now() * 0.00055;
+    const orbitRadius = 6.6;
+    _camDesired.set(
+      targetX + Math.cos(t) * orbitRadius,
+      2.2 + Math.sin(t * 1.1) * 0.35,
+      targetZ + Math.sin(t) * orbitRadius
+    );
+    _camLook.set(targetX, 0.7, targetZ);
+    camera.position.lerp(_camDesired, 1 - Math.exp(-4.8 * dt));
+    lookTarget.lerp(_camLook, 1 - Math.exp(-8.0 * dt));
+    camera.lookAt(lookTarget);
+    if (Math.abs(camera.fov - 58) > 0.05) {
+      camera.fov = lerp(camera.fov, 58, 1 - Math.exp(-4.0 * dt));
+      camera.updateProjectionMatrix();
+    }
+    return;
+  }
+
   if (!mine) return;
 
   // Follow the visual smoothed position of MY car (solid local player anchor)
@@ -4632,7 +4758,16 @@ function placeCar(slot, cs, dt) {
   }
   v.group.position.set(v.netX, 0, v.netZ);
   v.group.rotation.y = v.netH;
-  v.body.rotation.z = lerp(v.body.rotation.z, clamp(-cs.sl * 0.042, -0.17, 0.17), Math.min(1, dt * 8));
+
+  // Dynamic body roll and suspension pitch
+  const isBraking = (cs.th != null && cs.th < 0) || (cs.v < -0.2) || (slot === mySlot && keys.has('KeyS'));
+  if (v.tailMat) {
+    v.tailMat.emissiveIntensity = isBraking ? 3.6 : 1.8;
+    v.tailMat.color.setHex(isBraking ? 0xff0000 : 0xff1515);
+  }
+  const pitchTarget = (cs.th > 0 ? -0.025 : (isBraking ? 0.038 : 0));
+  v.body.rotation.x = lerp(v.body.rotation.x, pitchTarget, Math.min(1, dt * 6.5));
+  v.body.rotation.z = lerp(v.body.rotation.z, clamp(-cs.sl * 0.048, -0.20, 0.20), Math.min(1, dt * 8.5));
   const sp = clamp(Math.abs(cs.v) / CFG.maxSpeed, 0, 1);
   v.body.position.y = Math.sin(performance.now() * 0.016 + slot * 3) * 0.008 * sp;
   v.spinAngle += cs.v * dt / 0.35;
