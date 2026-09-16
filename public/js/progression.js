@@ -48,7 +48,7 @@
     { min: 1700, name: 'MASTER',   col: '#ff8ae2' }
   ];
   function tier(r) {
-    r = Number(r) || 1000;
+    r = Math.max(1000, Number(r) || 1000);
     let bi = 0;
     for (let i = 0; i < BANDS.length; i++) if (r >= BANDS[i].min) bi = i;
     const b = BANDS[bi];
@@ -57,7 +57,7 @@
       return { name: 'MASTER', col: b.col, div: '', pct: Math.max(0, Math.min(100, Math.round((100 * (r - 1700)) / 200))), next: null, bandMin: 1700, bandTop: 1900 };
     }
     const span = (top - b.min) / 3;
-    let di = Math.min(2, Math.floor((r - b.min) / span));
+    let di = Math.max(0, Math.min(2, Math.floor((r - b.min) / span)));
     const div = ['III', 'II', 'I'][di];
     const dMin = b.min + di * span, dTop = b.min + (di + 1) * span;
     return { name: b.name + ' ' + div, col: b.col, div, pct: Math.max(0, Math.min(100, Math.round((100 * (r - dMin)) / (dTop - dMin)))), next: di < 2 ? b.name + ' ' + ['III', 'II', 'I'][di + 1] : BANDS[bi + 1].name + ' III', bandMin: dMin, bandTop: dTop };
@@ -314,8 +314,8 @@
   function evaluateStreakTransition(lastRaceDateStr, todayDateStr, currentStreak, bestStreak) {
     const cur = Math.max(0, parseInt(currentStreak, 10) || 0);
     const best = Math.max(cur, parseInt(bestStreak, 10) || 0);
-    const today = todayDateStr ? todayDateStr.slice(0, 10) : new Date().toISOString().slice(0, 10);
-    const last = lastRaceDateStr ? lastRaceDateStr.slice(0, 10) : '';
+    const today = (typeof todayDateStr === 'string' && todayDateStr.length >= 10) ? todayDateStr.slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const last = (typeof lastRaceDateStr === 'string' && lastRaceDateStr.length >= 10) ? lastRaceDateStr.slice(0, 10) : '';
 
     if (!last) {
       return { streak: 1, bestStreak: Math.max(best, 1), changed: true, continued: true, racedToday: true };
