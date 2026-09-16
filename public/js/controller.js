@@ -192,6 +192,12 @@ $('btn-full').addEventListener('click', async () => {
   try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape'); } catch (e) {}
   try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch (e) {}
 });
+
+const scrBtn = $('btn-screen-mode');
+if (scrBtn) {
+  const r = urlParam('room') || '';
+  scrBtn.href = '/?room=' + encodeURIComponent(r) + '&screen=1';
+}
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // v40: vibration toggle + tiny privacy-friendly analytics beacon
