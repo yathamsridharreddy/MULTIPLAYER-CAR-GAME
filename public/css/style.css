@@ -69,7 +69,7 @@
    ========================================================================== */
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
-[hidden] { display: none !important; }
+[hidden], .hidden, .dlg[hidden], .dlg.hidden { display: none !important; }
 
 html, body {
   width: 100%;
