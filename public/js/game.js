@@ -2391,13 +2391,28 @@ function soundCountdownTick(isGo) {
     osc.start(t); osc.stop(t + (isGo ? 0.38 : 0.18));
   } catch (e) {}
 }
+let countTimer = null;
 function showCount(txt) {
   const el = $('count-num'); if (!el) return;
+  if (countTimer) { clearTimeout(countTimer); countTimer = null; }
   el.textContent = txt;
-  const isGo = txt === 'GO!';
+  const isGo = txt === 'GO!' || txt === (tI18n('countdownGo') || 'GO!');
   el.classList.toggle('go', isGo);
-  el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+  el.classList.remove('pop');
+  void el.offsetWidth;
+  el.classList.add('pop');
   soundCountdownTick(isGo);
+  countTimer = setTimeout(() => {
+    el.classList.remove('pop');
+    el.textContent = '';
+    countTimer = null;
+  }, isGo ? 1200 : 850);
+}
+function clearCount() {
+  const el = $('count-num'); if (!el) return;
+  if (countTimer) { clearTimeout(countTimer); countTimer = null; }
+  el.classList.remove('pop');
+  el.textContent = '';
 }
 let pendingSettle = []; // v73 server-settled XP/rating rows
 function showResults(order) {
@@ -4093,6 +4108,7 @@ function ingestSnapshot(snap) {
   if (snap.state === 'waiting') {
     overlay.classList.remove('hidden');
     $('results').classList.add('hidden');
+    clearCount();
     updateLobby(snap);
   } else {
     overlay.classList.add('hidden');
@@ -4937,6 +4953,7 @@ function updateCountdownVisual() {
 // Lobby buttons (+ map selection)
 // ---------------------------------------------------------------------------
 $('start-btn').addEventListener('click', () => {
+  clearCount();
   ensureAudio();
   const mode3 = prefs.mode3 || 'mp';
   TT.on = mode3 !== 'mp'; TT.practice = mode3 === 'practice'; TT.done = false;
@@ -5232,13 +5249,14 @@ $('rematch-btn').addEventListener('click', () => {
 const rstBtn = $('restart-btn');
 if (rstBtn) rstBtn.addEventListener('click', () => { // v61 quick restart (no reload/reconnect)
   clearAutoRematchTimer();
+  clearCount();
   const ov = $('tt-overlay'); if (ov) ov.classList.add('hidden');
   TT.done = false;
   net.send({ type: 'restart' });
 });
 const trkBtn = $('track-btn');
-if (trkBtn) trkBtn.addEventListener('click', () => { clearAutoRematchTimer(); $('results').classList.add('hidden'); net.send({ type: 'reset' }); const nb = $('next-btn'); if (nb) setTimeout(() => nb.click(), 150); });
-$('menu-btn').addEventListener('click', () => { clearAutoRematchTimer(); $('results').classList.add('hidden'); net.send({ type: 'reset' }); });
+if (trkBtn) trkBtn.addEventListener('click', () => { clearAutoRematchTimer(); clearCount(); $('results').classList.add('hidden'); net.send({ type: 'reset' }); const nb = $('next-btn'); if (nb) setTimeout(() => nb.click(), 150); });
+$('menu-btn').addEventListener('click', () => { clearAutoRematchTimer(); clearCount(); $('results').classList.add('hidden'); net.send({ type: 'reset' }); });
 document.querySelectorAll('.map-card').forEach((b) => b.addEventListener('click', () => {
   selectedMap = parseInt(b.dataset.map, 10);
   document.querySelectorAll('.map-card').forEach((x) => x.classList.toggle('active', x === b));
