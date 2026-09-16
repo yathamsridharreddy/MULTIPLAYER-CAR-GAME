@@ -291,4 +291,28 @@ describe('Authoritative Multiplayer Simulation & Rooms', () => {
     assert.equal(entry.rematch.size, 0);
     assert.equal(entry.room.state, 'countdown');
   });
+
+  test('on-demand room creation: connects to lobby pool without creating room until create_room or start is triggered', () => {
+    // 1. Client connects in lobby mode
+    const lobbyWs = createMockWS();
+    const lobbyClient = { ws: lobbyWs, entry: null, slot: 0, role: null, pid: 'racer-idle' };
+    handleMessage(lobbyClient, { type: 'hello', role: 'screen', lobby: true, pid: 'racer-idle' });
+
+    assert.equal(rooms.size, 0, 'No room should be created when client connects to lobby');
+    assert.equal(lobbyClient.role, 'lobby');
+    const welcome = lobbyWs.findSent('lobby_welcome');
+    assert.equal(welcome.length, 1);
+
+    // 2. Client triggers create_room
+    handleMessage(lobbyClient, { type: 'create_room', mode: 'race', map: 1, laps: 3, pid: 'racer-idle', name: 'HostRacer' });
+    assert.equal(rooms.size, 1, 'Room should now be created on-demand');
+    assert.equal(lobbyClient.role, 'screen');
+    assert.equal(lobbyClient.slot, 1);
+    assert.ok(lobbyClient.entry);
+    assert.equal(lobbyClient.entry.room.mapId, 1);
+
+    const roomWelcome = lobbyWs.findSent('welcome');
+    assert.equal(roomWelcome.length, 1);
+    assert.equal(roomWelcome[0].slot, 1);
+  });
 });
