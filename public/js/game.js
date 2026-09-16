@@ -1651,7 +1651,7 @@ function wireLobbyV2() {
   // two-page lobby navigation
   const p1 = $('page1'), p2 = $('page2');
   const nb = $('next-btn'), bb = $('back-btn');
-  if (nb) nb.addEventListener('click', () => { p1.style.display = 'none'; p2.style.display = ''; buildCarCards(); });
+  if (nb) nb.addEventListener('click', () => { ensureRoomCreated(); p1.style.display = 'none'; p2.style.display = ''; buildCarCards(); });
   if (bb) bb.addEventListener('click', () => { p2.style.display = 'none'; p1.style.display = ''; });
   document.querySelectorAll('.cls-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.cls === prefs.cls);
@@ -4000,6 +4000,12 @@ const net = new RoomLink({
         toast('⚡ Match found!');
         break;
       }
+      case 'lobby_welcome': {
+        $('room-code').textContent = '·····';
+        const gl = $('game-link'); if (gl) gl.textContent = 'Click CREATE or SET UP RACE to generate room link';
+        const cu = $('ctrl-url'); if (cu) cu.textContent = 'Create a room to connect phone controller';
+        break;
+      }
       case 'error': if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!'); break;
       case 'disconnected': setNetBanner(false); break;
     }
@@ -4033,7 +4039,16 @@ function sendHello() {
     setTimeout(() => { const b = $('spec-leave'); if (b) b.addEventListener('click', () => { location.href = '/'; }); }, 0);
     return;
   }
-  net.connect(Object.assign({ type: 'hello', role: 'screen', room: wantedRoom || null }, identityPayload()));
+  if (wantedRoom) {
+    net.connect(Object.assign({ type: 'hello', role: 'screen', room: wantedRoom }, identityPayload()));
+  } else {
+    net.connect(Object.assign({ type: 'hello', role: 'screen', lobby: true, room: null }, identityPayload()));
+  }
+}
+function ensureRoomCreated() {
+  if (!roomCode || roomCode === '·····') {
+    net.send(Object.assign({ type: 'create_room', mode: viewMode === 'split' ? 'race' : (selectedMode || 'race'), map: selectedMap, laps: selectedLaps }, identityPayload()));
+  }
 }
 function sendMeta() { if (net.isOpen()) net.send(Object.assign({ type: 'meta' }, identityPayload())); }
 // v64 first-run onboarding: 15-20 s, input-driven, skippable, remembered
@@ -5271,6 +5286,13 @@ document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click'
 }));
 document.querySelectorAll('.map-btn').forEach((b) => b.addEventListener('click', () => net.send({ type: 'map', map: parseInt(b.dataset.map, 10) })));
 $('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); track('share', undefined, { channel: 'code' }); });
+const createRoomBtn = $('create-room-btn');
+if (createRoomBtn) {
+  createRoomBtn.addEventListener('click', () => {
+    ensureRoomCreated();
+    toast('🏎️ Room created! Share the code to invite friends.');
+  });
+}
 const joinRoomBtn = $('join-room-btn');
 if (joinRoomBtn) {
   joinRoomBtn.addEventListener('click', () => {

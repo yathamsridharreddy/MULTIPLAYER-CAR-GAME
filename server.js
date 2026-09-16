@@ -2336,6 +2336,11 @@ function handleMessage(client, msg) {
       if (msg.room) {
         entry = rooms.get(String(msg.room).toUpperCase().trim());
         if (!entry) { sendJSON(client.ws, { type: 'error', code: 'no-room' }); return; }
+      } else if (msg.lobby) {
+        // v88 on-demand: user connects to lobby pool without creating a 30Hz simulation room
+        client.role = 'lobby';
+        sendJSON(client.ws, { type: 'lobby_welcome', role: 'lobby', online: clientsByWs.size, activeRooms: rooms.size });
+        return;
       } else {
         entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race', msg.map, msg.mode === 'coop' ? 2 : 6); // v76
       }
@@ -2377,6 +2382,48 @@ function handleMessage(client, msg) {
           }
         }); // v76
         if (msg.chid) entry.chBySlot[client.slot] = String(parseInt(msg.chid, 10) || ''); // v74 challenge link
+      }
+      break;
+    }
+
+    case 'create_room': {
+      if (client.entry) {
+        const old = client.entry;
+        handleLeave(client);
+        if (old.screens.size === 0 && old.controllers.size === 0) rooms.delete(old.room.code);
+      }
+      const mode = msg.mode === 'coop' ? 'coop' : (['elim', 'drift'].includes(msg.mode) ? msg.mode : 'race');
+      const mapId = parseInt(msg.map, 10) || 0;
+      const cap = mode === 'coop' ? 2 : (parseInt(msg.cap, 10) || 6);
+      const entry = newRoom(mode, mapId, cap);
+      joinRoom(client, entry, 'screen', msg);
+      if (client.slot) {
+        const room = entry.room;
+        if (msg.weather != null) room.setWeather(msg.weather);
+        if (msg.laps != null) room.setLaps(msg.laps);
+        if (msg.bot != null) room.setBot(msg.bot);
+        if (msg.record === false) entry.noRecord = true;
+        if (msg.botSkill != null) room.setBotSkill(parseInt(msg.botSkill, 10));
+        if (msg.name || msg.color || msg.cls) room.setPlayerMeta(client.slot, msg);
+        if (msg.cls) { classPick(msg.cls); room.cars[client.slot - 1].clsKey = msg.cls; }
+        if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title);
+        if (msg.tok) verifyUid(msg.tok).then(async (uid) => {
+          if (uid && client.entry) {
+            client.uid = uid; entry.uidBySlot[client.slot] = uid;
+            entry.uidWs = entry.uidWs || {};
+            const other = entry.uidWs[uid];
+            let dup = false;
+            if (other && other.ws !== client.ws) {
+              const fresh = other.ws.readyState === 1 && (Date.now() - (other.lastPing || 0) < 45000);
+              if (fresh) dup = true;
+              else { try { other.ws.close(); } catch (e) {} delete entry.uidBySlot[other.slot]; delete entry.ratingBySlot[other.slot]; delete entry.dupUid[other.slot]; }
+            }
+            entry.dupUid[client.slot] = dup;
+            entry.uidWs[uid] = { ws: client.ws, slot: client.slot, lastPing: Date.now() };
+            try { const r = await fetch(SB_URL + '/rest/v1/player_stats?user_id=eq.' + uid + '&select=rating', { headers: sbHdr() }); if (r.ok) { const j = await r.json(); if (j[0]) entry.ratingBySlot[client.slot] = j[0].rating; } } catch (e) {}
+            broadcastLobby(entry);
+          }
+        });
       }
       break;
     }
@@ -2499,7 +2546,12 @@ function handleMessage(client, msg) {
       }
       break;
     }
-    case 'start':
+    case 'start': {
+      if (!client.entry && (client.role === 'screen' || client.role === 'lobby')) {
+        const mode = msg.mode === 'coop' ? 'coop' : 'race';
+        const entry = newRoom(mode, msg.map || 0, mode === 'coop' ? 2 : 6);
+        joinRoom(client, entry, 'screen', msg);
+      }
       if (client.entry && client.role === 'screen') {
         const en = client.entry;
         if (en.screens.size >= 3) {
@@ -2511,6 +2563,7 @@ function handleMessage(client, msg) {
         en.rematch && en.rematch.clear(); en.ready.clear(); en.room.start(); broadcastLobby(en);
       }
       break;
+    }
 
     // v59 rematch voting: when every connected screen/controller votes, reuse the room
     case 'rematch':
