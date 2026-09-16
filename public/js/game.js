@@ -4047,7 +4047,7 @@ function sendHello() {
 }
 function ensureRoomCreated() {
   if (!roomCode || roomCode === '·····') {
-    net.send(Object.assign({ type: 'create_room', mode: viewMode === 'split' ? 'race' : (selectedMode || 'race'), map: selectedMap, laps: selectedLaps }, identityPayload()));
+    net.send(Object.assign({ type: 'create_room', mode: viewMode === 'split' ? 'race' : 'race', map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload()));
   }
 }
 function sendMeta() { if (net.isOpen()) net.send(Object.assign({ type: 'meta' }, identityPayload())); }
