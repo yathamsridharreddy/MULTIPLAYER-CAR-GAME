@@ -2073,18 +2073,19 @@ function renderRoomLobby(e) {
   if (!e) return;
   const el = $('room-players'); if (!el) return;
   const ps = e.players || [];
-  $('room-count') && ($('room-count').textContent = tI18n('playersCount', { count: ps.length, cap: e.cap || 6 }) || (ps.length + ' / ' + (e.cap || 6) + ' PLAYERS'));
+  const rc = $('room-count');
+  if (rc) rc.textContent = (typeof tI18n === 'function' ? tI18n('playersCount', { count: ps.length, cap: e.cap || 6 }) : null) || (ps.length + ' / ' + (e.cap || 6) + ' PLAYERS');
   el.innerHTML = ps.map((p) => {
     const crewBadge = p.crewTag ? `<span class="syndicate-tag">[${escapeHtml(p.crewTag)}]</span> ` : '';
-    const readyTxt = p.ready ? (tI18n('ready') || 'READY') : (tI18n('notReady') || 'NOT READY');
+    const readyTxt = p.ready ? ((typeof tI18n === 'function' ? tI18n('ready') : null) || 'READY') : ((typeof tI18n === 'function' ? tI18n('notReady') : null) || 'NOT READY');
     return '<div class="rp-row' + (p.slot === mySlot ? ' me' : '') + '"><span class="rp-slot">' + p.slot + '</span>' +
       '<span class="rp-name">' + crewBadge + escapeHtml(p.name) + (p.host ? ' 👑' : '') + '</span>' +
       '<span class="rp-rating">' + (p.rating != null ? p.rating : '—') + '</span>' +
       '<span class="rp-ready ' + (p.ready ? 'on' : '') + '">' + readyTxt + '</span></div>';
   }).join('') +
-    (ps.length < (e.cap || 6) ? '<div class="rp-row empty"><span class="rp-slot">·</span><span class="rp-name dim">' + (tI18n('openSlot') || 'open slot — share the code') + '</span></div>' : '');
+    (ps.length < (e.cap || 6) ? '<div class="rp-row empty"><span class="rp-slot">·</span><span class="rp-name dim">' + ((typeof tI18n === 'function' ? tI18n('openSlot') : null) || 'open slot — share the code') + '</span></div>' : '');
   const rb = $('ready-btn');
-  if (rb) { rb.hidden = ps.length < 3; rb.textContent = iAmReady ? ('✅ ' + (tI18n('ready') || 'READY')) : ('🏁 ' + (tI18n('readyUp') || 'READY UP')); }
+  if (rb) { rb.hidden = ps.length < 3; rb.textContent = iAmReady ? ('✅ ' + ((typeof tI18n === 'function' ? tI18n('ready') : null) || 'READY')) : ('🏁 ' + ((typeof tI18n === 'function' ? tI18n('readyUp') : null) || 'READY UP')); }
 }
 window.renderRoomLobby = renderRoomLobby;
 // v73 wiring: profile / ratings access points
@@ -3981,7 +3982,12 @@ const net = new RoomLink({
   onMessage(msg) {
     switch (msg.type) {
       case 'state': ingestSnapshot(msg); break;
-      case 'lobby': window.__lastLobby = msg.players || []; renderRoomLobby(msg); break;
+      case 'lobby': {
+        window.__lastLobby = msg.players || [];
+        if (typeof renderRoomLobby === 'function') renderRoomLobby(msg);
+        else if (typeof window.renderRoomLobby === 'function') window.renderRoomLobby(msg);
+        break;
+      }
       case 'weather': if (msg.weather != null) applyWeather(msg.weather); break;
       case 'photo-finish': if (msg.margin != null) triggerPhotoFinish(msg.margin, msg.winnerName, msg.runnerUpName); break;
       case 'need-ready': toast('⚠ ' + (msg.msg || 'not ready yet')); break;
