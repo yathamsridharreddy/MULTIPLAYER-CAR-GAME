@@ -3913,7 +3913,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v87';
+const BUILD = 'v88';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -3951,10 +3951,23 @@ const BUILD = 'v87';
 
 const net = new RoomLink({
   onWelcome(msg) {
+    if (msg.role === 'lobby' || msg.type === 'lobby_welcome' || !msg.code || msg.slot === 0) {
+      mySlot = 0; roomCode = '·····';
+      const sb = $('slot-badge'); if (sb) sb.style.display = 'none';
+      setNetBanner(true);
+      applyMyColor();
+      const gl = $('game-link'); if (gl) gl.textContent = 'Click CREATE or SET UP RACE to generate room link';
+      const cu = $('ctrl-url'); if (cu) cu.textContent = 'Create a room to connect phone controller';
+      const qb = $('quickplay-btn'); if (qb) { qb.disabled = false; qb.textContent = '⚡ QUICK PLAY — find a rival'; }
+      return;
+    }
     mySlot = msg.slot; roomCode = msg.code;
-    $('slot-badge').textContent = `YOU ARE PLAYER ${mySlot}`;
-    $('slot-badge').className = mySlot === 1 ? 'slot-badge c1' : 'slot-badge c2';
-    $('slot-badge').style.display = '';
+    const sb = $('slot-badge');
+    if (sb) {
+      sb.textContent = `YOU ARE PLAYER ${mySlot}`;
+      sb.className = mySlot === 1 ? 'slot-badge c1' : 'slot-badge c2';
+      sb.style.display = '';
+    }
     setNetBanner(true);
     applyMyColor();
     const phoneLink = location.origin + '/controller?room=' + roomCode + '&slot=' + mySlot;
