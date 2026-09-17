@@ -4849,15 +4849,16 @@ function updateCamera(dt, mine, rival) {
     const vMe = mine ? carVisuals[mine.s] : carVisuals[1];
     const targetX = (vMe && vMe.netInit) ? vMe.netX : (mine ? mine.x : (curMap ? curMap.a - 3 : 0));
     const targetZ = (vMe && vMe.netInit) ? vMe.netZ : (mine ? mine.z : -6);
+    const targetY = (vMe && vMe.group) ? vMe.group.position.y : (curMap ? getSurfaceY(curMap, targetX, targetZ) : 0);
     const t = performance.now() * 0.00042;
     const orbitRadius = 7.4;
-    const orbitHeight = 2.0 + Math.sin(t * 0.9) * 0.35;
+    const orbitHeight = targetY + 2.0 + Math.sin(t * 0.9) * 0.35;
     _camDesired.set(
       targetX + Math.cos(t) * orbitRadius,
       orbitHeight,
       targetZ + Math.sin(t) * orbitRadius
     );
-    _camLook.set(targetX, 0.75, targetZ);
+    _camLook.set(targetX, targetY + 0.75, targetZ);
     camera.position.lerp(_camDesired, 1 - Math.exp(-4.2 * dt));
     lookTarget.lerp(_camLook, 1 - Math.exp(-7.5 * dt));
     camera.lookAt(lookTarget);
@@ -4874,10 +4875,11 @@ function updateCamera(dt, mine, rival) {
     const targetX = (vMe && vMe.netInit) ? vMe.netX : (mine ? mine.x : (curMap ? curMap.a : 0));
     const targetZ = (vMe && vMe.netInit) ? vMe.netZ : (mine ? mine.z : 0);
     const targetH = (vMe && vMe.netInit) ? vMe.netH : (mine ? mine.h : 0);
+    const targetY = (vMe && vMe.group) ? vMe.group.position.y : (curMap ? getSurfaceY(curMap, targetX, targetZ) : 0);
     const countRatio = clamp(latest.count / 3.0, 0, 1);
     const panAngle = targetH + countRatio * 1.8 - 0.2;
     const panDist = 6.2 + countRatio * 2.8;
-    const panHeight = 1.4 + (1 - countRatio) * 1.3;
+    const panHeight = targetY + 1.4 + (1 - countRatio) * 1.3;
     _camDesired.set(
       targetX - Math.sin(panAngle) * panDist,
       panHeight,
@@ -4885,7 +4887,7 @@ function updateCamera(dt, mine, rival) {
     );
     _camLook.set(
       targetX + Math.sin(targetH) * (2.0 + (1 - countRatio) * 4.0),
-      0.9,
+      targetY + 0.9,
       targetZ + Math.cos(targetH) * (2.0 + (1 - countRatio) * 4.0)
     );
     camera.position.lerp(_camDesired, 1 - Math.exp(-5.5 * dt));
@@ -4904,14 +4906,15 @@ function updateCamera(dt, mine, rival) {
     const vMe = mine ? carVisuals[mine.s] : carVisuals[1];
     const targetX = (vMe && vMe.netInit) ? vMe.netX : (mine ? mine.x : (curMap ? curMap.a : 0));
     const targetZ = (vMe && vMe.netInit) ? vMe.netZ : (mine ? mine.z : 0);
+    const targetY = (vMe && vMe.group) ? vMe.group.position.y : (curMap ? getSurfaceY(curMap, targetX, targetZ) : 0);
     const t = performance.now() * 0.00055;
     const orbitRadius = 6.6;
     _camDesired.set(
       targetX + Math.cos(t) * orbitRadius,
-      2.2 + Math.sin(t * 1.1) * 0.35,
+      targetY + 2.2 + Math.sin(t * 1.1) * 0.35,
       targetZ + Math.sin(t) * orbitRadius
     );
-    _camLook.set(targetX, 0.7, targetZ);
+    _camLook.set(targetX, targetY + 0.7, targetZ);
     camera.position.lerp(_camDesired, 1 - Math.exp(-4.8 * dt));
     lookTarget.lerp(_camLook, 1 - Math.exp(-8.0 * dt));
     camera.lookAt(lookTarget);
@@ -4932,7 +4935,7 @@ function updateCamera(dt, mine, rival) {
   const rivalX = (vRi && vRi.netInit) ? vRi.netX : (rival ? rival.x : 0);
   const rivalZ = (vRi && vRi.netInit) ? vRi.netZ : (rival ? rival.z : 0);
 
-  const mineY = (vMe && vMe.group) ? vMe.group.position.y : (curMap ? CORE.getTerrainHeight(curMap, mineX, mineZ) : 0); _camCarPos.set(mineX, mineY, mineZ);
+  const mineY = (vMe && vMe.group) ? vMe.group.position.y : (curMap ? getSurfaceY(curMap, mineX, mineZ) : 0); _camCarPos.set(mineX, mineY, mineZ);
 
   // Smooth heading angle to eliminate jerky rotation
   if (!camInit) {
