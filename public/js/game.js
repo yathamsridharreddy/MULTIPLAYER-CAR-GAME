@@ -1169,55 +1169,75 @@ function buildRoadsideInfrastructure(map, T, W) {
     }
   }
 
-  // 5. Trackside Spectator Grandstands with Stadium Canopies
+  // 5. Trackside Spectator Grandstands (Parallel Along Track Outer Verge)
   {
-    const standMat = new THREE.MeshStandardMaterial({ color: 0x242834, roughness: 0.85 });
+    const concreteMat = new THREE.MeshStandardMaterial({ color: 0x2b303c, roughness: 0.9 });
     const seatR = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.7 });
     const seatB = new THREE.MeshStandardMaterial({ color: 0x0a84ff, roughness: 0.7 });
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x181c24, roughness: 0.6, metalness: 0.4 });
-    const beamMat = new THREE.MeshStandardMaterial({ color: 0xd0d4dc, metalness: 0.8, roughness: 0.3 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a1e26, roughness: 0.5, metalness: 0.5 });
+    const pillarMat = new THREE.MeshStandardMaterial({ color: 0xb0b6c2, metalness: 0.85, roughness: 0.25 });
+    const bannerMat = new THREE.MeshStandardMaterial({ color: 0x0a84ff, emissive: 0x064d99, emissiveIntensity: 0.4 });
 
-    const makeGrandstand = (side) => {
+    const makeTracksideGrandstand = (uAlong) => {
       const gGrp = new THREE.Group();
-      const p0 = pts[Math.floor(pts.length * 0.02)], p1 = pts[Math.floor(pts.length * 0.04)];
+      const idx0 = Math.floor(uAlong * pts.length) % pts.length;
+      const idx1 = (idx0 + 10) % pts.length;
+      const p0 = pts[idx0], p1 = pts[idx1];
       let tx = p1.x - p0.x, tz = p1.z - p0.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
-      const nx = -tz * side, nz = tx * side;
-      const gx = p0.x + nx * (RH + 11.5), gz = p0.z + nz * (RH + 11.5);
+      const nx = -tz, nz = tx; // outward normal (side of track)
+
+      const standOffset = RH + 14.5;
+      const gx = p0.x + nx * standOffset, gz = p0.z + nz * standOffset;
       const gy = CORE.getTerrainHeight(map, gx, gz);
-      const yaw = Math.atan2(tx, tz) + (side < 0 ? Math.PI : 0);
+      const yaw = Math.atan2(tx, tz);
 
-      // Deep foundation plinth
-      const found = new THREE.Mesh(new THREE.BoxGeometry(34.0, 5.0, 10.0), standMat);
-      found.position.set(0, -2.4, 2.0); gGrp.add(found);
+      // Main structural base plinth
+      const plinth = new THREE.Mesh(new THREE.BoxGeometry(10.0, 4.0, 44.0), concreteMat);
+      plinth.position.set(-1.0, -1.9, 0); gGrp.add(plinth);
 
-      for (let tier = 0; tier < 5; tier++) {
-        const step = new THREE.Mesh(new THREE.BoxGeometry(32.0, 0.9, 1.4), standMat);
-        step.position.set(0, 0.45 + tier * 0.9, tier * 1.35);
+      // Stepped spectator seating rows (length 42m along Z, stepping up away from track towards -X)
+      for (let tier = 0; tier < 6; tier++) {
+        const stepX = 2.8 - tier * 1.1;
+        const stepY = 0.45 + tier * 0.75;
+        const step = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.75, 42.0), concreteMat);
+        step.position.set(stepX, stepY, 0);
         step.castShadow = step.receiveShadow = true;
         gGrp.add(step);
 
-        const seat = new THREE.Mesh(new THREE.BoxGeometry(31.6, 0.3, 0.9), tier % 2 === 0 ? seatR : seatB);
-        seat.position.set(0, 0.9 + tier * 0.9 + 0.15, tier * 1.35);
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.25, 41.6), tier % 2 === 0 ? seatR : seatB);
+        seat.position.set(stepX - 0.1, stepY + 0.45, 0);
         gGrp.add(seat);
       }
 
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(34.0, 0.35, 9.5), roofMat);
-      roof.position.set(0, 7.8, 2.0); roof.rotation.x = -0.15; roof.castShadow = true;
+      // Trackside safety barrier & sponsor parapet wall along front edge
+      const parapet = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.2, 42.4), bannerMat);
+      parapet.position.set(3.6, 0.7, 0); gGrp.add(parapet);
+
+      // Back wall support
+      const backWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 7.5, 43.0), concreteMat);
+      backWall.position.set(-5.0, 3.8, 0); backWall.castShadow = true; gGrp.add(backWall);
+
+      // Cantilevered stadium canopy roof extending forward over seats towards the track
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(11.2, 0.35, 44.0), roofMat);
+      roof.position.set(-0.6, 8.2, 0); roof.rotation.z = -0.09; roof.castShadow = true;
       gGrp.add(roof);
 
-      const pGeo = new THREE.CylinderGeometry(0.25, 0.3, 8.5, 8);
-      for (const px of [-15.5, 15.5]) {
-        const pillar = new THREE.Mesh(pGeo, beamMat);
-        pillar.position.set(px, 4.25, 5.5); pillar.castShadow = true;
+      // Steel support pillars along back wall
+      const pGeo = new THREE.CylinderGeometry(0.24, 0.28, 8.5, 8);
+      for (const pz of [-19.0, -9.5, 0, 9.5, 19.0]) {
+        const pillar = new THREE.Mesh(pGeo, pillarMat);
+        pillar.position.set(-4.8, 4.25, pz); pillar.castShadow = true;
         gGrp.add(pillar);
       }
 
-      // Spectator crowd blocks & camera flash sprites
-      for (let tier = 0; tier < 5; tier++) {
-        for (let k = -6; k <= 6; k++) {
+      // Spectator crowd camera flash sprites
+      for (let tier = 0; tier < 6; tier++) {
+        const rowX = 2.7 - tier * 1.1;
+        const rowY = 1.3 + tier * 0.75;
+        for (let k = -7; k <= 7; k++) {
           if (Math.random() < 0.28) {
             const flSprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
-            flSprite.position.set(k * 2.2 + (Math.random() - 0.5), 1.6 + tier * 0.9, tier * 1.35);
+            flSprite.position.set(rowX, rowY, k * 2.8 + (Math.random() - 0.5));
             flSprite.scale.set(1.4, 1.4, 1.4);
             gGrp.add(flSprite);
             crowdFlashes.push({ mesh: flSprite, timer: 0 });
@@ -1229,8 +1249,10 @@ function buildRoadsideInfrastructure(map, T, W) {
       gGrp.rotation.y = yaw;
       worldGroup.add(gGrp);
     };
-    makeGrandstand(1);
-    makeGrandstand(-1);
+
+    // Place grandstands on the side of the main straightaway
+    makeTracksideGrandstand(0.04);
+    makeTracksideGrandstand(0.94);
   }
 
   // 6. Coastal Yachts in Island Motorfest
@@ -5260,38 +5282,15 @@ function ensureAudio() {
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   const noise = ctx.createBufferSource(); noise.buffer = buf; noise.loop = true;
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 620; bp.Q.value = 0.9;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 600; bp.Q.value = 0.8;
   const skidGain = ctx.createGain(); skidGain.gain.value = 0;
   noise.connect(bp); bp.connect(skidGain); skidGain.connect(master); noise.start();
   const noise2 = ctx.createBufferSource(); noise2.buffer = buf; noise2.loop = true;
-  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1900;
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800;
   const nitroGain = ctx.createGain(); nitroGain.gain.value = 0;
   noise2.connect(hp); hp.connect(nitroGain); nitroGain.connect(master); noise2.start();
 
-  // Turbo whistle synthesizer
-  const oTurbo = ctx.createOscillator(); oTurbo.type = 'sine'; oTurbo.frequency.value = 2400;
-  const turboGain = ctx.createGain(); turboGain.gain.value = 0;
-  oTurbo.connect(turboGain); turboGain.connect(master); oTurbo.start();
-
-  // Blow-off valve (BOV) flutter filter & noise
-  const bovFilter = ctx.createBiquadFilter(); bovFilter.type = 'bandpass'; bovFilter.frequency.value = 3200; bovFilter.Q.value = 2.5;
-  const bovGain = ctx.createGain(); bovGain.gain.value = 0;
-  const noise3 = ctx.createBufferSource(); noise3.buffer = buf; noise3.loop = true;
-  noise3.connect(bovFilter); bovFilter.connect(bovGain); bovGain.connect(master); noise3.start();
-
-  // Curb rumble synthesizer (low-frequency pulsed rumble)
-  const curbOsc = ctx.createOscillator(); curbOsc.type = 'square'; curbOsc.frequency.value = 52;
-  const curbFilter = ctx.createBiquadFilter(); curbFilter.type = 'lowpass'; curbFilter.frequency.value = 280;
-  const curbGain = ctx.createGain(); curbGain.gain.value = 0;
-  curbOsc.connect(curbFilter); curbFilter.connect(curbGain); curbGain.connect(master); curbOsc.start();
-
-  // Surface water spray hiss
-  const sprayFilter = ctx.createBiquadFilter(); sprayFilter.type = 'bandpass'; sprayFilter.frequency.value = 2400; sprayFilter.Q.value = 0.7;
-  const sprayGain = ctx.createGain(); sprayGain.gain.value = 0;
-  const noise4 = ctx.createBufferSource(); noise4.buffer = buf; noise4.loop = true;
-  noise4.connect(sprayFilter); sprayFilter.connect(sprayGain); sprayGain.connect(master); noise4.start();
-
-  audio = { ctx, master, engines, skidGain, nitroGain, oTurbo, turboGain, bovGain, curbGain, sprayGain };
+  audio = { ctx, master, engines, skidGain, nitroGain };
   setAudio();   // apply mute + start low background music
 }
 function beep(freq, dur = 0.15, type = 'square', vol = 0.22) {
@@ -5311,7 +5310,6 @@ function winJingle(isFirst = true) {
   const notes = isFirst ? [523.25, 659.25, 783.99, 1046.50, 1318.51] : [440, 554.37, 659.25];
   notes.forEach((f, i) => setTimeout(() => beep(f, 0.22, 'sine', 0.24), i * 140));
 }
-let prevNitroAudio = false;
 function updateAudio(mine, rival) {
   if (!audio) return;
   if (audio.ctx.state === 'suspended') { audio.ctx.resume(); return; }
@@ -5321,58 +5319,29 @@ function updateAudio(mine, rival) {
     if (!e) return;
     if (!cs || cs.p !== 1) { e.engGain.gain.setTargetAtTime(0, t, 0.1); return; }
     const sp = clamp(Math.abs(cs.v) / CFG.maxSpeed, 0, 1);
-    const thr = clamp((cs.th != null ? cs.th : sp) + (cs.n ? 0.4 : 0), 0, 1);
-    // gear-boxed RPM: revs climb within a gear, drop on shift
+    const thr = clamp((cs.th != null ? cs.th : sp) + (cs.n ? 0.35 : 0), 0, 1);
+    // Gear-boxed RPM progression: revs climb within gear, smooth drop on shift
     const gear = Math.min(5, Math.floor(sp * 6));
     const frac = sp * 6 - gear;
-    const rpm = 0.18 + 0.82 * frac;
-    const f0 = 50 + rpm * 190 + thr * 22;          // fundamental ~50–260 Hz
+    const rpm = 0.2 + 0.8 * frac;
+    const f0 = 55 + rpm * 160 + thr * 18;          // fundamental ~55–235 Hz (warm, smooth tone)
     e.o1.frequency.setTargetAtTime(f0, t, 0.04);
-    e.o2.frequency.setTargetAtTime(f0 * 2.01, t, 0.04);
+    e.o2.frequency.setTargetAtTime(f0 * 2.0, t, 0.04);
     e.o3.frequency.setTargetAtTime(f0 * 0.5, t, 0.05);
-    e.lp.frequency.setTargetAtTime(320 + rpm * 2600 + thr * 1400, t, 0.08);
-    e.body.frequency.setTargetAtTime(f0 * 2.2, t, 0.08);
-    e.exBp.frequency.setTargetAtTime(f0 * 4 + 400, t, 0.08);
-    e.exGain.gain.setTargetAtTime(0.05 + thr * 0.22 + rpm * 0.1, t, 0.08);
-    let vol = 0.05 + sp * 0.1 + thr * 0.12 + (cs.n ? 0.05 : 0);
+    e.lp.frequency.setTargetAtTime(320 + rpm * 2200 + thr * 1100, t, 0.08);
+    e.body.frequency.setTargetAtTime(f0 * 2.0, t, 0.08);
+    e.exBp.frequency.setTargetAtTime(f0 * 3.5 + 350, t, 0.08);
+    e.exGain.gain.setTargetAtTime(0.03 + thr * 0.15 + rpm * 0.08, t, 0.08);
+    let vol = 0.04 + sp * 0.09 + thr * 0.10 + (cs.n ? 0.04 : 0);
     if (i === 1) {
       const dist = Math.hypot(camera.position.x - cs.x, camera.position.z - cs.z);
-      vol *= clamp(1 - dist / 160, 0, 1) * 0.8;
+      vol *= clamp(1 - dist / 160, 0, 1) * 0.75;
     }
     e.engGain.gain.setTargetAtTime(vol, t, 0.07);
   });
-  const skidAmt = (mine && mine.sl > 4.5 && Math.abs(mine.v) > 6) ? clamp(mine.sl * 0.018, 0, 0.2) : 0;
+  const skidAmt = (mine && mine.sl > 4.8 && Math.abs(mine.v) > 7) ? clamp((mine.sl - 4.8) * 0.03, 0, 0.14) : 0;
   audio.skidGain.gain.setTargetAtTime(skidAmt, t, 0.06);
-  audio.nitroGain.gain.setTargetAtTime((mine && mine.n) || (rival && rival.n) ? 0.1 : 0, t, 0.08);
-
-  if (mine && audio.oTurbo && audio.turboGain) {
-    const sp = clamp(Math.abs(mine.v) / CFG.maxSpeed, 0, 1);
-    const turboActive = (mine.n || (mine.th > 0.8 && sp > 0.4));
-    const turboPitch = 2400 + sp * 3200 + (mine.n ? 1400 : 0);
-    audio.oTurbo.frequency.setTargetAtTime(turboPitch, t, 0.06);
-    audio.turboGain.gain.setTargetAtTime(turboActive ? 0.08 : 0, t, 0.08);
-
-    if (prevNitroAudio && !mine.n && audio.bovGain) {
-      audio.bovGain.gain.setValueAtTime(0.18, t);
-      audio.bovGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
-    }
-    prevNitroAudio = !!mine.n;
-
-    if (audio.curbGain) {
-      let latDist = 0;
-      if (curMap && curMap.type === 'spline' && curMap.nearest) {
-        latDist = Math.abs(curMap.nearest(mine.x, mine.z).d);
-      } else {
-        latDist = Math.abs(CORE.radialDistToTrack(mine.x, mine.z, A, B).d);
-      }
-      const onCurb = latDist >= RH - 0.4 && latDist <= RH + 1.4 && Math.abs(mine.v) > 5;
-      audio.curbGain.gain.setTargetAtTime(onCurb ? 0.16 : 0, t, 0.04);
-    }
-    if (audio.sprayGain) {
-      const isWet = currentWeather === 'wet' && Math.abs(mine.v) > 6;
-      audio.sprayGain.gain.setTargetAtTime(isWet ? 0.12 : 0, t, 0.08);
-    }
-  }
+  audio.nitroGain.gain.setTargetAtTime((mine && mine.n) || (rival && rival.n) ? 0.08 : 0, t, 0.08);
 }
 
 // ---------------------------------------------------------------------------
