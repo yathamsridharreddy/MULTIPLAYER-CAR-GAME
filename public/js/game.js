@@ -1571,19 +1571,6 @@ buildWorld(CORE.MAPS[0]);
 camera.position.set(A - 3, 3.4, -14);
 
 // ---------------------------------------------------------------------------
-// Soft Radial Alpha Texture (Shared for particles, headlight spots, and brake halos)
-// ---------------------------------------------------------------------------
-function radialTexture() {
-  const c = document.createElement('canvas'); c.width = c.height = 64;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
-  grad.addColorStop(0, 'rgba(255,255,255,0.85)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(c);
-}
-const softTex = radialTexture();
-
-// ---------------------------------------------------------------------------
 // Car visuals (AAA High-Definition Procedural GT Supercar)
 // ---------------------------------------------------------------------------
 function createCar(paintColor, num, accent) {
@@ -1681,26 +1668,6 @@ function createCar(paintColor, num, accent) {
   const exMat = new THREE.MeshStandardMaterial({ color: 0x8a8f98, metalness: 0.95, roughness: 0.25 });
   for (const sx of [-0.35, 0.35]) { const ex = new THREE.Mesh(exGeo, exMat); ex.position.set(sx, 0.35, -2.6); body.add(ex); }
 
-  // Volumetric Headlight Projection Beams & Road Illumination
-  const beamMat = new THREE.MeshBasicMaterial({ color: 0xfff3cc, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-  const beamGeo = new THREE.ConeGeometry(2.4, 22.0, 12, 1, true);
-  beamGeo.rotateX(Math.PI / 2); beamGeo.translate(0, 0, 11.0);
-  for (const sx of [-0.62, 0.62]) {
-    const beam = new THREE.Mesh(beamGeo, beamMat);
-    beam.position.set(sx, 0.58, 2.45);
-    beam.rotation.y = -sx * 0.05;
-    beam.rotation.x = -0.06;
-    body.add(beam);
-  }
-  const groundSpotMat = new THREE.MeshBasicMaterial({ map: softTex, color: 0xfff0c0, transparent: true, opacity: 0.38, blending: THREE.AdditiveBlending, depthWrite: false });
-  const groundSpot = new THREE.Mesh(new THREE.PlaneGeometry(8.5, 24.0), groundSpotMat);
-  groundSpot.rotation.x = -Math.PI / 2; groundSpot.position.set(0, -0.28, 12.0); body.add(groundSpot);
-
-  // Rear Brake Light Red Halo Road Projection
-  const tailHaloMat = new THREE.MeshBasicMaterial({ map: softTex, color: 0xff0020, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false });
-  const tailHalo = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 6.5), tailHaloMat);
-  tailHalo.rotation.x = -Math.PI / 2; tailHalo.position.set(0, -0.28, -4.6); body.add(tailHalo);
-
   // Race Number roundel decal
   const rc = document.createElement('canvas'); rc.width = rc.height = 128;
   const rg = rc.getContext('2d');
@@ -1740,7 +1707,7 @@ function createCar(paintColor, num, accent) {
     wheels.push({ pivot, spin, front: i < 2 });
   });
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  return { group: g, body, wheels, paint, hubMat, calMat, headMat, tailMat, glassMat: glass, beamMat, tailHaloMat };
+  return { group: g, body, wheels, paint, hubMat, calMat, headMat, tailMat, glassMat: glass };
 }
 const carVisuals = {}; // v76: lazy up to 6
 const SLOT_HEX = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7];
@@ -1937,6 +1904,16 @@ function ghostUpdate(raceTime) {
 // ---------------------------------------------------------------------------
 // Particles
 // ---------------------------------------------------------------------------
+function radialTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,0.85)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const softTex = radialTexture();
+
 const smokePool = [];
 for (let i = 0; i < 80; i++) {
   const mat = new THREE.SpriteMaterial({ map: softTex, transparent: true, opacity: 0, depthWrite: false });
@@ -5532,11 +5509,6 @@ function placeCar(slot, cs, dt) {
   if (v.tailMat) {
     v.tailMat.emissiveIntensity = isBraking ? 3.6 : 1.8;
     v.tailMat.color.setHex(isBraking ? 0xff0000 : 0xff1515);
-  }
-  if (v.tailHaloMat) v.tailHaloMat.opacity = isBraking ? 0.65 : 0.22;
-  if (v.beamMat) {
-    const isNight = curMap && (curMap.theme === 'neon' || curMap.theme === 'night');
-    v.beamMat.opacity = isNight ? 0.35 : 0.16;
   }
   const accelSquat = (cs.th > 0 ? (cs.n ? -0.045 : -0.025) : 0);
   const brakeDive = isBraking ? 0.042 : 0;
