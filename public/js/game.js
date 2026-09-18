@@ -1571,6 +1571,19 @@ buildWorld(CORE.MAPS[0]);
 camera.position.set(A - 3, 3.4, -14);
 
 // ---------------------------------------------------------------------------
+// Soft Radial Alpha Texture (Shared for particles, headlight spots, and brake halos)
+// ---------------------------------------------------------------------------
+function radialTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,0.85)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const softTex = radialTexture();
+
+// ---------------------------------------------------------------------------
 // Car visuals (AAA High-Definition Procedural GT Supercar)
 // ---------------------------------------------------------------------------
 function createCar(paintColor, num, accent) {
@@ -1922,17 +1935,8 @@ function ghostUpdate(raceTime) {
 }
 
 // ---------------------------------------------------------------------------
-// Particles (unchanged)
+// Particles
 // ---------------------------------------------------------------------------
-function radialTexture() {
-  const c = document.createElement('canvas'); c.width = c.height = 64;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
-  grad.addColorStop(0, 'rgba(255,255,255,0.85)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(c);
-}
-const softTex = radialTexture();
 const smokePool = [];
 for (let i = 0; i < 80; i++) {
   const mat = new THREE.SpriteMaterial({ map: softTex, transparent: true, opacity: 0, depthWrite: false });
