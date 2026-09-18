@@ -2999,7 +2999,7 @@ function onCrashFX(x, z, strength) {
   f.style.opacity = Math.min(0.55, 0.2 + strength * 0.4);
   clearTimeout(onCrashFX._t);
   onCrashFX._t = setTimeout(() => { f.style.opacity = 0; }, 140);
-  if (strength > 0.35) beep(90 + Math.random() * 40, 0.18, 'sawtooth', 0.16);
+  if (strength > 0.35) beep(75, 0.12, 'sine', 0.18);
 }
 function toast(text) {
   const el = $('toast'); el.textContent = text; el.classList.add('show');
@@ -4509,23 +4509,23 @@ function drawQR(url) {
 function processEvents(snap) {
   for (const e of snap.events || []) {
     switch (e.type) {
-      case 'count': showCount(String(e.n)); beep(392, 0.14, 'square', 0.24); break;
-      case 'go': showCount(tI18n('countdownGo') || 'GO!'); beep(784, 0.5, 'square', 0.28); ghostStart(snap.map != null ? snap.map : builtMapId); v60OnGo(); break;
+      case 'count': showCount(String(e.n)); beep(440, 0.16, 'sine', 0.22); break;
+      case 'go': showCount(tI18n('countdownGo') || 'GO!'); beep(880, 0.35, 'sine', 0.25); ghostStart(snap.map != null ? snap.map : builtMapId); v60OnGo(); break;
       case 'crash': onCrashFX(e.x, e.z, e.s); if (e.slot === mySlot) v60OnCrashMine(); break;
       case 'lap':
         if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); recordPlayDay(); achCheck({ map: snap.map, lapT: e.t }); }
         if (e.slot === mySlot && e.best) v60OnBestLap(snap.map != null ? snap.map : builtMapId, e.t);
         toast(`P${e.slot} lap ${e.n} — ${fmtTime(e.t)}${e.best ? '  ★ BEST' : ''}`); break;
-      case 'finallap': toast(`🔥 P${e.slot}: ` + (tI18n('finalLap') || 'FINAL LAP!')); beep(660, 0.14, 'square', 0.2); break;
-      case 'elim': setBanner(tI18n('eliminated', { slot: e.slot }) || `❌ P${e.slot} ELIMINATED`); beep(160, 0.3, 'sawtooth', 0.2); break;
+      case 'finallap': toast(`🔥 P${e.slot}: ` + (tI18n('finalLap') || 'FINAL LAP!')); beep(659.25, 0.22, 'sine', 0.22); break;
+      case 'elim': setBanner(tI18n('eliminated', { slot: e.slot }) || `❌ P${e.slot} ELIMINATED`); beep(220, 0.35, 'triangle', 0.22); break;
       case 'win':
         if (e.slot === mySlot) {
           track('fin', snap.map != null ? snap.map : builtMapId);
           achCheck({ win: true, map: snap.map });
         }
         setBanner(e.multi ? (tI18n('playerWins', { slot: e.slot }) || `🏁 PLAYER ${e.slot} WINS!`) : (tI18n('finishTime', { time: fmtTime(e.t) }) || `🏁 FINISH — ${fmtTime(e.t)}`)); confetti(); winJingle(); break;
-      case 'pu': { const nm = ['⚡ BOOST', '🛡️ SHIELD', '🌀 SLOW'][e.ptype] || 'PU'; toast(`P${e.slot} grabbed ${nm}!`); beep(980, 0.12, 'square', 0.2); break; }
-      case 'respawn': if (e.slot === mySlot) { toast('🔄 Back on track'); beep(220, 0.2, 'sawtooth', 0.18); } break;
+      case 'pu': { const nm = ['⚡ BOOST', '🛡️ SHIELD', '🌀 SLOW'][e.ptype] || 'PU'; toast(`P${e.slot} grabbed ${nm}!`); beep(880, 0.12, 'sine', 0.2); setTimeout(() => beep(1318.5, 0.18, 'sine', 0.2), 60); break; }
+      case 'respawn': if (e.slot === mySlot) { toast('🔄 Back on track'); beep(330, 0.2, 'triangle', 0.18); } break;
       case 'rematch': toast(`🔁 Rematch vote ${e.n}/${e.total}`); break;
       case 'finished':
         if (e.slot === mySlot) {
@@ -5246,69 +5246,88 @@ function ensureAudio() {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) return;
   const ctx = new Ctx();
-  const master = ctx.createGain(); master.gain.value = 0.7; master.connect(ctx.destination);
+  const master = ctx.createGain(); master.gain.value = 0.65; master.connect(ctx.destination);
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 6;
   master.disconnect(); master.connect(comp); comp.connect(ctx.destination);
 
-  // Racing-engine synth: 3 harmonically-related oscs -> waveshaper grit -> resonant
-  // body -> throttle-opening lowpass, plus a bandpassed exhaust-noise layer.
+  // High-Fidelity Supercar Engine Synthesizer:
+  // Combines warm sub-bass rumble, tuned triangle body, and smooth lowpass filtration.
   const engines = [0, 1].map(() => {
-    const o1 = ctx.createOscillator(); o1.type = 'sawtooth';              // fundamental
-    const o2 = ctx.createOscillator(); o2.type = 'sawtooth'; o2.detune.value = 9;  // thick octave
-    const o3 = ctx.createOscillator(); o3.type = 'square';                 // sub rumble
-    const g1 = ctx.createGain(); g1.gain.value = 0.5;
+    const o1 = ctx.createOscillator(); o1.type = 'sawtooth';              // warm fundamental
+    const o2 = ctx.createOscillator(); o2.type = 'triangle';              // smooth mid-range body
+    const o3 = ctx.createOscillator(); o3.type = 'sine';                  // deep sub-bass purr
+    const g1 = ctx.createGain(); g1.gain.value = 0.32;
     const g2 = ctx.createGain(); g2.gain.value = 0.28;
-    const g3 = ctx.createGain(); g3.gain.value = 0.34;
-    const shaper = ctx.createWaveShaper(); shaper.curve = distCurve(2.5); shaper.oversample = '4x';
-    const body = ctx.createBiquadFilter(); body.type = 'peaking'; body.frequency.value = 420; body.Q.value = 1.1; body.gain.value = 7;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600; lp.Q.value = 0.7;
+    const g3 = ctx.createGain(); g3.gain.value = 0.36;
+    const shaper = ctx.createWaveShaper(); shaper.curve = distCurve(1.2); shaper.oversample = '4x';
+    const body = ctx.createBiquadFilter(); body.type = 'peaking'; body.frequency.value = 240; body.Q.value = 0.75; body.gain.value = 3;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 450; lp.Q.value = 0.65;
     const engGain = ctx.createGain(); engGain.gain.value = 0;
     o1.connect(g1); o2.connect(g2); o3.connect(g3);
-    g1.connect(shaper); g2.connect(shaper); g3.connect(shaper);
+    g1.connect(shaper); g2.connect(shaper); g3.connect(body);
     shaper.connect(body); body.connect(lp); lp.connect(engGain); engGain.connect(master);
-    // exhaust turbulence
-    const nb = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-    const nd = nb.getChannelData(0);
-    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-    const ex = ctx.createBufferSource(); ex.buffer = nb; ex.loop = true;
-    const exBp = ctx.createBiquadFilter(); exBp.type = 'bandpass'; exBp.frequency.value = 900; exBp.Q.value = 0.8;
-    const exGain = ctx.createGain(); exGain.gain.value = 0;
-    ex.connect(exBp); exBp.connect(exGain); exGain.connect(engGain);
-    o1.start(); o2.start(); o3.start(); ex.start();
-    return { o1, o2, o3, lp, body, engGain, exBp, exGain };
+    o1.start(); o2.start(); o3.start();
+    return { o1, o2, o3, lp, body, engGain };
   });
 
+  // Soft granular tire skid noise (bandpassed pink noise, zero harshness)
   const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   const noise = ctx.createBufferSource(); noise.buffer = buf; noise.loop = true;
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 600; bp.Q.value = 0.8;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 520; bp.Q.value = 1.0;
   const skidGain = ctx.createGain(); skidGain.gain.value = 0;
   noise.connect(bp); bp.connect(skidGain); skidGain.connect(master); noise.start();
+
+  // Smooth nitro turbine surge
   const noise2 = ctx.createBufferSource(); noise2.buffer = buf; noise2.loop = true;
-  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800;
+  const nitroFilter = ctx.createBiquadFilter(); nitroFilter.type = 'bandpass'; nitroFilter.frequency.value = 1200; nitroFilter.Q.value = 0.8;
   const nitroGain = ctx.createGain(); nitroGain.gain.value = 0;
-  noise2.connect(hp); hp.connect(nitroGain); nitroGain.connect(master); noise2.start();
+  noise2.connect(nitroFilter); nitroFilter.connect(nitroGain); nitroGain.connect(master); noise2.start();
 
   audio = { ctx, master, engines, skidGain, nitroGain };
   setAudio();   // apply mute + start low background music
 }
-function beep(freq, dur = 0.15, type = 'square', vol = 0.22) {
+function beep(freq, dur = 0.16, type = 'sine', vol = 0.22) {
   ensureAudio(); if (!audio) return;
   const ctx = audio.ctx;
-  const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq;
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = freq;
+  const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = freq * 2;
   const g = ctx.createGain();
+  const g2 = ctx.createGain(); g2.gain.value = 0.25;
   g.gain.setValueAtTime(0.0001, ctx.currentTime);
-  g.gain.exponentialRampToValueAtTime(vol, ctx.currentTime + 0.015);
+  g.gain.exponentialRampToValueAtTime(vol, ctx.currentTime + 0.012);
   g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
-  o.connect(g); g.connect(audio.master);
-  o.start(); o.stop(ctx.currentTime + dur + 0.05);
+  o.connect(g); o2.connect(g2); g2.connect(g); g.connect(audio.master);
+  o.start(); o2.start(); o.stop(ctx.currentTime + dur + 0.05); o2.stop(ctx.currentTime + dur + 0.05);
 }
-function playHorn() { beep(415, 0.35, 'triangle', 0.28); }
+function playHorn() {
+  ensureAudio(); if (!audio) return;
+  const ctx = audio.ctx;
+  [440, 554.37].forEach((f) => {
+    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.24, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+    o.connect(g); g.connect(audio.master);
+    o.start(); o.stop(ctx.currentTime + 0.38);
+  });
+}
 function winJingle(isFirst = true) {
   if (prefs.mute) return;
-  const notes = isFirst ? [523.25, 659.25, 783.99, 1046.50, 1318.51] : [440, 554.37, 659.25];
-  notes.forEach((f, i) => setTimeout(() => beep(f, 0.22, 'sine', 0.24), i * 140));
+  const notes = isFirst ? [523.25, 659.25, 783.99, 1046.50, 1318.51] : [440, 554.37, 659.25, 880];
+  notes.forEach((f, i) => setTimeout(() => {
+    ensureAudio(); if (!audio) return;
+    const ctx = audio.ctx;
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.42);
+    o.connect(g); g.connect(audio.master);
+    o.start(); o.stop(ctx.currentTime + 0.45);
+  }, i * 130));
 }
 function updateAudio(mine, rival) {
   if (!audio) return;
@@ -5320,28 +5339,26 @@ function updateAudio(mine, rival) {
     if (!cs || cs.p !== 1) { e.engGain.gain.setTargetAtTime(0, t, 0.1); return; }
     const sp = clamp(Math.abs(cs.v) / CFG.maxSpeed, 0, 1);
     const thr = clamp((cs.th != null ? cs.th : sp) + (cs.n ? 0.35 : 0), 0, 1);
-    // Gear-boxed RPM progression: revs climb within gear, smooth drop on shift
+    // Smooth 6-speed progression
     const gear = Math.min(5, Math.floor(sp * 6));
     const frac = sp * 6 - gear;
-    const rpm = 0.2 + 0.8 * frac;
-    const f0 = 55 + rpm * 160 + thr * 18;          // fundamental ~55–235 Hz (warm, smooth tone)
-    e.o1.frequency.setTargetAtTime(f0, t, 0.04);
-    e.o2.frequency.setTargetAtTime(f0 * 2.0, t, 0.04);
+    const rpm = 0.22 + 0.78 * frac;
+    const f0 = 50 + rpm * 140 + thr * 16;          // fundamental ~50–206 Hz (rich, deep baritone)
+    e.o1.frequency.setTargetAtTime(f0, t, 0.05);
+    e.o2.frequency.setTargetAtTime(f0 * 1.5, t, 0.05);
     e.o3.frequency.setTargetAtTime(f0 * 0.5, t, 0.05);
-    e.lp.frequency.setTargetAtTime(320 + rpm * 2200 + thr * 1100, t, 0.08);
-    e.body.frequency.setTargetAtTime(f0 * 2.0, t, 0.08);
-    e.exBp.frequency.setTargetAtTime(f0 * 3.5 + 350, t, 0.08);
-    e.exGain.gain.setTargetAtTime(0.03 + thr * 0.15 + rpm * 0.08, t, 0.08);
-    let vol = 0.04 + sp * 0.09 + thr * 0.10 + (cs.n ? 0.04 : 0);
+    e.lp.frequency.setTargetAtTime(260 + rpm * 1200 + thr * 600, t, 0.08);
+    e.body.frequency.setTargetAtTime(f0 * 1.8, t, 0.08);
+    let vol = 0.035 + sp * 0.08 + thr * 0.09 + (cs.n ? 0.03 : 0);
     if (i === 1) {
       const dist = Math.hypot(camera.position.x - cs.x, camera.position.z - cs.z);
-      vol *= clamp(1 - dist / 160, 0, 1) * 0.75;
+      vol *= clamp(1 - dist / 160, 0, 1) * 0.7;
     }
     e.engGain.gain.setTargetAtTime(vol, t, 0.07);
   });
-  const skidAmt = (mine && mine.sl > 4.8 && Math.abs(mine.v) > 7) ? clamp((mine.sl - 4.8) * 0.03, 0, 0.14) : 0;
+  const skidAmt = (mine && mine.sl > 5.0 && Math.abs(mine.v) > 7) ? clamp((mine.sl - 5.0) * 0.025, 0, 0.12) : 0;
   audio.skidGain.gain.setTargetAtTime(skidAmt, t, 0.06);
-  audio.nitroGain.gain.setTargetAtTime((mine && mine.n) || (rival && rival.n) ? 0.08 : 0, t, 0.08);
+  audio.nitroGain.gain.setTargetAtTime((mine && mine.n) || (rival && rival.n) ? 0.07 : 0, t, 0.08);
 }
 
 // ---------------------------------------------------------------------------
@@ -5650,7 +5667,7 @@ function updateHUD(mine, rival) {
 function updateCountdownVisual() {
   if (!latest || latest.state !== 'countdown' || latest.count == null) return;
   const n = Math.max(1, Math.ceil(latest.count));
-  if (n !== lastCountInt) { lastCountInt = n; showCount(String(n)); beep(392, 0.14, 'square', 0.24); }
+  if (n !== lastCountInt) { lastCountInt = n; showCount(String(n)); beep(440, 0.16, 'sine', 0.22); }
 }
 
 // ---------------------------------------------------------------------------
