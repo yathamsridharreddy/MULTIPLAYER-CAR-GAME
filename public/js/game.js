@@ -458,6 +458,10 @@ function disposeHierarchy(obj) {
 }
 
 let clouds = [];
+let crowdFlashes = [];
+let ambientBlimp = null;
+let blimpAngle = 0;
+
 function addClouds() {
   const c = document.createElement("canvas"); c.width = c.height = 128;
   const g = c.getContext("2d");
@@ -481,6 +485,22 @@ function updateClouds(dt) {
   for (const s of clouds) {
     s.position.x += dt * 4;
     if (s.position.x > 950) s.position.x = -950;
+  }
+  if (ambientBlimp) {
+    blimpAngle += dt * 0.04;
+    ambientBlimp.position.set(Math.cos(blimpAngle) * 230, 130 + Math.sin(blimpAngle * 2) * 8, Math.sin(blimpAngle) * 230);
+    ambientBlimp.rotation.y = -blimpAngle - Math.PI / 2;
+  }
+  if (crowdFlashes.length > 0) {
+    for (const fl of crowdFlashes) {
+      if (fl.timer > 0) {
+        fl.timer -= dt;
+        fl.mesh.material.opacity = Math.max(0, fl.timer * 4.5);
+      } else if (Math.random() < 0.035) {
+        fl.timer = 0.18 + Math.random() * 0.12;
+        fl.mesh.material.opacity = 0.95;
+      }
+    }
   }
 }
 
@@ -1148,6 +1168,130 @@ function buildRoadsideInfrastructure(map, T, W) {
       }
     }
   }
+
+  // 5. Trackside Spectator Grandstands with Stadium Canopies
+  {
+    const standMat = new THREE.MeshStandardMaterial({ color: 0x242834, roughness: 0.85 });
+    const seatR = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.7 });
+    const seatB = new THREE.MeshStandardMaterial({ color: 0x0a84ff, roughness: 0.7 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x181c24, roughness: 0.6, metalness: 0.4 });
+    const beamMat = new THREE.MeshStandardMaterial({ color: 0xd0d4dc, metalness: 0.8, roughness: 0.3 });
+
+    const makeGrandstand = (side) => {
+      const gGrp = new THREE.Group();
+      const p0 = pts[Math.floor(pts.length * 0.02)], p1 = pts[Math.floor(pts.length * 0.04)];
+      let tx = p1.x - p0.x, tz = p1.z - p0.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+      const nx = -tz * side, nz = tx * side;
+      const gx = p0.x + nx * (RH + 11.5), gz = p0.z + nz * (RH + 11.5);
+      const gy = CORE.getTerrainHeight(map, gx, gz);
+      const yaw = Math.atan2(tx, tz) + (side < 0 ? Math.PI : 0);
+
+      // Deep foundation plinth
+      const found = new THREE.Mesh(new THREE.BoxGeometry(34.0, 5.0, 10.0), standMat);
+      found.position.set(0, -2.4, 2.0); gGrp.add(found);
+
+      for (let tier = 0; tier < 5; tier++) {
+        const step = new THREE.Mesh(new THREE.BoxGeometry(32.0, 0.9, 1.4), standMat);
+        step.position.set(0, 0.45 + tier * 0.9, tier * 1.35);
+        step.castShadow = step.receiveShadow = true;
+        gGrp.add(step);
+
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(31.6, 0.3, 0.9), tier % 2 === 0 ? seatR : seatB);
+        seat.position.set(0, 0.9 + tier * 0.9 + 0.15, tier * 1.35);
+        gGrp.add(seat);
+      }
+
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(34.0, 0.35, 9.5), roofMat);
+      roof.position.set(0, 7.8, 2.0); roof.rotation.x = -0.15; roof.castShadow = true;
+      gGrp.add(roof);
+
+      const pGeo = new THREE.CylinderGeometry(0.25, 0.3, 8.5, 8);
+      for (const px of [-15.5, 15.5]) {
+        const pillar = new THREE.Mesh(pGeo, beamMat);
+        pillar.position.set(px, 4.25, 5.5); pillar.castShadow = true;
+        gGrp.add(pillar);
+      }
+
+      // Spectator crowd blocks & camera flash sprites
+      for (let tier = 0; tier < 5; tier++) {
+        for (let k = -6; k <= 6; k++) {
+          if (Math.random() < 0.28) {
+            const flSprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+            flSprite.position.set(k * 2.2 + (Math.random() - 0.5), 1.6 + tier * 0.9, tier * 1.35);
+            flSprite.scale.set(1.4, 1.4, 1.4);
+            gGrp.add(flSprite);
+            crowdFlashes.push({ mesh: flSprite, timer: 0 });
+          }
+        }
+      }
+
+      gGrp.position.set(gx, gy, gz);
+      gGrp.rotation.y = yaw;
+      worldGroup.add(gGrp);
+    };
+    makeGrandstand(1);
+    makeGrandstand(-1);
+  }
+
+  // 6. Coastal Yachts in Island Motorfest
+  if (T.ocean) {
+    const yMat = new THREE.MeshStandardMaterial({ color: 0xf4f6f8, roughness: 0.3, metalness: 0.2 });
+    const deckMat = new THREE.MeshStandardMaterial({ map: woodPlankTexture("#a67c52"), roughness: 0.8 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x112233, roughness: 0.1, metalness: 0.9 });
+    const mastMat = new THREE.MeshStandardMaterial({ color: 0x8a929e, metalness: 0.9, roughness: 0.2 });
+
+    [[-180, -220, 0.4], [210, -280, 2.1]].forEach(([yx, yz, yRot]) => {
+      const yacht = new THREE.Group();
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(7, 3.2, 22), yMat); hull.position.y = 1.0; yacht.add(hull);
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.2, 21.6), deckMat); deck.position.y = 2.65; yacht.add(deck);
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(5.2, 2.4, 9.0), yMat); cabin.position.set(0, 3.8, -2.0); yacht.add(cabin);
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(5.3, 1.2, 8.0), glassMat); glass.position.set(0, 4.0, -1.8); yacht.add(glass);
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 16, 8), mastMat); mast.position.set(0, 10.5, 2.0); yacht.add(mast);
+      yacht.position.set(yx, -0.2, yz); yacht.rotation.y = yRot;
+      worldGroup.add(yacht);
+    });
+  }
+
+  // 7. Cyberpunk Atmospheric Blimp in Neon City
+  if (map.theme === 'neon') {
+    const blimp = new THREE.Group();
+    const hullMat = new THREE.MeshStandardMaterial({ color: 0x181e28, roughness: 0.5, metalness: 0.8 });
+    const hullGeo = new THREE.SphereGeometry(12, 16, 12);
+    hullGeo.scale(1.0, 1.0, 2.8);
+    const hull = new THREE.Mesh(hullGeo, hullMat);
+    blimp.add(hull);
+
+    const gonMat = new THREE.MeshStandardMaterial({ color: 0x0e1118, metalness: 0.9, roughness: 0.3 });
+    const gondola = new THREE.Mesh(new THREE.BoxGeometry(4.5, 3.0, 14.0), gonMat);
+    gondola.position.set(0, -11.5, 0);
+    blimp.add(gondola);
+
+    // Giant neon digital ad screen on hull sides
+    const adMat = new THREE.MeshStandardMaterial({
+      color: 0x00f0ff,
+      emissive: 0x00d4ff,
+      emissiveIntensity: 1.8,
+      roughness: 0.2
+    });
+    for (const sx of [-11.8, 11.8]) {
+      const screen = new THREE.Mesh(new THREE.BoxGeometry(0.4, 6.0, 22.0), adMat);
+      screen.position.set(sx, 0, 0);
+      blimp.add(screen);
+    }
+
+    // Tail fins
+    const finMat = new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0xff0055, emissiveIntensity: 0.6 });
+    for (let f = 0; f < 4; f++) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.3, 8.0, 6.0), finMat);
+      fin.position.set(Math.sin(f * Math.PI / 2) * 8.5, Math.cos(f * Math.PI / 2) * 8.5, -24.0);
+      fin.rotation.z = f * Math.PI / 2;
+      blimp.add(fin);
+    }
+
+    blimp.position.set(0, 130, 0);
+    worldGroup.add(blimp);
+    ambientBlimp = blimp;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1251,6 +1395,8 @@ function buildWorld(map) {
     worldGroup.remove(child);
     disposeHierarchy(child);
   }
+  crowdFlashes = [];
+  ambientBlimp = null;
 
   puMeshes.length = 0;
   if (CORE.pickupSpots) { // v59: visible power-ups at deterministic spots
@@ -1522,6 +1668,26 @@ function createCar(paintColor, num, accent) {
   const exMat = new THREE.MeshStandardMaterial({ color: 0x8a8f98, metalness: 0.95, roughness: 0.25 });
   for (const sx of [-0.35, 0.35]) { const ex = new THREE.Mesh(exGeo, exMat); ex.position.set(sx, 0.35, -2.6); body.add(ex); }
 
+  // Volumetric Headlight Projection Beams & Road Illumination
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0xfff3cc, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const beamGeo = new THREE.ConeGeometry(2.4, 22.0, 12, 1, true);
+  beamGeo.rotateX(Math.PI / 2); beamGeo.translate(0, 0, 11.0);
+  for (const sx of [-0.62, 0.62]) {
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(sx, 0.58, 2.45);
+    beam.rotation.y = -sx * 0.05;
+    beam.rotation.x = -0.06;
+    body.add(beam);
+  }
+  const groundSpotMat = new THREE.MeshBasicMaterial({ map: softTex, color: 0xfff0c0, transparent: true, opacity: 0.38, blending: THREE.AdditiveBlending, depthWrite: false });
+  const groundSpot = new THREE.Mesh(new THREE.PlaneGeometry(8.5, 24.0), groundSpotMat);
+  groundSpot.rotation.x = -Math.PI / 2; groundSpot.position.set(0, -0.28, 12.0); body.add(groundSpot);
+
+  // Rear Brake Light Red Halo Road Projection
+  const tailHaloMat = new THREE.MeshBasicMaterial({ map: softTex, color: 0xff0020, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false });
+  const tailHalo = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 6.5), tailHaloMat);
+  tailHalo.rotation.x = -Math.PI / 2; tailHalo.position.set(0, -0.28, -4.6); body.add(tailHalo);
+
   // Race Number roundel decal
   const rc = document.createElement('canvas'); rc.width = rc.height = 128;
   const rg = rc.getContext('2d');
@@ -1561,7 +1727,7 @@ function createCar(paintColor, num, accent) {
     wheels.push({ pivot, spin, front: i < 2 });
   });
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  return { group: g, body, wheels, paint, hubMat, calMat, headMat, tailMat, glassMat: glass };
+  return { group: g, body, wheels, paint, hubMat, calMat, headMat, tailMat, glassMat: glass, beamMat, tailHaloMat };
 }
 const carVisuals = {}; // v76: lazy up to 6
 const SLOT_HEX = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7];
@@ -5120,7 +5286,31 @@ function ensureAudio() {
   const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1900;
   const nitroGain = ctx.createGain(); nitroGain.gain.value = 0;
   noise2.connect(hp); hp.connect(nitroGain); nitroGain.connect(master); noise2.start();
-  audio = { ctx, master, engines, skidGain, nitroGain };
+
+  // Turbo whistle synthesizer
+  const oTurbo = ctx.createOscillator(); oTurbo.type = 'sine'; oTurbo.frequency.value = 2400;
+  const turboGain = ctx.createGain(); turboGain.gain.value = 0;
+  oTurbo.connect(turboGain); turboGain.connect(master); oTurbo.start();
+
+  // Blow-off valve (BOV) flutter filter & noise
+  const bovFilter = ctx.createBiquadFilter(); bovFilter.type = 'bandpass'; bovFilter.frequency.value = 3200; bovFilter.Q.value = 2.5;
+  const bovGain = ctx.createGain(); bovGain.gain.value = 0;
+  const noise3 = ctx.createBufferSource(); noise3.buffer = buf; noise3.loop = true;
+  noise3.connect(bovFilter); bovFilter.connect(bovGain); bovGain.connect(master); noise3.start();
+
+  // Curb rumble synthesizer (low-frequency pulsed rumble)
+  const curbOsc = ctx.createOscillator(); curbOsc.type = 'square'; curbOsc.frequency.value = 52;
+  const curbFilter = ctx.createBiquadFilter(); curbFilter.type = 'lowpass'; curbFilter.frequency.value = 280;
+  const curbGain = ctx.createGain(); curbGain.gain.value = 0;
+  curbOsc.connect(curbFilter); curbFilter.connect(curbGain); curbGain.connect(master); curbOsc.start();
+
+  // Surface water spray hiss
+  const sprayFilter = ctx.createBiquadFilter(); sprayFilter.type = 'bandpass'; sprayFilter.frequency.value = 2400; sprayFilter.Q.value = 0.7;
+  const sprayGain = ctx.createGain(); sprayGain.gain.value = 0;
+  const noise4 = ctx.createBufferSource(); noise4.buffer = buf; noise4.loop = true;
+  noise4.connect(sprayFilter); sprayFilter.connect(sprayGain); sprayGain.connect(master); noise4.start();
+
+  audio = { ctx, master, engines, skidGain, nitroGain, oTurbo, turboGain, bovGain, curbGain, sprayGain };
   setAudio();   // apply mute + start low background music
 }
 function beep(freq, dur = 0.15, type = 'square', vol = 0.22) {
@@ -5140,6 +5330,7 @@ function winJingle(isFirst = true) {
   const notes = isFirst ? [523.25, 659.25, 783.99, 1046.50, 1318.51] : [440, 554.37, 659.25];
   notes.forEach((f, i) => setTimeout(() => beep(f, 0.22, 'sine', 0.24), i * 140));
 }
+let prevNitroAudio = false;
 function updateAudio(mine, rival) {
   if (!audio) return;
   if (audio.ctx.state === 'suspended') { audio.ctx.resume(); return; }
@@ -5172,6 +5363,35 @@ function updateAudio(mine, rival) {
   const skidAmt = (mine && mine.sl > 4.5 && Math.abs(mine.v) > 6) ? clamp(mine.sl * 0.018, 0, 0.2) : 0;
   audio.skidGain.gain.setTargetAtTime(skidAmt, t, 0.06);
   audio.nitroGain.gain.setTargetAtTime((mine && mine.n) || (rival && rival.n) ? 0.1 : 0, t, 0.08);
+
+  if (mine && audio.oTurbo && audio.turboGain) {
+    const sp = clamp(Math.abs(mine.v) / CFG.maxSpeed, 0, 1);
+    const turboActive = (mine.n || (mine.th > 0.8 && sp > 0.4));
+    const turboPitch = 2400 + sp * 3200 + (mine.n ? 1400 : 0);
+    audio.oTurbo.frequency.setTargetAtTime(turboPitch, t, 0.06);
+    audio.turboGain.gain.setTargetAtTime(turboActive ? 0.08 : 0, t, 0.08);
+
+    if (prevNitroAudio && !mine.n && audio.bovGain) {
+      audio.bovGain.gain.setValueAtTime(0.18, t);
+      audio.bovGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+    }
+    prevNitroAudio = !!mine.n;
+
+    if (audio.curbGain) {
+      let latDist = 0;
+      if (curMap && curMap.type === 'spline' && curMap.nearest) {
+        latDist = Math.abs(curMap.nearest(mine.x, mine.z).d);
+      } else {
+        latDist = Math.abs(CORE.radialDistToTrack(mine.x, mine.z, A, B).d);
+      }
+      const onCurb = latDist >= RH - 0.4 && latDist <= RH + 1.4 && Math.abs(mine.v) > 5;
+      audio.curbGain.gain.setTargetAtTime(onCurb ? 0.16 : 0, t, 0.04);
+    }
+    if (audio.sprayGain) {
+      const isWet = currentWeather === 'wet' && Math.abs(mine.v) > 6;
+      audio.sprayGain.gain.setTargetAtTime(isWet ? 0.12 : 0, t, 0.08);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -5309,15 +5529,25 @@ function placeCar(slot, cs, dt) {
     v.tailMat.emissiveIntensity = isBraking ? 3.6 : 1.8;
     v.tailMat.color.setHex(isBraking ? 0xff0000 : 0xff1515);
   }
-  const pitchTarget = roadPitch + (cs.th > 0 ? -0.025 : (isBraking ? 0.038 : 0));
-  v.body.rotation.x = lerp(v.body.rotation.x, pitchTarget, Math.min(1, dt * 6.5));
-  v.body.rotation.z = lerp(v.body.rotation.z, clamp(roadRoll - cs.sl * 0.048, -0.35, 0.35), Math.min(1, dt * 8.5));
+  if (v.tailHaloMat) v.tailHaloMat.opacity = isBraking ? 0.65 : 0.22;
+  if (v.beamMat) {
+    const isNight = curMap && (curMap.theme === 'neon' || curMap.theme === 'night');
+    v.beamMat.opacity = isNight ? 0.35 : 0.16;
+  }
+  const accelSquat = (cs.th > 0 ? (cs.n ? -0.045 : -0.025) : 0);
+  const brakeDive = isBraking ? 0.042 : 0;
+  const pitchTarget = roadPitch + accelSquat + brakeDive;
+  v.body.rotation.x = lerp(v.body.rotation.x, pitchTarget, Math.min(1, dt * 7.5));
+  v.body.rotation.z = lerp(v.body.rotation.z, clamp(roadRoll - cs.sl * 0.052, -0.38, 0.38), Math.min(1, dt * 9.0));
   const sp = clamp(Math.abs(cs.v) / CFG.maxSpeed, 0, 1);
   v.body.position.y = Math.sin(performance.now() * 0.016 + slot * 3) * 0.008 * sp;
   v.spinAngle += cs.v * dt / 0.35;
   for (const w of v.wheels) {
     w.spin.rotation.x = v.spinAngle;
-    if (w.front) w.pivot.rotation.y = -cs.st * 0.42;
+    if (w.front) {
+      w.pivot.rotation.y = -cs.st * 0.42;
+      w.pivot.rotation.z = -cs.st * 0.12; // Dynamic front wheel camber angle
+    }
   }
   if (cs.sl > 4.5 && Math.abs(cs.v) > 6) {
     for (const side of [-0.98, 0.98]) {
