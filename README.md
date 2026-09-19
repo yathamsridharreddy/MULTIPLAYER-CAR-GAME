@@ -9,8 +9,8 @@
 [![Live Demo](https://img.shields.io/badge/▶_PLAY_NOW-LIVE_DEMO-00F0FF?style=for-the-badge&logo=googlechrome&logoColor=05070c)](https://sridhar-drift.vercel.app)
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yathamsridharreddy/MULTIPLAYER-CAR-GAME)
 
-[![Tests](https://img.shields.io/badge/Tests-112%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
-[![Suites](https://img.shields.io/badge/Test%20Suites-22%20passing-00f59b?style=flat-square)](test/)
+[![Tests](https://img.shields.io/badge/Tests-116%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
+[![Suites](https://img.shields.io/badge/Test%20Suites-23%20passing-00f59b?style=flat-square)](test/)
 [![Server](https://img.shields.io/badge/Simulation-30Hz%20Authoritative-ffd479?style=flat-square)](shared/game-core.js)
 [![Multiplayer](https://img.shields.io/badge/Multiplayer-1--6%20Players%20%2B%20AI-ff2e54?style=flat-square)](server.js)
 [![Rendering](https://img.shields.io/badge/3D%20Engine-Three.js%20WebGL-00f0ff?style=flat-square)](public/js/game.js)
@@ -58,7 +58,7 @@
 - **Anti-Cheat & Authoritative Settlement**: Server-calculated lap validation against physical theoretical minimums, preventing coordinate teleportation, forged lap times, and fabricated currency awards.
 - **Competitive Retention & Social Layer**: Real-time Elo rating, 4-tier milestone badges, seasonal championships, asynchronous ghost replays (`/replay`), daily UTC challenges, and Syndicate Crews with shared mileage pools.
 - **High-Performance WebGL & Zero-Allocation Loops**: Custom Three.js render loop with preallocated scratch vectors, instanced mesh geometry for track foliage and barriers, and half-rate minimap execution to eliminate garbage collection pauses.
-- **PWA & Offline Asset Strategy**: Dual web app manifests (`manifest.webmanifest` and `manifest-controller.webmanifest`) with versioned Service Worker caching (`sridhar-rush-v97`) for instant repeat visits.
+- **PWA & Offline Asset Strategy**: Dual web app manifests (`manifest.webmanifest` and `manifest-controller.webmanifest`) with versioned Service Worker caching (`sridhar-rush-v98`) for instant repeat visits.
 
 ---
 
@@ -116,7 +116,7 @@ flowchart TD
 
     subgraph Storage["Persistence & Edge Infrastructure"]
         Supabase["🐘 Supabase / PostgreSQL<br/>• Player Profiles & Stats<br/>• Row Level Security (RLS)<br/>• Seasonal Standings & Challenges"]
-        Vercel["⚡ Vercel Edge Network<br/>• Static PWA Distribution<br/>• Service Worker Cache (v97)<br/>• Dynamic OG Card Routing (/api/og)"]
+        Vercel["⚡ Vercel Edge Network<br/>• Static PWA Distribution<br/>• Service Worker Cache (v98)<br/>• Dynamic OG Card Routing (/api/og)"]
     end
 
     Desktop <-->|WebSocket RFC 6455| WS
@@ -225,7 +225,7 @@ SRIDHAR RUSH enforces a strict server-authoritative trust model to maintain comp
 | **Cosmetics** | Garage catalog with cars, paints, wheel rims, neon underglows, and animated exhaust trails. |
 | **Graphics** | Three.js WebGL rendering, instanced meshes, bloom post-processing, dynamic shadows, particle pools. |
 | **Audio** | Web Audio synthesizer with engine RPM harmonics, shift drops, skids, nitro whoosh, crash impacts. |
-| **Platform** | Installable PWA, offline Service Worker (`sridhar-rush-v97`), dual manifests, safe-area inset compliance. |
+| **Platform** | Installable PWA, offline Service Worker (`sridhar-rush-v98`), dual manifests, safe-area inset compliance. |
 | **Accessibility** | Reduced motion mode, colorblind UI palette, full keyboard navigation, ARIA screen-reader labels. |
 | **i18n** | Full game localization in English (`en`), Telugu (`te`), Hindi (`hi`), and Spanish (`es`). |
 
@@ -283,14 +283,14 @@ MULTIPLAYER-CAR-GAME/
 │   ├── manifest-controller.webmanifest # PWA manifest for standalone mobile controller
 │   ├── manifest.webmanifest       # PWA manifest for main racing game
 │   ├── replay.html                # Standalone ghost replay viewer
-│   └── sw.js                      # Service worker with versioned cache strategy (sridhar-rush-v97)
+│   └── sw.js                      # Service worker with versioned cache strategy (sridhar-rush-v98)
 ├── scripts/
 │   └── vercel-build.js            # Build script: copies shared modules and generates client config
 ├── shared/
 │   ├── cosmetics.js               # Vehicle stats, paints, decals, wheels, and neon catalog
 │   ├── game-core.js               # Core deterministic 30 Hz physics engine and track definitions
 │   └── progression.js             # XP curves, Elo calculations, badges, and milestone formulas
-├── test/                          # 11 test files / 22 suites covering gameplay, anti-cheat, networking, and i18n
+├── test/                          # 12 test files / 23 suites covering gameplay, anti-cheat, networking, and the client render loop
 ├── .gitignore                     # Git ignore rules
 ├── CONTRIBUTING.md                # Contribution guidelines and engineering principles
 ├── Dockerfile                     # Production Node.js container definition
@@ -391,24 +391,25 @@ npm install
 npm test
 ```
 
-### Test Suite Summary: `112 / 112 Passed (100%)`
+### Test Suite Summary: `116 / 116 Passed (100%)`
 
 | # | Test File | Suite | Tests | Result |
 | :---: | :--- | :--- | :---: | :---: |
 | 1 | `analytics.test.js` | Analytics Engine & Funnel Tracking | 8 | ✅ PASS |
-| 2 | `cosmetics.test.js` | Garage Cosmetics & Economy System | 5 | ✅ PASS |
-| 3 | `crew-weather-ghost-photofinish.test.js` | V83 Feature Suite: Syndicate Crews, Weather, Ghost Racing Line & Photo Finish *(5 sub-suites)* | 20 | ✅ PASS |
-| 4 | `i18n.test.js` | Full-Game Internationalization (i18n) Engine | 5 | ✅ PASS |
-| 5 | `leaderboard.test.js` | Competitive Leaderboard, Anti-Cheat & Retention Math | 10 | ✅ PASS |
-| 6 | `multiplayer.test.js` | Authoritative Multiplayer Simulation, Rooms & Room Hopping | 17 | ✅ PASS |
-| 7 | `progression.test.js` | Progression Math & Authoritative Settlement | 6 | ✅ PASS |
-| 8 | `race.test.js` | Authoritative Race Lifecycle & Simulation | 7 | ✅ PASS |
-| 9 | `retention_v82.test.js` | Retention V82 Suite: Badges, Bounties, Revenge & Next Best Action *(6 sub-suites)* | 14 | ✅ PASS |
-| 10 | `rivals_missions_season.test.js` | Competitive Rivals, Ghost Racing, Daily Missions & Seasons | 10 | ✅ PASS |
-| 11 | `social.test.js` | Social Features, Challenges & Daily Rotations | 10 | ✅ PASS |
+| 2 | `client-render-guard.test.js` | Client Snapshot Interpolator Guards — EXIT ROOM crash regression | 4 | ✅ PASS |
+| 3 | `cosmetics.test.js` | Garage Cosmetics & Economy System | 5 | ✅ PASS |
+| 4 | `crew-weather-ghost-photofinish.test.js` | V83 Feature Suite: Syndicate Crews, Weather, Ghost Racing Line & Photo Finish *(5 sub-suites)* | 20 | ✅ PASS |
+| 5 | `i18n.test.js` | Full-Game Internationalization (i18n) Engine | 5 | ✅ PASS |
+| 6 | `leaderboard.test.js` | Competitive Leaderboard, Anti-Cheat & Retention Math | 10 | ✅ PASS |
+| 7 | `multiplayer.test.js` | Authoritative Multiplayer Simulation, Rooms & Room Hopping | 17 | ✅ PASS |
+| 8 | `progression.test.js` | Progression Math & Authoritative Settlement | 6 | ✅ PASS |
+| 9 | `race.test.js` | Authoritative Race Lifecycle & Simulation | 7 | ✅ PASS |
+| 10 | `retention_v82.test.js` | Retention V82 Suite: Badges, Bounties, Revenge & Next Best Action *(6 sub-suites)* | 14 | ✅ PASS |
+| 11 | `rivals_missions_season.test.js` | Competitive Rivals, Ghost Racing, Daily Missions & Seasons | 10 | ✅ PASS |
+| 12 | `social.test.js` | Social Features, Challenges & Daily Rotations | 10 | ✅ PASS |
 
 ```
-Total: 112 tests | 22 suites | 0 failed | 0 skipped | Duration: ~3.2s
+Total: 116 tests | 23 suites | 0 failed | 0 skipped | Duration: ~3.3s
 ```
 
 ---
@@ -454,7 +455,7 @@ Click the **`🌐 Language`** button in the top navigation bar or change languag
 | **Phone Controller Cannot Connect** | Phone and laptop are on different networks or firewall blocks port. | Ensure your device has internet access and can reach the WebSocket host. |
 | **Low FPS on Old Hardware** | High-end bloom shaders or resolution saturation. | Open **Settings** and set GFX to **LOW** or **MED**, or enable **Adaptive Resolution**. |
 | **Gyro Steering Inverted / Unresponsive** | iOS Safari requires explicit permission for motion sensors. | Tap **`GYRO`** on the phone controller and approve the device motion permission prompt. |
-| **Club Distance / Points Stuck at 0 for Teammates** | A stale Service Worker cache is still serving an old client build. | Hard-refresh (Ctrl / Cmd + Shift + R) to pull the `v97` assets. Server build `v90` credits every member identity, so mileage keeps accruing even before the refresh. |
+| **Club Distance / Points Stuck at 0 for Teammates** | A stale Service Worker cache is still serving an old client build. | Hard-refresh (Ctrl / Cmd + Shift + R) to pull the `v98` assets. Server build `v90` credits every member identity, so mileage keeps accruing even before the refresh. |
 
 ---
 

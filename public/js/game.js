@@ -2984,17 +2984,22 @@ function interpState(slot) {
   const target = performance.now() - interpDelay;
   let ai = -1;
   for (let i = snaps.length - 1; i >= 0; i--) { if (snaps[i].t <= target) { ai = i; break; } }
-  const carOf = (snap) => snap.cars[slot - 1];
-  if (ai < 0) return carOf(snaps[0].snap);
+  const carOf = (snap) => (snap && Array.isArray(snap.cars) ? snap.cars[slot - 1] : undefined);
+  const first = carOf(snaps[0].snap);
+  if (ai < 0) return first || null;
   const a = snaps[ai]; const b = snaps[ai + 1];
-  const ca = carOf(a.snap);
+  // v91 BUGFIX: the buffer may still hold snapshots from the room we just left
+  // (or the lobby slot 0, which owns no car). Interpolating a missing car threw
+  // "Cannot read properties of undefined (reading 'x')" and killed the loop.
+  const ca = carOf(a.snap) || first;
+  if (!ca) return null;
   if (!b) {
     // no newer snapshot yet (network gap): dead-reckon with the car's own
     // velocity for up to 130 ms instead of freezing (freeze = visible shake)
     const extra = clamp((target - a.t) / 1000, 0, 0.13);
     return { ...ca, s: slot, x: ca.x + Math.sin(ca.h) * ca.v * extra, z: ca.z + Math.cos(ca.h) * ca.v * extra };
   }
-  const cb = carOf(b.snap);
+  const cb = carOf(b.snap) || ca; // newer snapshot lacks the slot: hold position
   const alpha = clamp((target - a.t) / Math.max(1, b.t - a.t), 0, 1);
   return {
     s: slot, x: lerp(ca.x, cb.x, alpha), z: lerp(ca.z, cb.z, alpha), h: lerpAngle(ca.h, cb.h, alpha),
@@ -3319,7 +3324,7 @@ function showResults(order) {
       const rTag = $('res-revenge-tag'); if (rTag) rTag.textContent = '🎉 REVENGE VICTORY!';
       const rBadge = $('res-revenge-badge'); if (rBadge) rBadge.textContent = `+${row.revengeAwarded.xpBonus} XP · +${row.revengeAwarded.coinsBonus} 🪙`;
       const rTxt = $('res-revenge-text'); if (rTxt) rTxt.textContent = 'You defeated your rival and claimed the +50% Revenge Bounty!';
-    } else if (row && row.pos > 1 && order.length > 1 && !latest.bot) {
+    } else if (row && row.pos > 1 && order.length > 1 && (!latest || !latest.bot)) {
       revResCard.hidden = false;
       const rTag = $('res-revenge-tag'); if (rTag) rTag.textContent = '⚔️ REVENGE OPPORTUNITY';
       const rBadge = $('res-revenge-badge'); if (rBadge) rBadge.textContent = '+50% BOUNTY';
@@ -4643,6 +4648,9 @@ const net = new RoomLink({
       mySlot = 0; roomCode = '·····';
       clearRoomHop();      // v91: the exit completed (or we are parked in the pool)
       syncRoomButtons();
+      if (msg.role === 'lobby' || msg.type === 'lobby_welcome') acceptingStates = false; // no room -> no snapshots
+      resetSnapshotBuffer();
+      const rc0 = $('room-code'); if (rc0) rc0.textContent = '·····'; // don't show the old room's code
       const sb = $('slot-badge'); if (sb) sb.style.display = 'none';
       setNetBanner(true);
       applyMyColor();
@@ -4654,6 +4662,8 @@ const net = new RoomLink({
     mySlot = msg.slot; roomCode = msg.code;
     clearRoomHop();      // v91: create/join hop confirmed by the relay
     syncRoomButtons();
+    acceptingStates = true;
+    resetSnapshotBuffer(); // drop the previous room's snapshots before the new room's
     const sb = $('slot-badge');
     if (sb) {
       sb.textContent = `YOU ARE PLAYER ${mySlot}`;
@@ -4672,7 +4682,7 @@ const net = new RoomLink({
   },
   onMessage(msg) {
     switch (msg.type) {
-      case 'state': ingestSnapshot(msg); break;
+      case 'state': if (acceptingStates) ingestSnapshot(msg); break; // v91: ignore the old room's stream mid-hop
       case 'lobby': {
         window.__lastLobby = msg.players || [];
         if (typeof renderRoomLobby === 'function') renderRoomLobby(msg);
@@ -4798,9 +4808,17 @@ function exitRoom() {
   if (!net.isOpen()) { location.href = '/'; return; }
   net.send({ type: 'leave' });
   armRoomHop('/');
+  // v91 BUGFIX: drop the old room's snapshots NOW, otherwise the render loop
+  // interpolates cars our slot no longer owns and throws on ca.x
+  acceptingStates = false;
+  resetSnapshotBuffer();
+  clearAutoRematchTimer(); // v91: no 10s auto-rematch countdown chasing us into the lobby
+  clearCount();
+  const res0 = $('results'); if (res0) res0.classList.add('hidden');
   // optimistic: the relay answers with lobby_welcome and onWelcome finishes the reset
   mySlot = 0; roomCode = '·····';
   syncRoomButtons();
+  const rc1 = $('room-code'); if (rc1) rc1.textContent = '·····';
   const sb = $('slot-badge'); if (sb) sb.style.display = 'none';
   toast((typeof tI18n === 'function' ? tI18n('leftRoom') : null) || '🚪 Left the room — create or join another');
   track('room_exit', selectedMap, { room: from });
@@ -4866,6 +4884,19 @@ function showRoomError(text) {
 }
 
 let builtMapId = 0;
+// v91 BUGFIX: snapshots belong to ONE room. EXIT ROOM / room hops used to keep
+// the previous room's buffer alive, so the render loop kept interpolating cars
+// our slot no longer had. The buffer is now dropped on every room transition,
+// and while parked in the lobby pool incoming 'state' frames are ignored so a
+// straggler from the old room can never repopulate it.
+let acceptingStates = true;
+function resetSnapshotBuffer() {
+  snaps.length = 0;
+  snapGaps.length = 0;
+  interpDelay = INTERP_DELAY;
+  latest = null;
+}
+
 function ingestSnapshot(snap) {
   const now = performance.now();
   if (snaps.length > 0) {
