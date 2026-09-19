@@ -4846,12 +4846,21 @@ function setNetBanner(ok) { $('net-banner').classList.toggle('hidden', ok); }
 // ---------------------------------------------------------------------------
 const keys = new Set();
 window.addEventListener('keydown', (e) => {
+  const tag = e.target && e.target.tagName;
+  const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable);
+  if (isInput) return; // Allow normal typing with spaces and arrows in all dialog inputs
+
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys.add(e.code); ensureAudio();
   if (e.code === 'KeyC') cycleCamera();
 });
-window.addEventListener('keyup', (e) => keys.delete(e.code));
+window.addEventListener('keyup', (e) => {
+  const tag = e.target && e.target.tagName;
+  const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable);
+  if (isInput) return;
+  keys.delete(e.code);
+});
 let kbAccum = 0;
 
 // v80 mobile solo on-screen touch controls
