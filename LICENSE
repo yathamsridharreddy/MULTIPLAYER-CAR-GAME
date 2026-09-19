@@ -1,0 +1,73 @@
+Copyright (c) 2026 Yatham Sridhar Reddy. All Rights Reserved.
+
+NOTICE
+------
+This repository ("SRIDHAR RUSH") is published for demonstration, portfolio, and
+educational reference purposes only. It is NOT open source. No license is granted,
+by implication, estoppel, or otherwise, to use, copy, modify, merge, publish,
+distribute, sublicense, sell, host, or deploy any part of this work, in source or
+binary form, in any medium, without the prior express written permission of the
+copyright holder.
+
+Permitted without written permission
+------------------------------------
+1. Reading and studying the source code in this repository.
+2. Cloning or forking this repository on GitHub for personal, non-commercial study.
+3. Running an unmodified local copy for personal, non-commercial evaluation.
+4. Quoting short excerpts with attribution and a link back to this repository in
+   reviews, articles, coursework, or conference talks.
+
+Requires prior written permission
+---------------------------------
+1. Any commercial use, including hosting the game or its relay server as a
+   product, service, or SaaS offering.
+2. Redeploying this project, in whole or in part, using the supplied Vercel,
+   Render, or Docker configurations, to any domain or account other than the
+   author's own.
+3. Copying, modifying, merging, publishing, distributing, sublicensing, or selling
+   any portion of the source code, SQL schema, or artwork and image assets.
+4. Reusing the name "SRIDHAR RUSH", the project logo, circuit artwork, or any
+   other branding element contained in this repository.
+5. Removing, altering, or obscuring this notice, any copyright header, or any
+   attribution contained in the source files.
+
+Contributions
+-------------
+Unless stated otherwise in writing, any contribution intentionally submitted to
+this repository is provided under the terms above, without additional conditions,
+and the author retains the right to accept, reject, modify, or relicense such
+contributions.
+
+No Warranty
+-----------
+THE SOFTWARE AND ACCOMPANYING MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NONINFRINGEMENT. IN
+NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT
+OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Third-Party Components
+----------------------
+Files under public/js/vendor/ are third-party libraries redistributed under their
+own upstream licenses. They are NOT covered by the restrictions above and remain
+subject to their original terms:
+
+  * three.min.js (Three.js r128) - MIT License
+    Copyright 2010-2021 Three.js Authors
+  * post/EffectComposer.js, post/RenderPass.js, post/ShaderPass.js,
+    post/CopyShader.js, post/LuminosityHighPassShader.js,
+    post/UnrealBloomPass.js (Three.js post-processing examples) - MIT License
+    Copyright 2010-2021 Three.js Authors
+  * qrcode.js (QR Code Generator for JavaScript) - MIT License
+    Copyright (c) 2009 Kazuhiko Arase
+
+The runtime dependencies express and ws, and the database platform Supabase
+(PostgreSQL), are likewise used under their own upstream licenses.
+
+Permission Requests
+-------------------
+Yatham Sridhar Reddy
+yathamsridharreddy99@gmail.com
+https://github.com/yathamsridharreddy/MULTIPLAYER-CAR-GAME

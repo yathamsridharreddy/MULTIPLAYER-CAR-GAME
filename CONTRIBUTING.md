@@ -60,7 +60,10 @@ The game will be available locally at `http://localhost:3000`.
 Before opening a pull request, verify that the complete automated test suite passes:
 
 ```bash
-# Run the complete test suite (94 tests across 21 suites)
+# Install runtime dependencies first (the suites boot server.js)
+npm install
+
+# Run the complete test suite (97 tests across 21 suites)
 npm test
 
 # Verify client bundle build succeeds cleanly
@@ -91,3 +94,11 @@ If you add a new system or fix a bug:
 - **Bug Reports**: Open an issue describing the expected vs actual behavior, steps to reproduce, browser/OS version, and any relevant console logs.
 - **Feature Proposals**: Open a discussion issue detailing the motivation, architectural design, and scope before writing large pull requests.
 - **Security Vulnerabilities**: Please review [SECURITY.md](SECURITY.md) for confidential disclosure instructions.
+
+---
+
+## Licensing
+
+SRIDHAR RUSH is **proprietary, source-available** software: Copyright © 2026 Yatham Sridhar Reddy, All Rights Reserved. It is **not** open source, and the repository grants no rights to use, copy, modify, distribute, sublicense, sell, host, or deploy the code beyond personal, non-commercial study. Read the full terms in [`LICENSE`](LICENSE) before opening a pull request.
+
+Unless stated otherwise in writing, any contribution you intentionally submit to this repository is provided under those same terms, and the copyright holder retains the right to accept, reject, modify, or relicense it. Third-party libraries under `public/js/vendor/` remain subject to their own upstream MIT licenses.

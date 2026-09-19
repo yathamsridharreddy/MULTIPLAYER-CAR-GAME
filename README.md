@@ -9,13 +9,14 @@
 [![Live Demo](https://img.shields.io/badge/▶_PLAY_NOW-LIVE_DEMO-00F0FF?style=for-the-badge&logo=googlechrome&logoColor=05070c)](https://sridhar-drift.vercel.app)
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yathamsridharreddy/MULTIPLAYER-CAR-GAME)
 
-[![Tests](https://img.shields.io/badge/Tests-94%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
+[![Tests](https://img.shields.io/badge/Tests-97%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
 [![Suites](https://img.shields.io/badge/Test%20Suites-21%20passing-00f59b?style=flat-square)](test/)
 [![Server](https://img.shields.io/badge/Simulation-30Hz%20Authoritative-ffd479?style=flat-square)](shared/game-core.js)
 [![Multiplayer](https://img.shields.io/badge/Multiplayer-1--6%20Players%20%2B%20AI-ff2e54?style=flat-square)](server.js)
 [![Rendering](https://img.shields.io/badge/3D%20Engine-Three.js%20WebGL-00f0ff?style=flat-square)](public/js/game.js)
 [![PWA](https://img.shields.io/badge/PWA-Installable%20%2B%20Offline%20Cache-3b82f6?style=flat-square)](public/manifest.webmanifest)
 [![i18n](https://img.shields.io/badge/i18n-EN%20%7C%20TE%20%7C%20HI%20%7C%20ES-c084fc?style=flat-square)](public/js/i18n.js)
+[![License](https://img.shields.io/badge/License-Proprietary%20%2F%20All%20Rights%20Reserved-ff2e54?style=flat-square)](LICENSE)
 
 *Zero downloads. Zero app store friction. Scan a QR code on your desktop screen to turn any smartphone into a wireless dual-analog gamepad with haptics and gyro steering.*
 
@@ -57,7 +58,7 @@
 - **Anti-Cheat & Authoritative Settlement**: Server-calculated lap validation against physical theoretical minimums, preventing coordinate teleportation, forged lap times, and fabricated currency awards.
 - **Competitive Retention & Social Layer**: Real-time Elo rating, 4-tier milestone badges, seasonal championships, asynchronous ghost replays (`/replay`), daily UTC challenges, and Syndicate Crews with shared mileage pools.
 - **High-Performance WebGL & Zero-Allocation Loops**: Custom Three.js render loop with preallocated scratch vectors, instanced mesh geometry for track foliage and barriers, and half-rate minimap execution to eliminate garbage collection pauses.
-- **PWA & Offline Asset Strategy**: Dual web app manifests (`manifest.webmanifest` and `manifest-controller.webmanifest`) with versioned Service Worker caching (`sridhar-rush-v85`) for instant repeat visits.
+- **PWA & Offline Asset Strategy**: Dual web app manifests (`manifest.webmanifest` and `manifest-controller.webmanifest`) with versioned Service Worker caching (`sridhar-rush-v95`) for instant repeat visits.
 
 ---
 
@@ -115,7 +116,7 @@ flowchart TD
 
     subgraph Storage["Persistence & Edge Infrastructure"]
         Supabase["🐘 Supabase / PostgreSQL<br/>• Player Profiles & Stats<br/>• Row Level Security (RLS)<br/>• Seasonal Standings & Challenges"]
-        Vercel["⚡ Vercel Edge Network<br/>• Static PWA Distribution<br/>• Service Worker Cache (v85)<br/>• Dynamic OG Card Routing (/api/og)"]
+        Vercel["⚡ Vercel Edge Network<br/>• Static PWA Distribution<br/>• Service Worker Cache (v95)<br/>• Dynamic OG Card Routing (/api/og)"]
     end
 
     Desktop <-->|WebSocket RFC 6455| WS
@@ -179,7 +180,7 @@ flowchart TD
 2. **DeviceOrientation Gyroscope Steering**:
    - Tapping **`GYRO`** requests orientation permissions and binds device tilt ($\gamma$ axis) directly to steering input, letting drivers tilt their phone like a steering wheel.
 3. **Web Vibration Haptic Feedback**:
-   - Distinct vibration patterns trigger for countdown ticks (`[60ms, 40ms, 60ms]`), high-speed barrier collisions (`70ms`), nitro ignition (`18ms`), and checkered flag finishes (`[120ms, 60ms, 120ms]`).
+   - Distinct vibration patterns trigger for the race-start GO signal (`[60ms, 40ms, 60ms]`), high-speed barrier collisions (`70ms`), nitro ignition (`18ms`), and checkered flag finishes (`[120ms, 60ms, 120ms]`).
 4. **Resilient Reconnection**:
    - If the mobile browser enters the background, inputs zero out automatically. Upon returning, the controller seamlessly reconnects to its designated player slot.
 
@@ -222,7 +223,7 @@ SRIDHAR RUSH enforces a strict server-authoritative trust model to maintain comp
 | **Cosmetics** | Garage catalog with cars, paints, wheel rims, neon underglows, and animated exhaust trails. |
 | **Graphics** | Three.js WebGL rendering, instanced meshes, bloom post-processing, dynamic shadows, particle pools. |
 | **Audio** | Web Audio synthesizer with engine RPM harmonics, shift drops, skids, nitro whoosh, crash impacts. |
-| **Platform** | Installable PWA, offline Service Worker (`sridhar-rush-v85`), dual manifests, safe-area inset compliance. |
+| **Platform** | Installable PWA, offline Service Worker (`sridhar-rush-v95`), dual manifests, safe-area inset compliance. |
 | **Accessibility** | Reduced motion mode, colorblind UI palette, full keyboard navigation, ARIA screen-reader labels. |
 | **i18n** | Full game localization in English (`en`), Telugu (`te`), Hindi (`hi`), and Spanish (`es`). |
 
@@ -280,17 +281,18 @@ MULTIPLAYER-CAR-GAME/
 │   ├── manifest-controller.webmanifest # PWA manifest for standalone mobile controller
 │   ├── manifest.webmanifest       # PWA manifest for main racing game
 │   ├── replay.html                # Standalone ghost replay viewer
-│   └── sw.js                      # Service worker with versioned cache strategy (sridhar-rush-v85)
+│   └── sw.js                      # Service worker with versioned cache strategy (sridhar-rush-v95)
 ├── scripts/
 │   └── vercel-build.js            # Build script: copies shared modules and generates client config
 ├── shared/
 │   ├── cosmetics.js               # Vehicle stats, paints, decals, wheels, and neon catalog
 │   ├── game-core.js               # Core deterministic 30 Hz physics engine and track definitions
 │   └── progression.js             # XP curves, Elo calculations, badges, and milestone formulas
-├── test/                          # 11 test suites verifying gameplay, anti-cheat, networking, and i18n
+├── test/                          # 11 test files / 21 suites covering gameplay, anti-cheat, networking, and i18n
 ├── .gitignore                     # Git ignore rules
-├── CONTRIBUTING.md                # Open-source contribution guidelines
+├── CONTRIBUTING.md                # Contribution guidelines and engineering principles
 ├── Dockerfile                     # Production Node.js container definition
+├── LICENSE                        # Proprietary license — All Rights Reserved; no reuse without written permission
 ├── package.json                   # Project metadata, dependencies, and test/build scripts
 ├── render.yaml                    # Render service configuration
 ├── SECURITY.md                    # Vulnerability reporting and security architecture policy
@@ -380,25 +382,31 @@ Environment variables are divided into **Public Client Config** (injected into `
 
 ## 🧪 Automated Testing & QA
 
-The project maintains an automated test suite executed with Node.js's built-in test runner:
+The project maintains an automated test suite executed with Node.js's built-in test runner. The suites boot `server.js`, so dependencies must be installed first:
 
 ```bash
+npm install
 npm test
 ```
 
-### Test Suite Summary: `94 / 94 Passed (100%)`
+### Test Suite Summary: `97 / 97 Passed (100%)`
+
+| # | Test File | Suite | Tests | Result |
+| :---: | :--- | :--- | :---: | :---: |
+| 1 | `analytics.test.js` | Analytics Engine & Funnel Tracking | 8 | ✅ PASS |
+| 2 | `cosmetics.test.js` | Garage Cosmetics & Economy System | 5 | ✅ PASS |
+| 3 | `crew-weather-ghost-photofinish.test.js` | V83 Feature Suite: Syndicate Crews, Weather, Ghost Racing Line & Photo Finish *(4 sub-suites)* | 12 | ✅ PASS |
+| 4 | `i18n.test.js` | Full-Game Internationalization (i18n) Engine | 5 | ✅ PASS |
+| 5 | `leaderboard.test.js` | Competitive Leaderboard, Anti-Cheat & Retention Math | 10 | ✅ PASS |
+| 6 | `multiplayer.test.js` | Authoritative Multiplayer Simulation & Rooms | 10 | ✅ PASS |
+| 7 | `progression.test.js` | Progression Math & Authoritative Settlement | 6 | ✅ PASS |
+| 8 | `race.test.js` | Authoritative Race Lifecycle & Simulation | 7 | ✅ PASS |
+| 9 | `retention_v82.test.js` | Retention V82 Suite: Badges, Bounties, Revenge & Next Best Action *(6 sub-suites)* | 14 | ✅ PASS |
+| 10 | `rivals_missions_season.test.js` | Competitive Rivals, Ghost Racing, Daily Missions & Seasons | 10 | ✅ PASS |
+| 11 | `social.test.js` | Social Features, Challenges & Daily Rotations | 10 | ✅ PASS |
+
 ```
-# Subtest: Analytics Engine & Funnel Tracking (8 tests) — PASS
-# Subtest: Garage Cosmetics & Economy System (5 tests) — PASS
-# Subtest: Syndicate Crews, Weather, Racing Line & Photo Finish (18 tests) — PASS
-# Subtest: Full-Game Internationalization Engine (5 tests) — PASS
-# Subtest: Competitive Leaderboards, Anti-Cheat & Retention Math (6 tests) — PASS
-# Subtest: Authoritative Race Lifecycle & 30Hz Simulation (6 tests) — PASS
-# Subtest: Milestone Badges, Weekly Bounties & Revenge Matches (18 tests) — PASS
-# Subtest: Competitive Rivals, Ghost Racing & Season Divisions (10 tests) — PASS
-# Subtest: Social Features, Challenges & Daily Rotations (9 tests) — PASS
---------------------------------------------------------------------------------
-Total: 94 tests | 21 suites | 0 failed | 0 skipped | Duration: ~3.5s
+Total: 97 tests | 21 suites | 0 failed | 0 skipped | Duration: ~3.2s
 ```
 
 ---
@@ -456,8 +464,20 @@ Click the **`🌐 Language`** button in the top navigation bar or change languag
 
 ## 📄 License
 
-> **LICENSE decision required from repository owner.**
-> All rights reserved by the original project author unless explicitly stated otherwise.
+**Copyright © 2026 Yatham Sridhar Reddy — All Rights Reserved.**
+
+SRIDHAR RUSH is **proprietary, source-available software**. It is published for demonstration, portfolio, and educational reference only — it is **not** open source, and no rights are granted by implication, estoppel, or otherwise. Full terms: [`LICENSE`](LICENSE).
+
+| Permitted without written permission | Requires prior written permission |
+| :--- | :--- |
+| ✅ Read and study the source code | 🔒 Commercial use, hosting, or SaaS offering |
+| ✅ Clone / fork on GitHub for personal, non-commercial study | 🔒 Redeploying via the supplied Vercel / Render / Docker configs |
+| ✅ Run an unmodified local copy for personal evaluation | 🔒 Copying, modifying, distributing, sublicensing, or selling any part |
+| ✅ Quote short excerpts with attribution and a link back | 🔒 Reusing the "SRIDHAR RUSH" name, logo, or circuit artwork |
+
+> **Third-party components**: files under `public/js/vendor/` (Three.js r128, the Three.js post-processing examples, and `qrcode.js`) remain under their own upstream **MIT** licenses and are not covered by the restrictions above.
+
+Permission requests: [yathamsridharreddy99@gmail.com](mailto:yathamsridharreddy99@gmail.com)
 
 ---
 
