@@ -4601,7 +4601,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v88';
+const BUILD = 'v91';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -4641,6 +4641,8 @@ const net = new RoomLink({
   onWelcome(msg) {
     if (msg.role === 'lobby' || msg.type === 'lobby_welcome' || !msg.code || msg.slot === 0) {
       mySlot = 0; roomCode = '·····';
+      clearRoomHop();      // v91: the exit completed (or we are parked in the pool)
+      syncRoomButtons();
       const sb = $('slot-badge'); if (sb) sb.style.display = 'none';
       setNetBanner(true);
       applyMyColor();
@@ -4650,6 +4652,8 @@ const net = new RoomLink({
       return;
     }
     mySlot = msg.slot; roomCode = msg.code;
+    clearRoomHop();      // v91: create/join hop confirmed by the relay
+    syncRoomButtons();
     const sb = $('slot-badge');
     if (sb) {
       sb.textContent = `YOU ARE PLAYER ${mySlot}`;
@@ -4712,7 +4716,20 @@ const net = new RoomLink({
         const cu = $('ctrl-url'); if (cu) cu.textContent = 'Create a room to connect phone controller';
         break;
       }
-      case 'error': if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!'); break;
+      case 'error':
+        if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!');
+        else if (msg.code === 'join-failed') {
+          // v91: the relay refused the hop, so we are still seated where we were
+          clearRoomHop();
+          const why = msg.reason === 'full'
+            ? ((typeof tI18n === 'function' ? tI18n('joinRoomFull', { code: msg.room }) : null) || ('⚠ Room ' + (msg.room || '') + ' is full (6 max)'))
+            : (msg.reason === 'already-in-room'
+              ? ((typeof tI18n === 'function' ? tI18n('joinRoomAlready') : null) || 'You are already in that room')
+              : ((typeof tI18n === 'function' ? tI18n('joinRoomMissing', { code: msg.room }) : null) || ('⚠ Room ' + (msg.room || '') + ' not found — it may have closed')));
+          toast(why);
+          syncRoomButtons();
+        }
+        break;
       case 'disconnected': setNetBanner(false); break;
     }
   },
@@ -4750,6 +4767,43 @@ function sendHello() {
   } else {
     net.connect(Object.assign({ type: 'hello', role: 'screen', lobby: true, room: null }, identityPayload()));
   }
+}
+// ---------------------------------------------------------------------------
+// v91 EXIT ROOM — step out of the current room and join or create another one
+// without a page reload (the socket, session and garage loadout stay intact).
+// Relays older than build v90 don't understand `leave` / `join_room`, so every
+// hop arms a fallback that reloads if the server never confirms the move.
+// ---------------------------------------------------------------------------
+let roomHopTimer = null;
+let roomHopPending = false;
+function clearRoomHop() {
+  roomHopPending = false;
+  if (roomHopTimer) { clearTimeout(roomHopTimer); roomHopTimer = null; }
+}
+function armRoomHop(fallbackUrl) {
+  clearRoomHop();
+  roomHopPending = true;
+  roomHopTimer = setTimeout(() => {
+    roomHopTimer = null;
+    if (roomHopPending) { roomHopPending = false; location.href = fallbackUrl; }
+  }, 1600);
+}
+function inARoom() { return !!(roomCode && roomCode !== '·····'); }
+function syncRoomButtons() {
+  const lb = $('leave-room-btn');
+  if (lb) lb.hidden = !inARoom();
+}
+function exitRoom() {
+  const from = roomCode;
+  if (!net.isOpen()) { location.href = '/'; return; }
+  net.send({ type: 'leave' });
+  armRoomHop('/');
+  // optimistic: the relay answers with lobby_welcome and onWelcome finishes the reset
+  mySlot = 0; roomCode = '·····';
+  syncRoomButtons();
+  const sb = $('slot-badge'); if (sb) sb.style.display = 'none';
+  toast((typeof tI18n === 'function' ? tI18n('leftRoom') : null) || '🚪 Left the room — create or join another');
+  track('room_exit', selectedMap, { room: from });
 }
 function ensureRoomCreated() {
   if (!roomCode || roomCode === '·····') {
@@ -6040,6 +6094,17 @@ $('copy-code').addEventListener('click', () => { copyText($('room-code').textCon
 const createRoomBtn = $('create-room-btn');
 if (createRoomBtn) {
   createRoomBtn.addEventListener('click', () => {
+    // v91: creating while seated leaves the old room first (the relay drops it),
+    // so confirm before abandoning a live race
+    if (inARoom()) {
+      const q = (typeof tI18n === 'function' ? tI18n('createAnotherConfirm', { code: roomCode }) : null)
+        || ('Leave room ' + roomCode + ' and create a new one?');
+      if (!confirm(q)) return;
+      net.send(Object.assign({ type: 'create_room', mode: 'race', map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload()));
+      armRoomHop('/');
+      toast((typeof tI18n === 'function' ? tI18n('creatingRoom') : null) || '🏎️ Creating a new room…');
+      return;
+    }
     ensureRoomCreated();
     toast('🏎️ Room created! Share the code to invite friends.');
   });
@@ -6052,12 +6117,23 @@ if (joinRoomBtn) {
     if (code && code.trim().length >= 4) {
       const cleanCode = code.trim().toUpperCase();
       const isMobileTouch = ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)) && (window.innerWidth <= 768 || window.innerHeight <= 500 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
-      location.href = '/?room=' + encodeURIComponent(cleanCode) + (isMobileTouch ? '&screen=1' : '');
+      const reloadUrl = '/?room=' + encodeURIComponent(cleanCode) + (isMobileTouch ? '&screen=1' : '');
+      if (net.isOpen()) {
+        // v91: hop rooms on the live socket — no reload, no lost session state
+        net.send(Object.assign({ type: 'join_room', room: cleanCode }, identityPayload()));
+        armRoomHop(reloadUrl);
+        toast((typeof tI18n === 'function' ? tI18n('joiningRoom', { code: cleanCode }) : null) || ('🔑 Joining room ' + cleanCode + '…'));
+      } else {
+        location.href = reloadUrl;
+      }
     }
   });
 }
 const exitBtn = $('exit-btn');
 if (exitBtn) exitBtn.addEventListener('click', () => net.send({ type: 'reset' }));
+const leaveRoomBtn = $('leave-room-btn');
+if (leaveRoomBtn) leaveRoomBtn.addEventListener('click', () => exitRoom()); // v91
+syncRoomButtons();
 const camBtn = $('cam-btn');
 if (camBtn) camBtn.addEventListener('click', cycleCamera);
 $('copy-game-link').addEventListener('click', () => { copyText($('game-link').textContent); toast('Game link copied — send it to your friend!'); track('share', selectedMap, { channel: 'link' }); });

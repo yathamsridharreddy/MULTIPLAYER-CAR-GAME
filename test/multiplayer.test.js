@@ -315,4 +315,138 @@ describe('Authoritative Multiplayer Simulation & Rooms', () => {
     assert.equal(roomWelcome.length, 1);
     assert.equal(roomWelcome[0].slot, 1);
   });
+
+  // ===========================================================================
+  // v91 EXIT ROOM — leave the current room, then join or create another one
+  // without a page reload. Previously the only way out was to reload: there was
+  // no `leave` message and handleLeave() ran solely on socket close.
+  // ===========================================================================
+  test('leave detaches a screen from the room but keeps the socket in the lobby pool', () => {
+    const entry = newRoom('race', 0, 6);
+    const ws = createMockWS();
+    const client = { ws, entry: null, slot: 0, role: null, uid: null };
+    joinRoom(client, entry, 'screen', { pid: 'p_exiter', name: 'EXITER' });
+    entry.uidBySlot[1] = 'verified-uid-exiter';
+    assert.equal(client.slot, 1);
+
+    handleMessage(client, { type: 'leave' });
+
+    assert.equal(client.entry, null, 'detached from the room');
+    assert.equal(client.role, 'lobby', 'parked in the lobby pool, ready to join or create');
+    assert.equal(ws.readyState, 1, 'the socket must stay open — no page reload needed');
+    assert.equal(entry.slotByWs.has(ws), false, 'seat released for the next racer');
+    assert.equal(entry.room.seats[1], false, 'seat marked empty');
+    assert.equal(entry.pidBySlot[1], undefined, 'device pid released (club sync must not leak to the next occupant)');
+    assert.equal(entry.uidBySlot[1], undefined, 'verified uid released');
+    assert.equal(entry.ratingBySlot[1], undefined, 'cached rating released');
+
+    const ack = ws.findSent('lobby_welcome').pop();
+    assert.ok(ack, 'the client is told the exit completed');
+    assert.equal(ack.left, true);
+    assert.equal(ack.room, entry.room.code);
+  });
+
+  test('an abandoned room is closed immediately so its 5-letter code can be reused', () => {
+    const entry = newRoom('race', 0, 2);
+    const code = entry.room.code;
+    assert.equal(rooms.has(code), true);
+
+    const ws = createMockWS();
+    const client = { ws, entry: null, slot: 0, role: null };
+    joinRoom(client, entry, 'screen', { pid: 'p_solo', name: 'SOLO' });
+    handleMessage(client, { type: 'leave' });
+
+    assert.equal(rooms.has(code), false, 'nobody left → the room is dropped at once');
+  });
+
+  test('join_room hops a racer into another room without reconnecting', () => {
+    const first = newRoom('race', 0, 6);
+    const second = newRoom('race', 0, 6);
+    const ws = createMockWS();
+    const client = { ws, entry: null, slot: 0, role: null };
+    joinRoom(client, first, 'screen', { pid: 'p_hopper', name: 'HOPPER' });
+
+    // sent lower-case on purpose: codes are matched case-insensitively
+    handleMessage(client, { type: 'join_room', room: second.room.code.toLowerCase(), pid: 'p_hopper', name: 'HOPPER' });
+
+    assert.equal(client.entry, second, 'now seated in the target room');
+    assert.equal(client.slot, 1);
+    assert.equal(second.pidBySlot[1], 'p_hopper', 'device pid captured again so club mileage keeps syncing');
+    assert.equal(first.slotByWs.has(ws), false, 'old seat released');
+    assert.equal(rooms.has(first.room.code), false, 'the abandoned room is closed');
+
+    const welcome = ws.findSent('welcome').pop();
+    assert.ok(welcome, 'the client is welcomed into the new room');
+    assert.equal(welcome.code, second.room.code);
+    assert.ok(welcome.snapshot, 'the new room state is pushed straight away');
+  });
+
+  test('join_room refuses an unknown code and keeps the racer in their current room', () => {
+    const entry = newRoom('race', 0, 6);
+    const ws = createMockWS();
+    const client = { ws, entry: null, slot: 0, role: null };
+    joinRoom(client, entry, 'screen', { pid: 'p_typo', name: 'TYPO' });
+
+    handleMessage(client, { type: 'join_room', room: 'ZZZZZ' });
+
+    assert.equal(client.entry, entry, 'still seated — a typo must never eject anybody');
+    assert.equal(client.slot, 1);
+    assert.equal(rooms.has(entry.room.code), true, 'the current room survives the failed hop');
+    const err = ws.findSent('error').pop();
+    assert.equal(err.code, 'join-failed');
+    assert.equal(err.reason, 'no-room');
+  });
+
+  test('join_room refuses a full room instead of ejecting the racer', () => {
+    const mine = newRoom('race', 0, 6);
+    const full = newRoom('race', 0, 2);
+    for (let i = 0; i < 2; i++) {
+      joinRoom({ ws: createMockWS(), entry: null, slot: 0, role: null }, full, 'screen', { pid: 'p_full_' + i, name: 'FULL' + i });
+    }
+    const ws = createMockWS();
+    const client = { ws, entry: null, slot: 0, role: null };
+    joinRoom(client, mine, 'screen', { pid: 'p_blocked', name: 'BLOCKED' });
+
+    handleMessage(client, { type: 'join_room', room: full.room.code });
+
+    assert.equal(client.entry, mine, 'still in the original room');
+    const err = ws.findSent('error').pop();
+    assert.equal(err.code, 'join-failed');
+    assert.equal(err.reason, 'full');
+  });
+
+  test('leave is idempotent for a racer already parked in the lobby pool', () => {
+    const ws = createMockWS();
+    const client = { ws, entry: null, slot: 0, role: null };
+    handleMessage(client, { type: 'hello', role: 'screen', lobby: true, pid: 'p_idle' });
+    assert.equal(client.role, 'lobby');
+
+    handleMessage(client, { type: 'leave' });
+    handleMessage(client, { type: 'leave' });
+
+    assert.equal(client.role, 'lobby');
+    assert.equal(client.entry, null);
+    assert.equal(ws.readyState, 1);
+    assert.ok(ws.findSent('lobby_welcome').length >= 3, 'every exit is acknowledged');
+  });
+
+  test('a phone controller that leaves is detached and acknowledged without lobby state', () => {
+    const entry = newRoom('race', 0, 6);
+    joinRoom({ ws: createMockWS(), entry: null, slot: 0, role: null }, entry, 'screen', { pid: 'p_screen', name: 'SCREEN' });
+
+    const padWs = createMockWS();
+    const pad = { ws: padWs, entry: null, slot: 0, role: null };
+    joinRoom(pad, entry, 'controller', { pid: 'p_pad', slot: 1 });
+    assert.equal(pad.role, 'controller');
+
+    handleMessage(pad, { type: 'leave' });
+
+    assert.equal(pad.entry, null);
+    assert.equal(entry.controllers.has(padWs), false, 'pad detached from the slot');
+    const ack = padWs.findSent('left').pop();
+    assert.ok(ack, 'the pad gets a plain acknowledgement');
+    assert.equal(ack.role, 'controller');
+    assert.equal(padWs.findSent('lobby_welcome').length, 0, 'pads have no lobby pool state');
+    assert.equal(rooms.has(entry.room.code), true, 'the screen is still seated, so the room stays open');
+  });
 });

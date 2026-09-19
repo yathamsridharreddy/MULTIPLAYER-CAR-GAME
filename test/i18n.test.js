@@ -26,6 +26,7 @@ describe('Full-Game Internationalization (i18n) Engine', () => {
   it('contains critical keys across all dictionaries', () => {
     const requiredKeys = [
       'tagline', 'roomLabel', 'copy', 'install', 'signin', 'signout',
+      'exitRoom', 'leftRoom', 'joiningRoom', 'createAnotherConfirm',
       'tabRace', 'tabRank', 'tabProf', 'tabSett',
       'clubs', 'badges', 'bounties', 'friends', 'garage',
       'quickplay', 'nextRival', 'dailyMissions', 'racingStreak',

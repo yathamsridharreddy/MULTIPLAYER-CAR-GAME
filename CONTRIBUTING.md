@@ -63,7 +63,7 @@ Before opening a pull request, verify that the complete automated test suite pas
 # Install runtime dependencies first (the suites boot server.js)
 npm install
 
-# Run the complete test suite (105 tests across 22 suites)
+# Run the complete test suite (112 tests across 22 suites)
 npm test
 
 # Verify client bundle build succeeds cleanly

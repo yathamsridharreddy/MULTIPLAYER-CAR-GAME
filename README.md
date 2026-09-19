@@ -9,7 +9,7 @@
 [![Live Demo](https://img.shields.io/badge/▶_PLAY_NOW-LIVE_DEMO-00F0FF?style=for-the-badge&logo=googlechrome&logoColor=05070c)](https://sridhar-drift.vercel.app)
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yathamsridharreddy/MULTIPLAYER-CAR-GAME)
 
-[![Tests](https://img.shields.io/badge/Tests-105%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
+[![Tests](https://img.shields.io/badge/Tests-112%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
 [![Suites](https://img.shields.io/badge/Test%20Suites-22%20passing-00f59b?style=flat-square)](test/)
 [![Server](https://img.shields.io/badge/Simulation-30Hz%20Authoritative-ffd479?style=flat-square)](shared/game-core.js)
 [![Multiplayer](https://img.shields.io/badge/Multiplayer-1--6%20Players%20%2B%20AI-ff2e54?style=flat-square)](server.js)
@@ -58,7 +58,7 @@
 - **Anti-Cheat & Authoritative Settlement**: Server-calculated lap validation against physical theoretical minimums, preventing coordinate teleportation, forged lap times, and fabricated currency awards.
 - **Competitive Retention & Social Layer**: Real-time Elo rating, 4-tier milestone badges, seasonal championships, asynchronous ghost replays (`/replay`), daily UTC challenges, and Syndicate Crews with shared mileage pools.
 - **High-Performance WebGL & Zero-Allocation Loops**: Custom Three.js render loop with preallocated scratch vectors, instanced mesh geometry for track foliage and barriers, and half-rate minimap execution to eliminate garbage collection pauses.
-- **PWA & Offline Asset Strategy**: Dual web app manifests (`manifest.webmanifest` and `manifest-controller.webmanifest`) with versioned Service Worker caching (`sridhar-rush-v96`) for instant repeat visits.
+- **PWA & Offline Asset Strategy**: Dual web app manifests (`manifest.webmanifest` and `manifest-controller.webmanifest`) with versioned Service Worker caching (`sridhar-rush-v97`) for instant repeat visits.
 
 ---
 
@@ -116,7 +116,7 @@ flowchart TD
 
     subgraph Storage["Persistence & Edge Infrastructure"]
         Supabase["🐘 Supabase / PostgreSQL<br/>• Player Profiles & Stats<br/>• Row Level Security (RLS)<br/>• Seasonal Standings & Challenges"]
-        Vercel["⚡ Vercel Edge Network<br/>• Static PWA Distribution<br/>• Service Worker Cache (v96)<br/>• Dynamic OG Card Routing (/api/og)"]
+        Vercel["⚡ Vercel Edge Network<br/>• Static PWA Distribution<br/>• Service Worker Cache (v97)<br/>• Dynamic OG Card Routing (/api/og)"]
     end
 
     Desktop <-->|WebSocket RFC 6455| WS
@@ -138,6 +138,8 @@ flowchart TD
 - **Room Creation**: The screen client connects via WebSocket with `{ type: 'hello', role: 'screen' }`. The server assigns a unique 5-letter room code (e.g., `ALPHA`) and returns `{ type: 'welcome', slot: 1, code: 'ALPHA' }`.
 - **Matchmaking**: Players can initiate 1v1 quickplay via `{ type: 'matchmake' }`, grouping matched drivers into dedicated rooms with zero manual setup.
 - **Phone Controller Pairing**: A smartphone scanning the room's QR code connects with `{ type: 'hello', role: 'controller', room: 'ALPHA', slot: 1 }`.
+- **Exiting & Room Hopping** *(build v91)*: The lobby's **`🚪 EXIT ROOM`** button sends `{ type: 'leave' }`, which frees the seat, releases the slot's cached identity (uid / device pid / rating), closes the room outright when nobody is left in it, and parks the socket back in the lobby pool with `{ type: 'lobby_welcome', left: true }` — **no page reload**, so the session, garage loadout and club identity survive. `{ type: 'join_room', room: 'ALPHA' }` then hops straight into another room on the same socket, and **`➕ CREATE`** founds a fresh one after confirming the abandoned room may be dropped.
+- **Safe Hop Validation**: `join_room` validates its target *before* tearing anything down. An unknown code, a full room, or the room the racer is already in returns `{ type: 'error', code: 'join-failed', reason: 'no-room' | 'full' | 'already-in-room' }` and the racer **keeps their current seat** — a typo can never eject anybody mid-race. Clients older than v91 are handled too: if the relay never confirms the move, the browser falls back to a clean reload after 1.6 s.
 
 ### 2. The 30 Hz Authoritative Simulation Loop
 - Every 33.33ms ($1/30\text{s}$), the server advances the physics world:
@@ -216,14 +218,14 @@ SRIDHAR RUSH enforces a strict server-authoritative trust model to maintain comp
 | Category | Implemented Capabilities |
 | :--- | :--- |
 | **Gameplay** | 5 circuits, 4 weather conditions, nitro boost, power-ups, drifting economy, dynamic racing line splines. |
-| **Multiplayer** | 1–6 player rooms, quickplay matchmaking, split-screen local duel, spectator mode, 10s rematch. |
+| **Multiplayer** | 1–6 player rooms, quickplay matchmaking, split-screen local duel, spectator mode, 10s rematch, exit-room + live room hopping without reload. |
 | **Controls** | Wireless phone gamepad (touch sticks + gyro steering + haptics), keyboard fallback, USB/BT gamepad support. |
 | **Competitive** | Elo ratings, divisions, track records, daily challenges, weekly Founders Cup, anti-cheat validation. |
 | **Retention** | Daily missions, login streaks, milestone badge showcase, weekly bounties, rival overtake alerts. |
 | **Cosmetics** | Garage catalog with cars, paints, wheel rims, neon underglows, and animated exhaust trails. |
 | **Graphics** | Three.js WebGL rendering, instanced meshes, bloom post-processing, dynamic shadows, particle pools. |
 | **Audio** | Web Audio synthesizer with engine RPM harmonics, shift drops, skids, nitro whoosh, crash impacts. |
-| **Platform** | Installable PWA, offline Service Worker (`sridhar-rush-v96`), dual manifests, safe-area inset compliance. |
+| **Platform** | Installable PWA, offline Service Worker (`sridhar-rush-v97`), dual manifests, safe-area inset compliance. |
 | **Accessibility** | Reduced motion mode, colorblind UI palette, full keyboard navigation, ARIA screen-reader labels. |
 | **i18n** | Full game localization in English (`en`), Telugu (`te`), Hindi (`hi`), and Spanish (`es`). |
 
@@ -281,7 +283,7 @@ MULTIPLAYER-CAR-GAME/
 │   ├── manifest-controller.webmanifest # PWA manifest for standalone mobile controller
 │   ├── manifest.webmanifest       # PWA manifest for main racing game
 │   ├── replay.html                # Standalone ghost replay viewer
-│   └── sw.js                      # Service worker with versioned cache strategy (sridhar-rush-v96)
+│   └── sw.js                      # Service worker with versioned cache strategy (sridhar-rush-v97)
 ├── scripts/
 │   └── vercel-build.js            # Build script: copies shared modules and generates client config
 ├── shared/
@@ -389,7 +391,7 @@ npm install
 npm test
 ```
 
-### Test Suite Summary: `105 / 105 Passed (100%)`
+### Test Suite Summary: `112 / 112 Passed (100%)`
 
 | # | Test File | Suite | Tests | Result |
 | :---: | :--- | :--- | :---: | :---: |
@@ -398,7 +400,7 @@ npm test
 | 3 | `crew-weather-ghost-photofinish.test.js` | V83 Feature Suite: Syndicate Crews, Weather, Ghost Racing Line & Photo Finish *(5 sub-suites)* | 20 | ✅ PASS |
 | 4 | `i18n.test.js` | Full-Game Internationalization (i18n) Engine | 5 | ✅ PASS |
 | 5 | `leaderboard.test.js` | Competitive Leaderboard, Anti-Cheat & Retention Math | 10 | ✅ PASS |
-| 6 | `multiplayer.test.js` | Authoritative Multiplayer Simulation & Rooms | 10 | ✅ PASS |
+| 6 | `multiplayer.test.js` | Authoritative Multiplayer Simulation, Rooms & Room Hopping | 17 | ✅ PASS |
 | 7 | `progression.test.js` | Progression Math & Authoritative Settlement | 6 | ✅ PASS |
 | 8 | `race.test.js` | Authoritative Race Lifecycle & Simulation | 7 | ✅ PASS |
 | 9 | `retention_v82.test.js` | Retention V82 Suite: Badges, Bounties, Revenge & Next Best Action *(6 sub-suites)* | 14 | ✅ PASS |
@@ -406,7 +408,7 @@ npm test
 | 11 | `social.test.js` | Social Features, Challenges & Daily Rotations | 10 | ✅ PASS |
 
 ```
-Total: 105 tests | 22 suites | 0 failed | 0 skipped | Duration: ~3.4s
+Total: 112 tests | 22 suites | 0 failed | 0 skipped | Duration: ~3.2s
 ```
 
 ---
@@ -452,7 +454,7 @@ Click the **`🌐 Language`** button in the top navigation bar or change languag
 | **Phone Controller Cannot Connect** | Phone and laptop are on different networks or firewall blocks port. | Ensure your device has internet access and can reach the WebSocket host. |
 | **Low FPS on Old Hardware** | High-end bloom shaders or resolution saturation. | Open **Settings** and set GFX to **LOW** or **MED**, or enable **Adaptive Resolution**. |
 | **Gyro Steering Inverted / Unresponsive** | iOS Safari requires explicit permission for motion sensors. | Tap **`GYRO`** on the phone controller and approve the device motion permission prompt. |
-| **Club Distance / Points Stuck at 0 for Teammates** | A stale Service Worker cache is still serving an old client build. | Hard-refresh (Ctrl / Cmd + Shift + R) to pull the `v96` assets. Server build `v90` credits every member identity, so mileage keeps accruing even before the refresh. |
+| **Club Distance / Points Stuck at 0 for Teammates** | A stale Service Worker cache is still serving an old client build. | Hard-refresh (Ctrl / Cmd + Shift + R) to pull the `v97` assets. Server build `v90` credits every member identity, so mileage keeps accruing even before the refresh. |
 
 ---
 

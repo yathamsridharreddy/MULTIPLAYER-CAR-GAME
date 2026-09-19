@@ -2815,6 +2815,51 @@ function handleMessage(client, msg) {
       if (client.entry && client.role === 'screen') client.entry.room.resetToWaiting();
       break;
 
+    case 'leave': {
+      // v91: explicit room exit. The socket stays open and the racer is parked
+      // back in the lobby pool, ready to CREATE or JOIN another room.
+      const info = leaveCurrentRoom(client);
+      if (info && info.prevRole === 'controller') {
+        // phones get a plain acknowledgement — the pad UI has no lobby state
+        sendJSON(client.ws, { type: 'left', role: 'controller', room: info.code, slot: info.slot });
+        break;
+      }
+      client.role = 'lobby';
+      sendJSON(client.ws, {
+        type: 'lobby_welcome', role: 'lobby', left: true,
+        room: info ? info.code : null, slot: info ? info.slot : 0,
+        online: clientsByWs.size, activeRooms: rooms.size
+      });
+      break;
+    }
+
+    case 'join_room': {
+      // v91: hop to another room by code without a page reload. The target is
+      // validated BEFORE anything is torn down, so a typo or a full room never
+      // throws the racer out of the seat they already have. The join itself
+      // reuses the hello path (slot assignment, pid capture for club sync,
+      // token verification, snapshot, lobby broadcast).
+      const code = String(msg.room || msg.code || '').toUpperCase().trim();
+      const target = code ? rooms.get(code) : null;
+      if (!target) {
+        sendJSON(client.ws, { type: 'error', code: 'join-failed', reason: 'no-room', room: code });
+        return;
+      }
+      if (client.entry === target) {
+        sendJSON(client.ws, { type: 'error', code: 'join-failed', reason: 'already-in-room', room: code });
+        return;
+      }
+      const seated = target.slotByWs ? target.slotByWs.size : 0;
+      const cap = (target.room && target.room.cap) || 6;
+      if (seated >= cap) {
+        sendJSON(client.ws, { type: 'error', code: 'join-failed', reason: 'full', room: code });
+        return;
+      }
+      leaveCurrentRoom(client);
+      handleMessage(client, Object.assign({}, msg, { type: 'hello', role: 'screen', room: code }));
+      break;
+    }
+
     case 'button': {
       if (!client.entry || client.role !== 'controller' || !client.slot) return;
       const entry = client.entry;
@@ -2916,6 +2961,32 @@ function handleLeave(client) {
 }
 
 // ---------------------------------------------------------------------------
+// v91 EXIT ROOM — leave the current room without dropping the socket
+//
+// Until now the only way out of a room was to reload the page: there was no
+// `leave` message, handleLeave() ran solely on socket close, and the floating
+// EXIT button merely reset the starting grid. Exiting is now explicit, so a
+// racer can step out and straight into another room (or found a new one) while
+// keeping their session, garage loadout and club identity intact.
+// ---------------------------------------------------------------------------
+function leaveCurrentRoom(client) {
+  const entry = client.entry;
+  if (!entry) return null;
+  const prevRole = client.role;
+  const slot = client.slot || 0;
+  const code = entry.room.code;
+  handleLeave(client); // frees slot, uid/pid maps, ready state; re-broadcasts the lobby
+  client.entry = null; client.role = null; client.slot = 0; client.uid = null;
+  // a room nobody is left in is closed immediately, so its 5-letter code stops
+  // being advertised as live and can be handed out again
+  if (entry.screens.size === 0 && entry.controllers.size === 0 && entry.specs.size === 0) {
+    rooms.delete(code);
+    console.log(`[room ${code}] closed (everyone left)`);
+  }
+  return { entry, code, slot, prevRole };
+}
+
+// ---------------------------------------------------------------------------
 // Game loop — advance every room, stream snapshots + telemetry
 // ---------------------------------------------------------------------------
 let tickCount = 0;
@@ -2993,7 +3064,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v90', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v91', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
@@ -3019,6 +3090,7 @@ module.exports = {
   joinRoom,
   handleMessage,
   handleLeave,
+  leaveCurrentRoom,
   newRoom,
   settleRace,
   dailyInfo,

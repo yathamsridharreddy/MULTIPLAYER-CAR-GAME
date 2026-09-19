@@ -443,6 +443,7 @@ h1 span {
 .lobby-code {
   display: flex;
   align-items: center;
+  flex-wrap: wrap; /* v91: room row now carries COPY / CREATE / JOIN / EXIT ROOM */
   gap: 8px;
   font: 700 12px var(--font-tech);
   letter-spacing: 1.5px;
