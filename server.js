@@ -2587,7 +2587,7 @@ function handleMessage(client, msg) {
         if (msg.bot != null) room.setBot(msg.bot);
         if (msg.record === false) entry.noRecord = true; // v61 practice
         if (msg.botSkill != null) room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
-        if (msg.name || msg.color || msg.cls) room.setPlayerMeta(client.slot, msg);
+        if (msg.name || msg.color || msg.cls || msg.sens != null) room.setPlayerMeta(client.slot, msg); // v92 sensitivity rides along
         if (msg.cls) { classPick(msg.cls); room.cars[client.slot - 1].clsKey = msg.cls; } // v64 telemetry
         if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
         // v73: verify the racer's Supabase token server-side -> authoritative uid
@@ -2634,7 +2634,7 @@ function handleMessage(client, msg) {
         if (msg.bot != null) room.setBot(msg.bot);
         if (msg.record === false) entry.noRecord = true;
         if (msg.botSkill != null) room.setBotSkill(parseInt(msg.botSkill, 10));
-        if (msg.name || msg.color || msg.cls) room.setPlayerMeta(client.slot, msg);
+        if (msg.name || msg.color || msg.cls || msg.sens != null) room.setPlayerMeta(client.slot, msg); // v92 sensitivity rides along
         if (msg.cls) { classPick(msg.cls); room.cars[client.slot - 1].clsKey = msg.cls; }
         if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title);
         if (msg.tok) verifyUid(msg.tok).then(async (uid) => {
@@ -3064,7 +3064,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v91', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v92', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {

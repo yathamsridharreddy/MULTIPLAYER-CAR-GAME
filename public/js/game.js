@@ -52,9 +52,9 @@ function lerpAngle(a, b, t) {
 function loadPrefs() {
   try { return Object.assign({
     name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: 'en', hdLobby: true
+    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: 'en', hdLobby: true, sens: 1
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
-  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true }; }
+  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true, sens: 1 }; }
 }
 let prefs = loadPrefs();
 function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
@@ -62,6 +62,10 @@ try {
   if (!localStorage.getItem('sr_prefs') && prefs.botSkill == null) { prefs.botSkill = 0; savePrefs(); }
 } catch (e) {}
 if (prefs.botSkill == null) prefs.botSkill = 1;
+// v92 steering sensitivity: a hand-edited or stale localStorage value must never
+// reach the wire out of range - the server clamps too, but normalise at the source.
+if (!(prefs.sens >= 0.5 && prefs.sens <= 1.5)) prefs.sens = 1;
+else prefs.sens = Math.round(prefs.sens * 20) / 20; // snap to the slider's 5% step so thumb and readout agree
 if (!prefs.pid) { prefs.pid = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
 if (!prefs.name) { prefs.name = 'RACER-' + prefs.pid.slice(1, 5).toUpperCase(); savePrefs(); }
 
@@ -2188,7 +2192,7 @@ function identityPayload() {
     cos = { decal: myEq.decal || 0, wheels: myEq.wheels || 0, trail: myEq.trail || 0, neon: myEq.neon || 0, sp: car.sp };
     title = myEq.title || title;
   }
-  return { name, pid, color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, weather: currentWeather, cos, title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined, chid: window.__chId || undefined }; // v73/v74/v83
+  return { name, pid, color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, sens: prefs.sens, map: selectedMap, weather: currentWeather, cos, title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined, chid: window.__chId || undefined }; // v73/v74/v83
 }
 
 // ---------------------------------------------------------------------------
@@ -2411,6 +2415,48 @@ function wireLobbyV2() {
   // file lazy-loads 1.2 s after window.load so it never competes with boot/race.
   const hdEl = $('set-hd');
   if (hdEl) { hdEl.checked = prefs.hdLobby !== false; hdEl.addEventListener('change', () => { prefs.hdLobby = hdEl.checked; savePrefs(); applyHD(); }); }
+
+  // -------------------------------------------------------------------------
+  // v92 STEERING SENSITIVITY - phone-brightness style slider.
+  // The value is a pure preference: it travels with identityPayload() on join /
+  // create and live via sendMeta(), and the AUTHORITATIVE sim applies it inside
+  // Car.setSens() (clamped to 0.5-1.5 server-side). Nothing here changes the
+  // physics locally, so the client and the server can never disagree.
+  // -------------------------------------------------------------------------
+  const sensEl = $('set-sens');
+  if (sensEl) {
+    const sensVal = $('sens-val');
+    let popTimer = 0;
+    const paintSens = (pop) => {
+      const pct = Math.round((prefs.sens || 1) * 100);
+      sensEl.value = String(pct);
+      sensEl.style.setProperty('--fill', (pct - 50).toFixed(1) + '%'); // 50..150 -> 0..100% of the track
+      if (sensVal) sensVal.textContent = pct + '%';
+      sensEl.setAttribute('aria-valuetext', pct + '%');
+      if (pop && sensVal && !prefs.rm) {
+        sensVal.classList.add('pop');
+        clearTimeout(popTimer);
+        popTimer = setTimeout(() => sensVal.classList.remove('pop'), 150);
+      }
+    };
+    sensEl.addEventListener('input', () => {
+      prefs.sens = clamp(parseInt(sensEl.value, 10) / 100, 0.5, 1.5);
+      savePrefs();
+      paintSens(true);
+      sendMeta(); // applied to your car immediately, mid-race included
+    });
+    sensEl.addEventListener('change', () => {
+      const pct = Math.round((prefs.sens || 1) * 100);
+      toast(((typeof tI18n === 'function' ? tI18n('sensLabel') : null) || '🎚️ STEERING SENSITIVITY') + ': ' + pct + '%');
+      track('sens_change', selectedMap, { sens: pct });
+    });
+    const sensReset = $('sens-reset');
+    if (sensReset) sensReset.addEventListener('click', () => {
+      prefs.sens = 1; savePrefs(); paintSens(true); sendMeta();
+      toast((typeof tI18n === 'function' ? tI18n('sensResetDone') : null) || '🎚️ Steering sensitivity reset to 100%');
+    });
+    paintSens(false);
+  }
 
   // v83 Weather Selection in Wizard
   document.querySelectorAll('.weather-btn').forEach((b) => {
@@ -4606,7 +4652,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v91';
+const BUILD = 'v92';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

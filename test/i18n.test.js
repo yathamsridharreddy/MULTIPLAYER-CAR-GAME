@@ -34,6 +34,7 @@ describe('Full-Game Internationalization (i18n) Engine', () => {
       'inviteFriend', 'phoneController', 'setup',
       'leaderboard', 'compHub', 'globalRating', 'trackRecords', 'dailyCup', 'foundersCup',
       'driverProfile', 'settings',
+      'sensLabel', 'sensHint', 'sensReset', 'sensResetDone', // v92 steering sensitivity slider
       'selectMode', 'modeMultiplayer', 'modeTimeTrial', 'modePractice',
       'mapTitle', 'mapHighland', 'mapNeon', 'mapIsland', 'mapCanyon', 'mapHairpin',
       'weatherTitle', 'wDry', 'wWet', 'wNight', 'wBlizzard',

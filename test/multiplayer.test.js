@@ -449,4 +449,62 @@ describe('Authoritative Multiplayer Simulation & Rooms', () => {
     assert.equal(padWs.findSent('lobby_welcome').length, 0, 'pads have no lobby pool state');
     assert.equal(rooms.has(entry.room.code), true, 'the screen is still seated, so the room stays open');
   });
+
+  test('v92 steering sensitivity: carried on join, live-updatable, clamped, per-driver', () => {
+    // 1. The value travels inside the normal identity payload (create_room)
+    const ws = createMockWS();
+    const client = { ws, entry: null, slot: 0, role: null, pid: 'p-sens' };
+    handleMessage(client, { type: 'hello', role: 'screen', lobby: true, pid: 'p-sens' });
+    handleMessage(client, { type: 'create_room', mode: 'race', map: 0, laps: 3, pid: 'p-sens', name: 'SensDriver', sens: 0.65 });
+    assert.equal(client.slot, 1);
+    const car = client.entry.room.cars[0];
+    assert.equal(car.sens, 0.65, 'the join payload must reach the authoritative car');
+
+    // 2. Moving the slider mid-session updates the live car (no restart, no reconnect)
+    handleMessage(client, { type: 'meta', name: 'SensDriver', sens: 1.35 });
+    assert.equal(car.sens, 1.35, 'meta must update sensitivity live');
+
+    // 3. Nothing from a socket is trusted: hostile values are clamped, junk resets
+    handleMessage(client, { type: 'meta', name: 'SensDriver', sens: 999 });
+    assert.equal(car.sens, 1.5, 'above range clamps to the maximum');
+    handleMessage(client, { type: 'meta', name: 'SensDriver', sens: -4 });
+    assert.equal(car.sens, 0.5, 'below range clamps to the minimum');
+    handleMessage(client, { type: 'meta', name: 'SensDriver', sens: 'lol' });
+    assert.equal(car.sens, 1, 'garbage falls back to the default');
+    handleMessage(client, { type: 'meta', name: 'SensDriver', sens: { $gt: '' } });
+    assert.equal(car.sens, 1, 'a non-numeric object falls back to the default');
+
+    // 4. Per-driver, not per-room: a second racer keeps their own feel
+    const ws2 = createMockWS();
+    const c2 = { ws: ws2, entry: null, slot: 0, role: null, pid: 'p-sens2' };
+    handleMessage(c2, { type: 'hello', role: 'screen', room: client.entry.room.code, pid: 'p-sens2', name: 'Second', sens: 0.9 });
+    assert.equal(c2.slot, 2, 'the second driver takes the next free seat');
+    assert.equal(client.entry.room.cars[1].sens, 0.9, 'slot 2 gets its own value');
+    handleMessage(client, { type: 'meta', name: 'SensDriver', sens: 1.1 });
+    assert.equal(client.entry.room.cars[1].sens, 0.9, "slot 1's change must not touch slot 2");
+    assert.equal(car.sens, 1.1);
+  });
+
+  test('v92 sensitivity also survives the join_room room-hop path', () => {
+    // a room already exists, hosted by someone with their own feel dialled in
+    const hostWs = createMockWS();
+    const host = { ws: hostWs, entry: null, slot: 0, role: null, pid: 'p-host' };
+    handleMessage(host, { type: 'hello', role: 'screen', lobby: true, pid: 'p-host' });
+    handleMessage(host, { type: 'create_room', mode: 'race', map: 2, pid: 'p-host', name: 'Host', sens: 1.2 });
+    const code = host.entry.room.code;
+
+    // a lobby client hops into it by code (v91 room hop) with a different value
+    const ws = createMockWS();
+    const client = { ws, entry: null, slot: 0, role: null, pid: 'p-hop' };
+    handleMessage(client, { type: 'hello', role: 'screen', lobby: true, pid: 'p-hop' });
+    handleMessage(client, { type: 'join_room', room: code, pid: 'p-hop', name: 'Hopper', sens: 0.55 });
+    assert.equal(client.role, 'screen', 'join_room must seat the driver');
+    assert.equal(client.entry.room.cars[client.slot - 1].sens, 0.55, 'the room hop carries the sensitivity too');
+    assert.equal(host.entry.room.cars[0].sens, 1.2, "the host's setting is untouched");
+
+    // and the guard still rejects a hop with no target room
+    handleMessage(client, { type: 'join_room', pid: 'p-hop', name: 'Hopper', sens: 0.8 });
+    assert.equal(client.entry.room.cars[client.slot - 1].sens, 0.55, 'a failed hop must not change anything');
+    assert.equal(ws.findSent('error').filter((e) => e.reason === 'no-room').length, 1);
+  });
 });
