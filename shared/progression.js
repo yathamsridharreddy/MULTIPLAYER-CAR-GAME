@@ -725,7 +725,11 @@
   }
 
   function validCrewName(name) {
-    return typeof name === 'string' && /^[A-Za-z0-9 _-]{3,24}$/.test(name.trim());
+    if (typeof name !== 'string') return false;
+    const s = name.trim();
+    if (s.length < 3 || s.length > 32) return false;
+    if (/[<>\u0000-\u001F]/.test(s)) return false;
+    return /^[\p{L}\p{N}\s_\-'.!&#+]{3,32}$/u.test(s);
   }
 
   function getCrewMilestoneInfo(totalMeters) {

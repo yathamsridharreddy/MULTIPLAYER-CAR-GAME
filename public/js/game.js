@@ -3978,11 +3978,16 @@ window.handleCreateCrewSubmit = async function(e) {
       body: JSON.stringify({ uid, name, crewName, tag, motto, badge, color })
     }).then(r => r.json());
     if (res && res.ok) {
-      toast(`🏁 Syndicate [${res.crew.tag}] ${res.crew.name} Created!`);
+      toast(`🏁 Club [${res.crew.tag}] ${res.crew.name} Created!`);
       openCrewModal('my');
     } else {
       const errEl = $('cf-err');
-      if (errEl) errEl.textContent = res.error === 'tag_taken' ? 'Tag is already taken!' : (res.error || 'Validation error');
+      if (errEl) {
+        if (res.error === 'tag_taken') errEl.textContent = '❌ Club Tag is already taken by another syndicate!';
+        else if (res.error === 'invalid_crew_name') errEl.textContent = '❌ Club Name must be 3-30 characters (letters, numbers, spaces, and punctuation)!';
+        else if (res.error === 'invalid_crew_tag') errEl.textContent = '❌ Club Tag must be 2-5 letters/numbers (e.g. APEX, F1, SPEED)!';
+        else errEl.textContent = '❌ ' + (res.error || 'Validation error');
+      }
     }
   } catch (e) {
     const errEl = $('cf-err');
