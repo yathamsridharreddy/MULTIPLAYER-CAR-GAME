@@ -2191,6 +2191,36 @@ function identityPayload() {
   return { name, pid, color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, weather: currentWeather, cos, title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined, chid: window.__chId || undefined }; // v73/v74/v83
 }
 
+// ---------------------------------------------------------------------------
+// v90 CLUB SYNC FIX — one racer, many identity strings.
+// The club APIs used to send ONLY `SRAccount.name() || prefs.pid`, while the
+// server credits race mileage against the verified Supabase uuid (or, without
+// Supabase, the in-race display name). Only the member whose two keys happened
+// to coincide was ever credited, so a club showed one racer's distance and
+// points while everybody else stayed at 0.0 km / 0 pts. Every club call now
+// ships ALL identities this browser owns and the server aliases them together.
+// ---------------------------------------------------------------------------
+function crewIdentity() {
+  const signedIn = !!(window.SRAccount && typeof SRAccount.loggedIn === 'function' && SRAccount.loggedIn() && SRAccount.uid && SRAccount.uid());
+  const sbUid = signedIn ? String(SRAccount.uid()) : '';
+  return {
+    uid: (window.SRAccount && typeof SRAccount.name === 'function' && SRAccount.name()) ? SRAccount.name() : (prefs.pid || prefs.name || 'guest'),
+    pid: signedIn ? ('sb:' + sbUid) : (prefs.pid || ''), // exactly what identityPayload() sends
+    sbUid,
+    name: prefs.name || ''
+  };
+}
+function crewQuery(ci) {
+  return Object.keys(ci).filter((k) => ci[k]).map((k) => k + '=' + encodeURIComponent(ci[k])).join('&');
+}
+function crewRowIsMe(m, ci) {
+  if (!m) return false;
+  const strip = (v) => String(v).replace(/^sb:/i, '').trim().toLowerCase();
+  const mine = [ci.uid, ci.pid, ci.sbUid, ci.name].filter(Boolean).map(strip);
+  const row = [m.uid].concat(m.aliases || []).filter(Boolean).map(strip);
+  return row.some((r) => r && mine.indexOf(r) !== -1);
+}
+
 function applyQuality(q) {
   const dpr = window.devicePixelRatio || 1;
   if (q === 'low') { renderer.setPixelRatio(1); sunLight.castShadow = false; }
@@ -3760,11 +3790,11 @@ async function openCrewModal(tab = 'my') {
   });
 
   body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:30px;">' + (tI18n('loadingCircuit') || 'Loading Syndicate…') + '</div>';
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const ci = crewIdentity(); // v90: resolve the club from every identity we own
 
   if (tab === 'my') {
     try {
-      const res = await fetch(`${httpBase()}/api/player/crew?uid=${encodeURIComponent(uid)}`).then(r => r.json());
+      const res = await fetch(`${httpBase()}/api/player/crew?${crewQuery(ci)}`).then(r => r.json());
       if (res && res.ok && res.hasCrew && res.crew) {
         const c = res.crew;
         body.innerHTML = `
@@ -3808,7 +3838,7 @@ async function openCrewModal(tab = 'my') {
               <tbody>
                 ${c.members.map(m => `
                   <tr>
-                    <td><b>${escapeHtml(m.name)}</b> ${m.uid === uid ? '<span style="color:#00e5ff;">(YOU)</span>' : ''}</td>
+                    <td><b>${escapeHtml(m.name)}</b> ${crewRowIsMe(m, ci) ? '<span style="color:#00e5ff;">(YOU)</span>' : ''}</td>
                     <td><span style="color:${m.role === 'leader' ? '#ffd479' : '#8b93a8'}; font-weight:700;">${m.role.toUpperCase()}</span></td>
                     <td class="clb-km">${(m.weeklyMeters / 1000).toFixed(1)} km</td>
                     <td style="color:#ffd479; font-weight:700;">+${m.weeklyPoints || 0}</td>
@@ -3922,12 +3952,12 @@ async function openCrewModal(tab = 'my') {
 }
 
 window.claimCrewMilestoneReward = async function(tier) {
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const ci = crewIdentity(); // v90 club sync
   try {
     const res = await fetch(`${httpBase()}/api/player/crew/claim-milestone`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid, tier })
+      body: JSON.stringify(Object.assign({}, ci, { name: prefs.name || 'RACER', tier }))
     }).then(r => r.json());
     if (res && res.ok) {
       toast(`🎉 Tier ${tier} Milestone Claimed! +${res.xpAwarded} XP · +${res.coinsAwarded} Coins!`);
@@ -3942,13 +3972,13 @@ window.claimCrewMilestoneReward = async function(tier) {
 };
 
 window.joinCrewAction = async function(crewId) {
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const ci = crewIdentity(); // v90 club sync
   const name = prefs.name || 'RACER';
   try {
     const res = await fetch(`${httpBase()}/api/player/crew/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid, name, crewId })
+      body: JSON.stringify(Object.assign({}, ci, { name, crewId }))
     }).then(r => r.json());
     if (res && res.ok) {
       toast(`🏁 Joined [${res.tag}] ${res.name}!`);
@@ -3963,7 +3993,7 @@ window.joinCrewAction = async function(crewId) {
 
 window.handleCreateCrewSubmit = async function(e) {
   e.preventDefault();
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const ci = crewIdentity(); // v90 club sync
   const name = prefs.name || 'RACER';
   const crewName = $('cf-name').value.trim();
   const tag = $('cf-tag').value.trim().toUpperCase();
@@ -3975,7 +4005,7 @@ window.handleCreateCrewSubmit = async function(e) {
     const res = await fetch(`${httpBase()}/api/player/crew/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid, name, crewName, tag, motto, badge, color })
+      body: JSON.stringify(Object.assign({}, ci, { name, crewName, tag, motto, badge, color }))
     }).then(r => r.json());
     if (res && res.ok) {
       toast(`🏁 Club [${res.crew.tag}] ${res.crew.name} Created!`);

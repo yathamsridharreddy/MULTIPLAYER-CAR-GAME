@@ -1381,6 +1381,175 @@ const memPlayerCrew = new Map();
 
 const memClaimedCrewMilestones = new Map(); // `${crewId}:${milestoneTier}:${uid}` -> true
 
+// ---------------------------------------------------------------------------
+// v90 CLUB SYNC FIX — identity aliasing
+//
+// One human racer is known to this server by several DIFFERENT strings:
+//   • the club APIs are called with `SRAccount.name() || prefs.pid`  (browser)
+//   • race settlement keys on the Supabase UUID returned by verifyUid(token)
+//   • settlement falls back to the in-race display name when there is no token
+//   • the handshake carries the device pid (`sb:<uuid>` once signed in)
+// Club membership used to be stored under ONLY the first of those, while race
+// mileage was credited under the second/third. Result: exactly one member per
+// club — whoever's two keys happened to coincide — ever showed distance and
+// points; everybody else stayed pinned at 0.0 km / 0 pts no matter how much
+// they raced.
+//
+// Now every identity a member is seen with is registered as an ALIAS of the
+// same membership, and every club lookup (get / join / create / claim /
+// settlement / lobby tag) resolves through the alias set.
+// Strong aliases (account uuid, device pid, client uid) are unique per human
+// and always win. The display name is only a WEAK hint, used solely when it
+// maps to exactly one club, so two racers sharing a nickname can never have
+// their mileage folded into the wrong club or the wrong roster row.
+// ---------------------------------------------------------------------------
+const memCrewAliases = new Map();   // normalized strong identity -> crewId (last write wins)
+const memCrewNameHints = new Map(); // normalized display name -> Set<crewId> (weak)
+
+function normCrewKey(v) {
+  if (v == null) return '';
+  let k = String(v).trim();
+  if (!k) return '';
+  if (k.slice(0, 3).toLowerCase() === 'sb:') k = k.slice(3); // identityPayload() pid form
+  return k.slice(0, 64).toLowerCase();
+}
+
+// account/device scoped ids — these uniquely identify one human
+function crewStrongKeys(ids) {
+  const out = [];
+  const push = (v) => { const k = normCrewKey(v); if (k && out.indexOf(k) === -1) out.push(k); };
+  if (!ids) return out;
+  push(ids.uid); push(ids.sbUid); push(ids.pid);
+  if (Array.isArray(ids.aliases)) for (const a of ids.aliases) push(a);
+  return out;
+}
+
+// everything we could look a racer up by: strong keys first, display name last
+function crewKeysFor(ids) {
+  const keys = crewStrongKeys(ids);
+  const n = normCrewKey(ids && ids.name);
+  if (n && keys.indexOf(n) === -1) keys.push(n);
+  return keys;
+}
+
+function mergeAliases(list, extra) {
+  const out = [];
+  for (const v of (list || []).concat(extra || [])) { const k = normCrewKey(v); if (k && out.indexOf(k) === -1) out.push(k); }
+  return out;
+}
+
+function bindCrewIdentities(crewId, ids) {
+  if (!crewId) return [];
+  const strong = crewStrongKeys(ids);
+  for (const k of strong) memCrewAliases.set(k, crewId);
+  const n = normCrewKey(ids && ids.name);
+  if (n) {
+    let set = memCrewNameHints.get(n);
+    if (!set) { set = new Set(); memCrewNameHints.set(n, set); }
+    set.add(crewId);
+  }
+  return strong;
+}
+
+function unbindCrewIdentities(crewId, ids) {
+  if (!crewId) return;
+  for (const k of crewStrongKeys(ids)) if (memCrewAliases.get(k) === crewId) memCrewAliases.delete(k);
+  const n = normCrewKey(ids && ids.name);
+  const set = n ? memCrewNameHints.get(n) : null;
+  if (set) { set.delete(crewId); if (!set.size) memCrewNameHints.delete(n); }
+}
+
+// Membership lookups that MUTATE data (leaving an old club on join/create) must
+// never guess from a display name: two racers can share a nickname, and acting
+// on the wrong club would strip somebody else's roster row. Only account/device
+// scoped ids are trusted here.
+function findCrewIdStrong(ids) {
+  if (!ids) return null;
+  for (const raw of [ids.uid, ids.sbUid, ids.pid]) {
+    if (raw && memPlayerCrew.has(String(raw))) {
+      const cid = memPlayerCrew.get(String(raw));
+      if (memCrews.has(cid)) return cid;
+    }
+  }
+  for (const k of crewStrongKeys(ids)) {
+    const cid = memCrewAliases.get(k);
+    if (cid && memCrews.has(cid)) return cid;
+  }
+  return null;
+}
+
+// Read-only lookups (settlement, GET /api/player/crew) may additionally fall
+// back to a display name, but ONLY when that name maps to exactly one club —
+// an ambiguous nickname resolves to nothing rather than to a guess.
+function findCrewId(ids) {
+  const strong = findCrewIdStrong(ids);
+  if (strong) return strong;
+  const n = normCrewKey(ids && ids.name);
+  if (n) {
+    const set = memCrewNameHints.get(n);
+    if (set && set.size === 1) {
+      const only = set.values().next().value;
+      if (memCrews.has(only)) return only;
+    }
+  }
+  return null;
+}
+
+// the roster row for this racer inside a club (so we never create a duplicate)
+function findCrewMember(crew, ids) {
+  if (!crew || !Array.isArray(crew.members)) return null;
+  const strong = crewStrongKeys(ids);
+  const rowKeys = (m) => {
+    const out = [];
+    const mk = normCrewKey(m && m.uid); if (mk) out.push(mk);
+    if (m && Array.isArray(m.aliases)) for (const a of m.aliases) { const k = normCrewKey(a); if (k && out.indexOf(k) === -1) out.push(k); }
+    return out;
+  };
+  for (const m of crew.members) {
+    if (rowKeys(m).some((k) => strong.indexOf(k) !== -1)) return m; // strong match wins
+  }
+  const nameKey = normCrewKey(ids && ids.name);
+  if (nameKey) {
+    // legacy rows the old settlement path created keyed by display name — only
+    // used when exactly one row carries that name, never to pick between two
+    const byName = crew.members.filter((m) => normCrewKey(m.uid) === nameKey);
+    if (byName.length === 1) return byName[0];
+  }
+  return null;
+}
+
+// A racer who joins or founds a club while already sitting in a lobby should
+// see their syndicate tag immediately, not only after the next state change.
+function refreshLobbyCrewTags(ids) {
+  const keys = crewKeysFor(ids);
+  if (!keys.length) return 0;
+  let refreshed = 0;
+  for (const entry of rooms.values()) {
+    let hit = false;
+    for (const slot of entry.slotByWs.values()) {
+      const car = entry.room && entry.room.cars[slot - 1];
+      const slotKeys = crewKeysFor({
+        uid: entry.uidBySlot ? entry.uidBySlot[slot] : null,
+        pid: entry.pidBySlot ? entry.pidBySlot[slot] : null,
+        name: car && car.name
+      });
+      if (slotKeys.some((k) => keys.indexOf(k) !== -1)) { hit = true; break; }
+    }
+    if (hit) { try { broadcastLobby(entry); refreshed++; } catch (e) {} }
+  }
+  return refreshed;
+}
+
+// stats/XP caches are keyed by the SETTLEMENT identity (UUID when a token was
+// verified, otherwise the display name), never by the browser's club uid — so
+// rewards have to be written to whichever of those keys actually exists.
+function resolveStatsKey(ids) {
+  for (const raw of [ids && ids.sbUid, ids && ids.name, ids && ids.uid, ids && ids.pid]) {
+    if (raw && memPlayerStats.has(String(raw))) return String(raw);
+  }
+  return (ids && ids.uid) || 'guest';
+}
+
 app.get(['/api/crews', '/api/crews/leaderboard'], async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   const crews = Array.from(memCrews.values()).map((c) => {
@@ -1411,18 +1580,27 @@ app.get(['/api/crews', '/api/crews/leaderboard'], async (req, res) => {
 app.get('/api/player/crew', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   const uid = req.query.uid || req.query.pid || 'guest';
-  const crewId = memPlayerCrew.get(uid);
+  // v90: the same racer may reach this endpoint by username, device pid or
+  // Supabase uuid depending on sign-in state and device — resolve them all.
+  const ids = {
+    uid,
+    sbUid: typeof req.query.sbUid === 'string' ? req.query.sbUid : '',
+    pid: typeof req.query.pid === 'string' ? req.query.pid : '',
+    name: typeof req.query.name === 'string' ? req.query.name : ''
+  };
+  const crewId = findCrewId(ids);
   if (!crewId || !memCrews.has(crewId)) {
     return res.json({ ok: true, hasCrew: false, crew: null, presets: prog.CREW_PRESETS });
   }
   const c = memCrews.get(crewId);
   const milestoneInfo = prog.getCrewMilestoneInfo(c.weeklyMeters || 0);
-  const member = (c.members || []).find((m) => m.uid === uid) || { uid, name: 'RACER', role: 'member', weeklyMeters: 0, totalMeters: 0, weeklyPoints: 0 };
+  const member = findCrewMember(c, ids) || { uid, name: 'RACER', role: 'member', weeklyMeters: 0, totalMeters: 0, weeklyPoints: 0, aliases: [] };
+  const claimId = member.uid || uid; // canonical per-member claim key
 
   const milestones = milestoneInfo.milestones.map((m) => ({
     ...m,
-    claimed: !!memClaimedCrewMilestones.get(`${c.id}:${m.tier}:${uid}`),
-    canClaim: m.completed && !memClaimedCrewMilestones.get(`${c.id}:${m.tier}:${uid}`)
+    claimed: !!memClaimedCrewMilestones.get(`${c.id}:${m.tier}:${claimId}`),
+    canClaim: m.completed && !memClaimedCrewMilestones.get(`${c.id}:${m.tier}:${claimId}`)
   }));
 
   res.json({
@@ -1454,40 +1632,52 @@ app.get('/api/player/crew', async (req, res) => {
 
 app.post('/api/player/crew/join', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  const { uid, name, crewId } = req.body || {};
+  const { uid, name, crewId, pid, sbUid } = req.body || {};
   if (!uid || typeof uid !== 'string') return res.status(400).json({ ok: false, error: 'invalid_uid' });
   const cid = String(crewId || '').trim().toLowerCase();
   if (!memCrews.has(cid)) return res.status(404).json({ ok: false, error: 'crew_not_found' });
+  const str = (v) => (typeof v === 'string' ? v.slice(0, 64) : '');
+  const ids = { uid, name: str(name), pid: str(pid), sbUid: str(sbUid) };
 
-  // Remove from old crew
-  const oldCrewId = memPlayerCrew.get(uid);
-  if (oldCrewId && memCrews.has(oldCrewId)) {
+  // Remove from old crew — matched by any STRONG alias, not just the raw uid,
+  // and the stale aliases pointing at the old club are released.
+  const oldCrewId = findCrewIdStrong(ids);
+  if (oldCrewId && oldCrewId !== cid && memCrews.has(oldCrewId)) {
     const oldCrew = memCrews.get(oldCrewId);
-    oldCrew.members = (oldCrew.members || []).filter((m) => m.uid !== uid);
+    const me = findCrewMember(oldCrew, ids);
+    oldCrew.members = (oldCrew.members || []).filter((m) => m !== me);
+    unbindCrewIdentities(oldCrewId, { uid, name: ids.name, pid: ids.pid, sbUid: ids.sbUid, aliases: me && me.aliases });
   }
 
   const targetCrew = memCrews.get(cid);
   targetCrew.members = targetCrew.members || [];
-  const existingMember = targetCrew.members.find((m) => m.uid === uid);
-  if (!existingMember) {
-    targetCrew.members.push({
+  let member = findCrewMember(targetCrew, ids);
+  if (!member) {
+    member = {
       uid,
       name: (name && typeof name === 'string') ? name.slice(0, 16) : 'RACER',
       role: 'member',
       weeklyMeters: 0,
       totalMeters: 0,
       weeklyPoints: 0,
+      aliases: [],
       joined_at: new Date().toISOString()
-    });
+    };
+    targetCrew.members.push(member);
   }
+  // v90: learn every identity this racer uses so settlement finds this row
+  member.aliases = mergeAliases(member.aliases, bindCrewIdentities(cid, ids));
+  if (name && typeof name === 'string') member.name = name.slice(0, 16);
   memPlayerCrew.set(uid, cid);
-  res.json({ ok: true, crewId: cid, tag: targetCrew.tag, name: targetCrew.name });
+  refreshLobbyCrewTags(ids); // v90: show the new tag in any live lobby straight away
+  res.json({ ok: true, crewId: cid, tag: targetCrew.tag, name: targetCrew.name, member });
 });
 
 app.post('/api/player/crew/create', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  const { uid, name, crewName, tag, motto, color, badge } = req.body || {};
+  const { uid, name, crewName, tag, motto, color, badge, pid, sbUid } = req.body || {};
   if (!uid || typeof uid !== 'string') return res.status(400).json({ ok: false, error: 'invalid_uid' });
+  const idStr = (v) => (typeof v === 'string' ? v.slice(0, 64) : '');
   if (!prog.validCrewName(crewName)) return res.status(400).json({ ok: false, error: 'invalid_crew_name' });
   if (!prog.validCrewTag(tag)) return res.status(400).json({ ok: false, error: 'invalid_crew_tag' });
 
@@ -1500,11 +1690,14 @@ app.post('/api/player/crew/create', async (req, res) => {
     if (c.tag === cleanTag) return res.status(409).json({ ok: false, error: 'tag_taken' });
   }
 
-  // Remove from old crew
-  const oldCrewId = memPlayerCrew.get(uid);
+  // Remove from old crew (strong aliases only, same as /join)
+  const founderIds = { uid, name: idStr(name), pid: idStr(pid), sbUid: idStr(sbUid) };
+  const oldCrewId = findCrewIdStrong(founderIds);
   if (oldCrewId && memCrews.has(oldCrewId)) {
     const oldCrew = memCrews.get(oldCrewId);
-    oldCrew.members = (oldCrew.members || []).filter((m) => m.uid !== uid);
+    const me = findCrewMember(oldCrew, founderIds);
+    oldCrew.members = (oldCrew.members || []).filter((m) => m !== me);
+    unbindCrewIdentities(oldCrewId, { uid, name: founderIds.name, pid: founderIds.pid, sbUid: founderIds.sbUid, aliases: me && me.aliases });
   }
 
   const newCrew = {
@@ -1522,6 +1715,7 @@ app.post('/api/player/crew/create', async (req, res) => {
       weeklyMeters: 0,
       totalMeters: 0,
       weeklyPoints: 0,
+      aliases: mergeAliases([], bindCrewIdentities(crewId, founderIds)), // v90 club sync
       joined_at: new Date().toISOString()
     }],
     weeklyMeters: 0,
@@ -1532,16 +1726,19 @@ app.post('/api/player/crew/create', async (req, res) => {
 
   memCrews.set(crewId, newCrew);
   memPlayerCrew.set(uid, crewId);
+  refreshLobbyCrewTags(founderIds); // v90: show the new tag in any live lobby straight away
 
   res.json({ ok: true, crew: newCrew });
 });
 
 app.post('/api/player/crew/claim-milestone', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  const { uid, tier } = req.body || {};
+  const { uid, tier, pid, sbUid, name } = req.body || {};
   if (!uid || typeof uid !== 'string') return res.status(400).json({ ok: false, error: 'invalid_uid' });
   const tierNum = parseInt(tier, 10);
-  const crewId = memPlayerCrew.get(uid);
+  const clStr = (v) => (typeof v === 'string' ? v.slice(0, 64) : '');
+  const ids = { uid, pid: clStr(pid), sbUid: clStr(sbUid), name: clStr(name) };
+  const crewId = findCrewId(ids); // v90: claimable from any of the racer's identities
   if (!crewId || !memCrews.has(crewId)) return res.status(404).json({ ok: false, error: 'no_crew' });
 
   const crew = memCrews.get(crewId);
@@ -1549,15 +1746,19 @@ app.post('/api/player/crew/claim-milestone', async (req, res) => {
   if (!mileDef) return res.status(400).json({ ok: false, error: 'invalid_tier' });
   if ((crew.weeklyMeters || 0) < mileDef.reqMeters) return res.status(400).json({ ok: false, error: 'milestone_unreached' });
 
-  const claimKey = `${crew.id}:${tierNum}:${uid}`;
+  // v90: the claim is keyed by the CANONICAL roster uid, so a member who
+  // reached the endpoint through two different aliases still claims once.
+  const claimMember = findCrewMember(crew, ids);
+  const claimKey = `${crew.id}:${tierNum}:${(claimMember && claimMember.uid) || uid}`;
   if (memClaimedCrewMilestones.get(claimKey)) return res.status(400).json({ ok: false, error: 'already_claimed' });
 
   memClaimedCrewMilestones.set(claimKey, true);
 
-  // award XP and coins
-  const st = memPlayerStats.get(uid) || { rating: 1000, peak_rating: 1000, xp: 0, streak: 0, best_streak: 0, races: 0, wins: 0, podiums: 0, daily_days: 0, last_daily: '' };
+  // award XP and coins to the stats row settlement actually writes to
+  const statsKey = resolveStatsKey(ids);
+  const st = memPlayerStats.get(statsKey) || { rating: 1000, peak_rating: 1000, xp: 0, streak: 0, best_streak: 0, races: 0, wins: 0, podiums: 0, daily_days: 0, last_daily: '' };
   st.xp = (st.xp || 0) + mileDef.reward.xp;
-  memPlayerStats.set(uid, st);
+  memPlayerStats.set(statsKey, st);
 
   res.json({
     ok: true,
@@ -1918,8 +2119,21 @@ async function settleRace(entryOrRoom) {
     const badgeEvaluations = prog.evaluateBadges(statsForBadges);
 
     // v83 Racing Syndicate Crews contribution
+    // v90 FIX: resolve the club and the roster row through EVERY identity this
+    // racer is known by (verified Supabase uuid, device pid, client uid, and
+    // the in-race display name). Previously only `h.uid` was tried, so a guest
+    // whose club row was keyed by device pid while settlement keyed by display
+    // name was silently dropped — their club showed one member's distance and
+    // points and everybody else stayed at zero.
     let crewUpdate = null;
-    const crewId = memPlayerCrew.get(h.uid);
+    const crewSlot = h.c.slot || (i + 1);
+    const crewIds = {
+      uid: h.uid,
+      sbUid: entry.uidBySlot ? entry.uidBySlot[crewSlot] : null,
+      pid: entry.pidBySlot ? entry.pidBySlot[crewSlot] : null,
+      name: h.c.name
+    };
+    const crewId = findCrewId(crewIds);
     if (crewId && memCrews.has(crewId)) {
       const cr = memCrews.get(crewId);
       const lapsDone = (h.c.lapTimes ? h.c.lapTimes.length : (h.c.finished ? (room.laps || 3) : 1));
@@ -1929,22 +2143,28 @@ async function settleRace(entryOrRoom) {
       cr.weeklyPoints = (cr.weeklyPoints || 0) + contrib.points;
 
       cr.members = cr.members || [];
-      let mRec = cr.members.find(m => m.uid === h.uid);
+      let mRec = findCrewMember(cr, crewIds);
       if (mRec) {
         mRec.weeklyMeters = (mRec.weeklyMeters || 0) + contrib.meters;
         mRec.totalMeters = (mRec.totalMeters || 0) + contrib.meters;
         mRec.weeklyPoints = (mRec.weeklyPoints || 0) + contrib.points;
+        if (h.c.name) mRec.name = String(h.c.name).slice(0, 16); // keep the roster label current
+        mRec.lastRaceAt = new Date().toISOString();
       } else {
-        cr.members.push({
+        mRec = {
           uid: h.uid,
           name: h.c.name || 'RACER',
           role: 'member',
           weeklyMeters: contrib.meters,
           totalMeters: contrib.meters,
           weeklyPoints: contrib.points,
+          aliases: [],
           joined_at: new Date().toISOString()
-        });
+        };
+        cr.members.push(mRec);
       }
+      // remember every key seen for this racer so the next race matches too
+      mRec.aliases = mergeAliases(mRec.aliases, bindCrewIdentities(cr.id, crewIds));
       crewUpdate = {
         id: cr.id,
         tag: cr.tag,
@@ -2159,7 +2379,7 @@ app.get('/ghost', async (req, res) => {
 function newRoom(mode, mapId, cap) { // v76: configurable capacity (2..6)
   let code;
   do { code = core.makeRoomCode(); } while (rooms.has(code));
-  const entry = { room: new core.RaceRoom(code, mode, mapId, cap), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set(), lastState: 'waiting', raceSeq: 0, _settled: false, uidBySlot: {}, chBySlot: {}, slotByWs: new Map(), ready: new Set(), ratingBySlot: {}, dupUid: {}, controllerPids: {} };
+  const entry = { room: new core.RaceRoom(code, mode, mapId, cap), screens: new Set(), controllers: new Map(), lbSent: false, rematch: new Set(), noRecord: false, specs: new Set(), lastState: 'waiting', raceSeq: 0, _settled: false, uidBySlot: {}, pidBySlot: {}, chBySlot: {}, slotByWs: new Map(), ready: new Set(), ratingBySlot: {}, dupUid: {}, controllerPids: {} };
   rooms.set(code, entry);
   console.log(`[room ${code}] created (${entry.room.mode}, map ${entry.room.mapId})`);
   return entry;
@@ -2192,7 +2412,9 @@ function broadcastLobby(entry) { // v76: player list with rating + ready
   for (const [ws, slot] of entry.slotByWs) {
     const c = room.cars[slot - 1];
     const uid = entry.uidBySlot[slot];
-    const crewId = uid ? memPlayerCrew.get(uid) : null;
+    // v90: club tag resolved from uuid / device pid / display name so every
+    // member shows their syndicate badge in the lobby, not just signed-in ones
+    const crewId = findCrewId({ uid, pid: entry.pidBySlot ? entry.pidBySlot[slot] : null, name: c && c.name });
     const crew = crewId ? memCrews.get(crewId) : null;
     players.push({
       slot,
@@ -2316,6 +2538,12 @@ function joinRoom(client, entry, role, msg) {
     }
     client.slot = slot;
     entry.slotByWs.set(client.ws, slot);
+    // v90 club sync: the device pid must be known BEFORE the first lobby
+    // broadcast, otherwise this racer's syndicate tag cannot be resolved yet
+    if (msg && typeof msg.pid === 'string' && msg.pid) {
+      entry.pidBySlot = entry.pidBySlot || {};
+      entry.pidBySlot[slot] = msg.pid.slice(0, 64);
+    }
     room.setSeat(slot, true);
     broadcastLobby(entry);
     sendJSON(client.ws, {
@@ -2353,6 +2581,7 @@ function handleMessage(client, msg) {
       }
       if (client.role === 'screen' && client.slot) {
         const room = entry.room;
+        if (msg.pid) { entry.pidBySlot = entry.pidBySlot || {}; entry.pidBySlot[client.slot] = String(msg.pid).slice(0, 64); } // v90 club sync
         if (msg.weather != null) room.setWeather(msg.weather);
         if (msg.laps != null) room.setLaps(msg.laps);
         if (msg.bot != null) room.setBot(msg.bot);
@@ -2399,6 +2628,7 @@ function handleMessage(client, msg) {
       joinRoom(client, entry, 'screen', msg);
       if (client.slot) {
         const room = entry.room;
+        if (msg.pid) { entry.pidBySlot = entry.pidBySlot || {}; entry.pidBySlot[client.slot] = String(msg.pid).slice(0, 64); } // v90 club sync
         if (msg.weather != null) room.setWeather(msg.weather);
         if (msg.laps != null) room.setLaps(msg.laps);
         if (msg.bot != null) room.setBot(msg.bot);
@@ -2441,6 +2671,7 @@ function handleMessage(client, msg) {
 
     case 'meta':
       if (client.entry && client.role === 'screen' && client.slot) {
+        if (msg.pid) { client.entry.pidBySlot = client.entry.pidBySlot || {}; client.entry.pidBySlot[client.slot] = String(msg.pid).slice(0, 64); } // v90 club sync
         client.entry.room.setPlayerMeta(client.slot, msg);
         if (msg.cos || msg.title) client.entry.room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
         if (msg.botSkill != null) client.entry.room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
@@ -2668,6 +2899,7 @@ function handleLeave(client) {
     if (sl) {
       entry.slotByWs.delete(client.ws); entry.ready.delete(client.ws);
       delete entry.uidBySlot[sl]; delete entry.ratingBySlot[sl]; delete entry.dupUid[sl]; // v77 BUG-002
+      if (entry.pidBySlot) delete entry.pidBySlot[sl]; // v90 club sync
       if (client.uid && entry.uidWs && entry.uidWs[client.uid] && entry.uidWs[client.uid].ws === client.ws) delete entry.uidWs[client.uid]; // v79
       if (entry.room.state === 'waiting') entry.room.setSeat(sl, false);
       broadcastLobby(entry);
@@ -2761,7 +2993,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v89', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v90', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
@@ -2804,5 +3036,17 @@ module.exports = {
   memCrews,
   memPlayerCrew,
   memClaimedCrewMilestones,
+  memCrewAliases,
+  memCrewNameHints,
+  findCrewId,
+  findCrewIdStrong,
+  refreshLobbyCrewTags,
+  findCrewMember,
+  crewKeysFor,
+  crewStrongKeys,
+  normCrewKey,
+  bindCrewIdentities,
+  unbindCrewIdentities,
+  mergeAliases,
   leaderboard
 };
