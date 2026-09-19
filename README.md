@@ -9,8 +9,8 @@
 [![Live Demo](https://img.shields.io/badge/▶_PLAY_NOW-LIVE_DEMO-00F0FF?style=for-the-badge&logo=googlechrome&logoColor=05070c)](https://sridhar-drift.vercel.app)
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yathamsridharreddy/MULTIPLAYER-CAR-GAME)
 
-[![Tests](https://img.shields.io/badge/Tests-122%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
-[![Suites](https://img.shields.io/badge/Test%20Suites-23%20passing-00f59b?style=flat-square)](test/)
+[![Tests](https://img.shields.io/badge/Tests-138%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
+[![Suites](https://img.shields.io/badge/Test%20Suites-25%20passing-00f59b?style=flat-square)](test/)
 [![Server](https://img.shields.io/badge/Simulation-30Hz%20Authoritative-ffd479?style=flat-square)](shared/game-core.js)
 [![Multiplayer](https://img.shields.io/badge/Multiplayer-1--6%20Players%20%2B%20AI-ff2e54?style=flat-square)](server.js)
 [![Rendering](https://img.shields.io/badge/3D%20Engine-Three.js%20WebGL-00f0ff?style=flat-square)](public/js/game.js)
@@ -58,7 +58,7 @@
 - **Anti-Cheat & Authoritative Settlement**: Server-calculated lap validation against physical theoretical minimums, preventing coordinate teleportation, forged lap times, and fabricated currency awards.
 - **Competitive Retention & Social Layer**: Real-time Elo rating, 4-tier milestone badges, seasonal championships, asynchronous ghost replays (`/replay`), daily UTC challenges, and Syndicate Crews with shared mileage pools.
 - **High-Performance WebGL & Zero-Allocation Loops**: Custom Three.js render loop with preallocated scratch vectors, instanced mesh geometry for track foliage and barriers, and half-rate minimap execution to eliminate garbage collection pauses.
-- **PWA & Offline Asset Strategy**: Dual web app manifests (`manifest.webmanifest` and `manifest-controller.webmanifest`) with versioned Service Worker caching (`sridhar-rush-v99`) for instant repeat visits.
+- **PWA & Offline Asset Strategy**: Dual web app manifests (`manifest.webmanifest` and `manifest-controller.webmanifest`) with versioned Service Worker caching (`sridhar-rush-v100`) for instant repeat visits.
 
 ---
 
@@ -116,7 +116,7 @@ flowchart TD
 
     subgraph Storage["Persistence & Edge Infrastructure"]
         Supabase["🐘 Supabase / PostgreSQL<br/>• Player Profiles & Stats<br/>• Row Level Security (RLS)<br/>• Seasonal Standings & Challenges"]
-        Vercel["⚡ Vercel Edge Network<br/>• Static PWA Distribution<br/>• Service Worker Cache (v99)<br/>• Dynamic OG Card Routing (/api/og)"]
+        Vercel["⚡ Vercel Edge Network<br/>• Static PWA Distribution<br/>• Service Worker Cache (v100)<br/>• Dynamic OG Card Routing (/api/og)"]
     end
 
     Desktop <-->|WebSocket RFC 6455| WS
@@ -207,6 +207,7 @@ SRIDHAR RUSH enforces a strict server-authoritative trust model to maintain comp
 
 - **Elo Rating & Divisions**: Full implementation of the Elo matchmaking rating system, grouping drivers into tiered divisions (*Bronze, Silver, Gold, Platinum, Diamond, Master*).
 - **Rivalry & Target Engine**: Identifies nearby rivals on the global ladder, displaying real-time rating point gaps and celebrating rank overtakes.
+- **Revenge Matches (+50% Bounty)**: Lose a rated race and the relay records a grudge against the driver who beat you — **on the track you lost on**. The lobby banner offers an instant rematch for +50% XP and coins, and winning consumes the grudge. Every record is normalized to one shape (both `map` and `mapId`, the real track name, an id clamped to a raceable circuit) and stored under **every** identity the racer owns (account uuid, device pid, display name), so a grudge earned as a guest is still honoured after signing in, accepting from the lobby builds the room on the right track, and shared `/?map=N` links open the correct circuit.
 - **Asynchronous Ghost Racing & Replay Theater**: Personal best laps generate compressed telemetry recordings. Players can challenge their own ghost, race friend ghosts via deep links (`/?g=UUID`), or view them top-down in `/replay.html`.
 - **Dynamic Weather & Grip**: Four weather presets (*Dry Asphalt, Wet Rain, Midnight Neon, Alpine Blizzard*) alter physics grip multipliers ($0.88\times \to 1.00\times$) and trigger dynamic rain/snow particle systems.
 - **Racing Syndicate Crews**: Players can form or join motorsport crews, pool weekly racing distance, earn Grand Prix points, and claim team milestone rewards. Club membership is resolved across **every** identity a racer is known by (account id, device pid, display name), so all members' distance and points are credited — including guests racing without an account — and no roster row is ever duplicated or lost.
@@ -225,7 +226,7 @@ SRIDHAR RUSH enforces a strict server-authoritative trust model to maintain comp
 | **Cosmetics** | Garage catalog with cars, paints, wheel rims, neon underglows, and animated exhaust trails. |
 | **Graphics** | Three.js WebGL rendering, instanced meshes, bloom post-processing, dynamic shadows, particle pools. |
 | **Audio** | Web Audio synthesizer with engine RPM harmonics, shift drops, skids, nitro whoosh, crash impacts. |
-| **Platform** | Installable PWA, offline Service Worker (`sridhar-rush-v99`), dual manifests, safe-area inset compliance. |
+| **Platform** | Installable PWA, offline Service Worker (`sridhar-rush-v100`), dual manifests, safe-area inset compliance. |
 | **Accessibility** | Reduced motion mode, colorblind UI palette, full keyboard navigation, ARIA screen-reader labels. |
 | **i18n** | Full game localization in English (`en`), Telugu (`te`), Hindi (`hi`), and Spanish (`es`). |
 
@@ -283,14 +284,14 @@ MULTIPLAYER-CAR-GAME/
 │   ├── manifest-controller.webmanifest # PWA manifest for standalone mobile controller
 │   ├── manifest.webmanifest       # PWA manifest for main racing game
 │   ├── replay.html                # Standalone ghost replay viewer
-│   └── sw.js                      # Service worker with versioned cache strategy (sridhar-rush-v99)
+│   └── sw.js                      # Service worker with versioned cache strategy (sridhar-rush-v100)
 ├── scripts/
 │   └── vercel-build.js            # Build script: copies shared modules and generates client config
 ├── shared/
 │   ├── cosmetics.js               # Vehicle stats, paints, decals, wheels, and neon catalog
 │   ├── game-core.js               # Core deterministic 30 Hz physics engine and track definitions
 │   └── progression.js             # XP curves, Elo calculations, badges, and milestone formulas
-├── test/                          # 12 test files / 23 suites covering gameplay, anti-cheat, networking, and the client render loop
+├── test/                          # 13 test files / 25 suites covering gameplay, anti-cheat, networking, the client render loop and retention
 ├── .gitignore                     # Git ignore rules
 ├── CONTRIBUTING.md                # Contribution guidelines and engineering principles
 ├── Dockerfile                     # Production Node.js container definition
@@ -391,25 +392,26 @@ npm install
 npm test
 ```
 
-### Test Suite Summary: `122 / 122 Passed (100%)`
+### Test Suite Summary: `138 / 138 Passed (100%)`
 
 | # | Test File | Suite | Tests | Result |
 | :---: | :--- | :--- | :---: | :---: |
 | 1 | `analytics.test.js` | Analytics Engine & Funnel Tracking | 8 | ✅ PASS |
 | 2 | `client-render-guard.test.js` | Client Snapshot Interpolator Guards — EXIT ROOM crash regression | 4 | ✅ PASS |
-| 3 | `cosmetics.test.js` | Garage Cosmetics & Economy System | 5 | ✅ PASS |
-| 4 | `crew-weather-ghost-photofinish.test.js` | V83 Feature Suite: Syndicate Crews, Weather, Ghost Racing Line & Photo Finish *(5 sub-suites)* | 20 | ✅ PASS |
-| 5 | `i18n.test.js` | Full-Game Internationalization (i18n) Engine | 5 | ✅ PASS |
-| 6 | `leaderboard.test.js` | Competitive Leaderboard, Anti-Cheat & Retention Math | 10 | ✅ PASS |
-| 7 | `multiplayer.test.js` | Authoritative Multiplayer Simulation, Rooms & Room Hopping | 19 | ✅ PASS |
-| 8 | `progression.test.js` | Progression Math & Authoritative Settlement | 6 | ✅ PASS |
-| 9 | `race.test.js` | Authoritative Race Lifecycle & Simulation | 11 | ✅ PASS |
-| 10 | `retention_v82.test.js` | Retention V82 Suite: Badges, Bounties, Revenge & Next Best Action *(6 sub-suites)* | 14 | ✅ PASS |
-| 11 | `rivals_missions_season.test.js` | Competitive Rivals, Ghost Racing, Daily Missions & Seasons | 10 | ✅ PASS |
-| 12 | `social.test.js` | Social Features, Challenges & Daily Rotations | 10 | ✅ PASS |
+| 3 | `client-revenge-map.test.js` | Client Revenge & Deep-Link Track Resolution | 7 | ✅ PASS |
+| 4 | `cosmetics.test.js` | Garage Cosmetics & Economy System | 5 | ✅ PASS |
+| 5 | `crew-weather-ghost-photofinish.test.js` | V83 Feature Suite: Syndicate Crews, Weather, Ghost Racing Line & Photo Finish *(5 sub-suites)* | 20 | ✅ PASS |
+| 6 | `i18n.test.js` | Full-Game Internationalization (i18n) Engine | 5 | ✅ PASS |
+| 7 | `leaderboard.test.js` | Competitive Leaderboard, Anti-Cheat & Retention Math | 10 | ✅ PASS |
+| 8 | `multiplayer.test.js` | Authoritative Multiplayer Simulation, Rooms & Room Hopping | 21 | ✅ PASS |
+| 9 | `progression.test.js` | Progression Math & Authoritative Settlement | 6 | ✅ PASS |
+| 10 | `race.test.js` | Authoritative Race Lifecycle & Simulation | 11 | ✅ PASS |
+| 11 | `retention_v82.test.js` | Retention V82 Suite: Badges, Bounties, Revenge & Next Best Action *(7 sub-suites)* | 21 | ✅ PASS |
+| 12 | `rivals_missions_season.test.js` | Competitive Rivals, Ghost Racing, Daily Missions & Seasons | 10 | ✅ PASS |
+| 13 | `social.test.js` | Social Features, Challenges & Daily Rotations | 10 | ✅ PASS |
 
 ```
-Total: 122 tests | 23 suites | 0 failed | 0 skipped | Duration: ~3.5s
+Total: 138 tests | 25 suites | 0 failed | 0 skipped | Duration: ~4.4s
 ```
 
 ---
@@ -455,9 +457,9 @@ Click the **`🌐 Language`** button in the top navigation bar or change languag
 | **No Sound / Audio Silent** | Browser autoplay policy requires an initial user interaction. | Click or tap anywhere on the screen to resume the Web Audio context. |
 | **Phone Controller Cannot Connect** | Phone and laptop are on different networks or firewall blocks port. | Ensure your device has internet access and can reach the WebSocket host. |
 | **Low FPS on Old Hardware** | High-end bloom shaders or resolution saturation. | Open **Settings** and set GFX to **LOW** or **MED**, or enable **Adaptive Resolution**. |
-| **Car Feels Too Twitchy / Too Loose** | The default steering response does not suit the driver's device or taste (most reported on phones, where the touch buttons command full lock). | Open **Settings** and drag **🎚️ Steering Sensitivity** down for calmer steering or up for a quicker wheel. It applies instantly — mid-race included — and is remembered per device. |
+| **Revenge / Challenge Race Starts on the Wrong Track** | A stale Service Worker is still serving a pre-`v93` client, which read the grudge record's track from the wrong field. | Hard-refresh (Ctrl / Cmd + Shift + R) to pull the `v100` assets; the banner then names the real circuit and START builds the room on it. |\n| **Car Feels Too Twitchy / Too Loose** | The default steering response does not suit the driver's device or taste (most reported on phones, where the touch buttons command full lock). | Open **Settings** and drag **🎚️ Steering Sensitivity** down for calmer steering or up for a quicker wheel. It applies instantly — mid-race included — and is remembered per device. |
 | **Gyro Steering Inverted / Unresponsive** | iOS Safari requires explicit permission for motion sensors. | Tap **`GYRO`** on the phone controller and approve the device motion permission prompt. |
-| **Club Distance / Points Stuck at 0 for Teammates** | A stale Service Worker cache is still serving an old client build. | Hard-refresh (Ctrl / Cmd + Shift + R) to pull the `v99` assets. Server build `v92` credits every member identity, so mileage keeps accruing even before the refresh. |
+| **Club Distance / Points Stuck at 0 for Teammates** | A stale Service Worker cache is still serving an old client build. | Hard-refresh (Ctrl / Cmd + Shift + R) to pull the `v100` assets. Server build `v92` credits every member identity, so mileage keeps accruing even before the refresh. |
 
 ---
 

@@ -890,7 +890,104 @@ app.get('/api/player/competitive-stats', async (req, res) => {
 // ---------------------------------------------------------------------------
 const memPlayerMissions = new Map(); // `${dateKey}:${uid}` -> Map<missionId, { progress, completed, claimed }>
 const memEquippedBadges = new Map(); // uid -> badgeId
-const memRevengeTargets = new Map(); // uid -> [ { targetUid, targetName, mapId, targetRating, issuedAt } ]
+const memRevengeTargets = new Map(); // identity key -> [ { targetUid, targetName, map, mapId, mapName, targetRating, issuedAt } ]
+
+// ---------------------------------------------------------------------------
+// v93 REVENGE MATCH FIX. Three things used to break the "settle the score on
+// the track where you lost" flow:
+//   1. shape  - settlement wrote { mapId } while the client read `.map`, so the
+//      banner said "on Circuit" and accepting always forced map 0 (Highland).
+//   2. reach  - settlement keyed the store by the verified Supabase uuid (or the
+//      car's display name for guests) while the client polled by display name
+//      (or prefs.pid), so the earned banner was usually never found at all.
+//   3. range  - the map id was never clamped, so ?map=99 produced a record no
+//      track could satisfy and setMap() silently refused.
+// Every record now goes through one normalizer (both keys, real map name,
+// clamped id) and is written under EVERY identity the racer is known by, using
+// the same alias normalisation the club sync (v90) already relies on.
+// ---------------------------------------------------------------------------
+const REVENGE_MAX = 5;
+
+// returns null when the id does not name a real track, so each caller can decide
+// between "fall back to track 0" (records) and "refuse" (live room changes)
+function validMapId(v) {
+  const n = parseInt(v, 10);
+  return (isFinite(n) && core.MAPS[n]) ? n : null;
+}
+
+function normalizeRevengeTarget(t) {
+  if (!t || !t.targetUid) return null;
+  const v = validMapId(t.map != null ? t.map : t.mapId);
+  const mapId = v == null ? 0 : v; // a record always names a real track
+  return {
+    targetUid: String(t.targetUid).slice(0, 64),
+    targetName: String(t.targetName || 'RIVAL').slice(0, 24),
+    map: mapId,       // what the client has always read
+    mapId,            // what settlement used to write - kept for compatibility
+    mapName: (core.MAPS[mapId] || {}).name || 'Circuit',
+    targetRating: parseInt(t.targetRating, 10) || 1000,
+    issuedAt: t.issuedAt || new Date().toISOString()
+  };
+}
+
+// Lookups tolerate the normalized alias keys (what the club sync uses) AND the
+// raw strings, because pre-v93 records were stored under whatever the settlement
+// happened to hold - a uuid for signed-in racers, a capitalized display name for
+// guests - and those rows must keep resolving after the upgrade.
+function revengeKeys(ids, strongOnly) {
+  const out = (strongOnly ? crewStrongKeys(ids) : crewKeysFor(ids)).slice();
+  const push = (v) => { const k = v == null ? '' : String(v).trim(); if (k && out.indexOf(k) === -1) out.push(k); };
+  if (ids) {
+    push(ids.uid); push(ids.sbUid); push(ids.pid);
+    if (!strongOnly) push(ids.name);
+    if (Array.isArray(ids.aliases)) for (const a of ids.aliases) push(a);
+  }
+  return out;
+}
+
+// store under every identity this racer owns (uuid, sb:uuid, device pid, name)
+function addRevengeTarget(ids, target) {
+  const rec = normalizeRevengeTarget(target);
+  if (!rec) return null;
+  for (const k of revengeKeys(ids, false)) {
+    const list = memRevengeTargets.get(k) || [];
+    const i = list.findIndex((x) => x && x.targetUid === rec.targetUid);
+    if (i >= 0) list[i] = rec; else list.push(rec);
+    memRevengeTargets.set(k, list.slice(-REVENGE_MAX));
+  }
+  return rec;
+}
+
+// read back through any of those identities, deduped, newest first
+function readRevengeTargets(ids, strongOnly) {
+  const keys = revengeKeys(ids, !!strongOnly);
+  const out = []; const seen = {};
+  for (const k of keys) {
+    for (const t of (memRevengeTargets.get(k) || [])) {
+      const rec = normalizeRevengeTarget(t);
+      if (rec && !seen[rec.targetUid]) { seen[rec.targetUid] = 1; out.push(rec); }
+    }
+  }
+  out.sort((a, b) => String(b.issuedAt).localeCompare(String(a.issuedAt)));
+  return out;
+}
+
+function clearRevengeTarget(ids, targetUid) {
+  for (const k of revengeKeys(ids, false)) {
+    const list = memRevengeTargets.get(k);
+    if (list && list.length) memRevengeTargets.set(k, list.filter((t) => t && t.targetUid !== targetUid));
+  }
+}
+
+// the identities settlement knows for a finished racer
+function revengeIdsFor(entry, slot, uid, name) {
+  return {
+    uid,
+    sbUid: entry && entry.uidBySlot ? entry.uidBySlot[slot] : null,
+    pid: entry && entry.pidBySlot ? entry.pidBySlot[slot] : null,
+    name: name || null
+  };
+}
 const memWeeklyBounties = new Map(); // `${weekKey}:${uid}` -> Map<bountyId, { progress, completed, claimed }>
 
 function getOrInitWeeklyBounties(wKey, uid) {
@@ -1163,8 +1260,13 @@ app.post('/api/player/badge/equip', async (req, res) => {
 // v82 Revenge Match Engine
 app.get('/api/player/revenge', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  const uid = req.query.uid || req.query.pid;
-  const list = (uid && memRevengeTargets.get(uid)) || [];
+  const q = req.query || {};
+  const uid = q.uid || q.pid;
+  if (!uid && !q.sbUid && !q.name) return res.json({ ok: true, targets: [], revengeTargets: [] });
+  // v93: the browser sends every identity it owns (like the club calls do), so a
+  // target written under the verified uuid is still found when the poll arrives
+  // with the display name or the device pid.
+  const list = readRevengeTargets({ uid, sbUid: q.sbUid, pid: q.pid, name: q.name, aliases: q.aliases });
   res.json({ ok: true, targets: list, revengeTargets: list });
 });
 
@@ -1173,25 +1275,17 @@ app.post('/api/player/revenge/issue', async (req, res) => {
   const b = req.body || {};
   const uid = req.query.uid || b.uid;
   const targetUid = req.query.targetUid || b.targetUid;
-  const mapId = Math.max(0, parseInt(req.query.map || b.map || 0, 10));
+  const vm = validMapId(req.query.map != null ? req.query.map : (b.map != null ? b.map : b.mapId));
+  const mapId = vm == null ? 0 : vm; // v93 clamped to a real track
   if (!uid || !targetUid) return res.status(400).json({ ok: false, error: 'MISSING_PARAMS' });
 
-  const curRevs = memRevengeTargets.get(uid) || [];
-  const targetObj = {
-    targetUid,
-    targetName: b.targetName || 'RIVAL',
-    map: mapId,
-    mapId,
-    targetRating: parseInt(b.targetRating || 1000, 10),
-    issuedAt: new Date().toISOString()
-  };
-  if (!curRevs.some(rt => rt.targetUid === targetUid)) {
-    curRevs.push(targetObj);
-    memRevengeTargets.set(uid, curRevs.slice(-5));
-  }
+  const targetObj = addRevengeTarget(
+    { uid, sbUid: b.sbUid || req.query.sbUid, pid: b.pid || req.query.pid, name: b.name || req.query.name },
+    { targetUid, targetName: b.targetName || 'RIVAL', map: mapId, targetRating: b.targetRating, issuedAt: new Date().toISOString() }
+  );
   const shareMsg = prog.formatCompetitiveShare('revenge_challenge', {
-    mapName: (core.MAPS[mapId] || {}).name || 'Circuit',
-    link: `https://sridharrush.com/?map=${mapId}`
+    mapName: targetObj.mapName,
+    link: `https://sridharrush.com/?map=${targetObj.map}`
   });
   res.json({ ok: true, shareMsg, target: targetObj });
 });
@@ -2033,7 +2127,10 @@ async function settleRace(entryOrRoom) {
 
     // v82 Revenge match evaluation
     let revengeAwarded = null;
-    const revList = memRevengeTargets.get(h.uid) || [];
+    // v93: look the grudge up through every strong identity this racer owns, not
+    // just the settlement uid, and read the normalized record shape.
+    const revIds = revengeIdsFor(entry, h.c.slot, h.uid, h.c.name);
+    const revList = readRevengeTargets(revIds, true);
     if (win && revList.length && humans.length >= 2) {
       const targetOpponent = humans.find(o => o.uid !== h.uid && revList.some(rt => rt.targetUid === o.uid));
       if (targetOpponent) {
@@ -2045,23 +2142,21 @@ async function settleRace(entryOrRoom) {
             xpBonus: revEval.xpBonus,
             coinsBonus: revEval.coinsBonus
           };
-          memRevengeTargets.set(h.uid, revList.filter(rt => rt.targetUid !== targetOpponent.uid));
+          clearRevengeTarget(revIds, targetOpponent.uid); // v93 consumed under every identity
         }
       }
     } else if (!win && rated && humans.length >= 2) {
       const winnerHuman = humans.find((_, idx) => order.indexOf(humans[idx].c) === 0);
       if (winnerHuman && winnerHuman.uid !== h.uid) {
-        const curRevs = memRevengeTargets.get(h.uid) || [];
-        if (!curRevs.some(rt => rt.targetUid === winnerHuman.uid)) {
-          curRevs.push({
-            targetUid: winnerHuman.uid,
-            targetName: winnerHuman.c.name || 'RIVAL',
-            mapId: room.mapId,
-            targetRating: (stats[winnerHuman.uid] || {}).rating || 1000,
-            issuedAt: new Date().toISOString()
-          });
-          memRevengeTargets.set(h.uid, curRevs.slice(-5));
-        }
+        // v93: same normalized record + same identity set as every other writer,
+        // so the track you lost on is the track the banner offers.
+        addRevengeTarget(revIds, {
+          targetUid: winnerHuman.uid,
+          targetName: winnerHuman.c.name || 'RIVAL',
+          map: room.mapId,
+          targetRating: (stats[winnerHuman.uid] || {}).rating || 1000,
+          issuedAt: new Date().toISOString()
+        });
       }
     }
 
@@ -2658,9 +2753,22 @@ function handleMessage(client, msg) {
       break;
     }
 
-    case 'map':
-      if (client.entry && client.role === 'screen' && (client.entry.screens.size < 3 || client.slot === hostSlot(client.entry))) client.entry.room.setMap(msg.map); // v76/v77 host-only 3+
+    case 'map': {
+      if (!client.entry || client.role !== 'screen') break;
+      const en = client.entry;
+      // v93: an id that names no track is ignored rather than clamped to 0 -
+      // silently moving a room to Highland would be worse than doing nothing,
+      // and the 30 Hz snapshot repaints the client's wizard either way.
+      const wantMap = validMapId(msg.map);
+      if (wantMap == null) break;
+      if (en.screens.size < 3 || client.slot === hostSlot(en)) { // v76/v77 host-only 3+
+        // setMap() only works while the room is waiting; say so instead of nothing
+        if (!en.room.setMap(wantMap)) sendJSON(client.ws, { type: 'error', code: 'map-in-race', map: en.room.mapId });
+      } else {
+        sendJSON(client.ws, { type: 'error', code: 'map-host-only', map: en.room.mapId }); // v93
+      }
       break;
+    }
 
     case 'weather':
       if (client.entry && client.role === 'screen' && (client.entry.screens.size < 3 || client.slot === hostSlot(client.entry))) {
@@ -2780,8 +2888,19 @@ function handleMessage(client, msg) {
     case 'start': {
       if (!client.entry && (client.role === 'screen' || client.role === 'lobby')) {
         const mode = msg.mode === 'coop' ? 'coop' : 'race';
-        const entry = newRoom(mode, msg.map || 0, mode === 'coop' ? 2 : 6);
+        const entry = newRoom(mode, validMapId(msg.map), mode === 'coop' ? 2 : 6); // v93 the chosen track, not map 0
         joinRoom(client, entry, 'screen', msg);
+        // v93: the client now ships its identity with start, so an on-demand room
+        // seats the real driver (name / class / colour / sensitivity / laps)
+        // instead of the seat defaults.
+        if (client.slot) {
+          if (msg.pid) { entry.pidBySlot = entry.pidBySlot || {}; entry.pidBySlot[client.slot] = String(msg.pid).slice(0, 64); }
+          if (msg.laps != null) entry.room.setLaps(msg.laps);
+          if (msg.bot != null) entry.room.setBot(msg.bot);
+          if (msg.weather != null) entry.room.setWeather(msg.weather);
+          if (msg.name || msg.color || msg.cls || msg.sens != null) entry.room.setPlayerMeta(client.slot, msg);
+          if (msg.cos || msg.title) entry.room.cars[client.slot - 1].setCos(msg.cos, msg.title);
+        }
       }
       if (client.entry && client.role === 'screen') {
         const en = client.entry;
@@ -3064,7 +3183,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v92', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v93', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
@@ -3101,6 +3220,13 @@ module.exports = {
   memPlayerMissions,
   memEquippedBadges,
   memRevengeTargets,
+  addRevengeTarget,
+  readRevengeTargets,
+  clearRevengeTarget,
+  normalizeRevengeTarget,
+  revengeKeys,
+  validMapId,
+  revengeIdsFor,
   memWeeklyBounties,
   getOrInitWeeklyBounties,
   getAllRatingRows,

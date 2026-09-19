@@ -507,4 +507,60 @@ describe('Authoritative Multiplayer Simulation & Rooms', () => {
     assert.equal(client.entry.room.cars[client.slot - 1].sens, 0.55, 'a failed hop must not change anything');
     assert.equal(ws.findSent('error').filter((e) => e.reason === 'no-room').length, 1);
   });
+
+  test('v93: a lobby START creates the room on the requested track with the real driver', () => {
+    // The revenge / challenge accept path clicks START from the lobby. A bare
+    // { type: 'start' } used to make the relay build the room on map 0 with the
+    // seat defaults, so a grudge race never ran on the track it was issued on.
+    const ws = createMockWS();
+    const client = { ws, entry: null, slot: 0, role: null, pid: 'p-start' };
+    handleMessage(client, { type: 'hello', role: 'screen', lobby: true, pid: 'p-start' });
+    assert.equal(client.role, 'lobby', 'parked in the lobby pool, no room yet');
+
+    handleMessage(client, { type: 'start', map: 3, laps: 5, name: 'TrackChooser', cls: 'grip', sens: 0.7, pid: 'p-start' });
+    assert.equal(client.role, 'screen', 'start from the lobby seats the driver');
+    assert.equal(client.entry.room.mapId, 3, 'the room is created on the chosen track, not map 0');
+    const car = client.entry.room.cars[client.slot - 1];
+    assert.equal(car.name, 'TrackChooser', 'the driver identity rides along with start');
+    assert.equal(car.cls.name, 'GRIP', 'the chosen car class is applied');
+    assert.equal(car.sens, 0.7, 'steering sensitivity is applied');
+    assert.equal(client.entry.room.laps, 5, 'lap count is applied');
+    handleMessage(client, { type: 'laps', laps: 2 });
+    assert.equal(client.entry.room.laps, 5, 'setLaps only accepts 1/3/5, so an illegal count is refused');
+
+    // an unknown track id falls back to a real one instead of breaking the room
+    const ws2 = createMockWS();
+    const c2 = { ws: ws2, entry: null, slot: 0, role: null, pid: 'p-start2' };
+    handleMessage(c2, { type: 'hello', role: 'screen', lobby: true, pid: 'p-start2' });
+    handleMessage(c2, { type: 'start', map: 99, name: 'Junk' });
+    assert.equal(c2.entry.room.mapId, 0, 'junk map ids still create a raceable room');
+  });
+
+  test('v93: a refused track change is reported to the racer, not silently dropped', () => {
+    const entry = newRoom('race', 0, 6);
+    const code = entry.room.code;
+    const seat = (pid) => {
+      const ws = createMockWS();
+      const c = { ws, entry: null, slot: 0, role: null, pid };
+      handleMessage(c, { type: 'hello', role: 'screen', room: code, pid, name: pid });
+      return c;
+    };
+    const host = seat('p-host'); const second = seat('p-second'); const third = seat('p-third');
+    assert.equal(host.slot, 1, 'the lowest seat hosts');
+    assert.equal(entry.screens.size, 3, 'three screens = host-only track changes');
+    assert.equal(entry.room.mapId, 0);
+
+    handleMessage(third, { type: 'map', map: 2 });
+    assert.equal(entry.room.mapId, 0, 'a non-host change must not apply');
+    const refused = third.ws.findSent('error').filter((e) => e.code === 'map-host-only');
+    assert.equal(refused.length, 1, 'the racer is told why instead of watching nothing happen');
+    assert.equal(refused[0].map, 0, 'the refusal carries the authoritative track so the wizard repaints');
+
+    handleMessage(host, { type: 'map', map: 2 });
+    assert.equal(entry.room.mapId, 2, 'the host still changes the track');
+    assert.equal(host.ws.findSent('error').filter((e) => e.code === 'map-host-only').length, 0);
+
+    handleMessage(second, { type: 'map', map: 99 });
+    assert.equal(entry.room.mapId, 2, 'an id naming no track is ignored rather than clamped to Highland');
+  });
 });

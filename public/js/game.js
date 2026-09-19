@@ -2160,6 +2160,63 @@ function spawnSkid(x, z, heading) {
 let pingMs = -1;
 let fps = 0, fpsFrames = 0, fpsTime = 0;
 let selectedMap = 0;
+
+// ---------------------------------------------------------------------------
+// v93 REVENGE / DEEP-LINK TRACK RESOLUTION (pure helpers, unit-tested by
+// lifting them out of this file in test/client-revenge-map.test.js).
+// A revenge target used to arrive as { mapId } while this code read `.map`, so
+// the banner said "on Circuit" and accepting always forced map 0. Every track
+// choice that does not come from a tap on a map card now resolves through here.
+// ---------------------------------------------------------------------------
+function validMapId(m) {
+  const n = parseInt(m, 10);
+  return (isFinite(n) && CORE.MAPS[n]) ? n : null;
+}
+function revengeMapOf(t) {
+  if (!t) return 0;
+  const m = validMapId(t.map != null ? t.map : t.mapId);
+  return m == null ? 0 : m;
+}
+function resolveMapParam(search) {
+  try {
+    const raw = new URLSearchParams(search || '').get('map');
+    return raw == null ? null : validMapId(raw);
+  } catch (e) { return null; }
+}
+function paintMapCards(map) {
+  document.querySelectorAll('.map-card').forEach((b) => b.classList.toggle('active', parseInt(b.dataset.map, 10) === map));
+}
+// Applies a track chosen programmatically (revenge, challenge, deep link):
+// paints the wizard first, because without it the setup page keeps showing the
+// previous circuit while the room runs the new one, then either retunes the room
+// we are in or creates one carrying the map AND the full identity - a bare
+// { type: 'start' } from the lobby made the relay build a room on map 0 with a
+// default driver, which is the other half of the revenge-map bug.
+function acceptMapChoice(m) {
+  const v = validMapId(m);
+  const map = v == null ? 0 : v;
+  selectedMap = map;
+  paintMapCards(map);
+  if (inARoom()) net.send({ type: 'map', map });
+  else ensureRoomCreated();
+  return map;
+}
+// every START now carries the chosen track + identity (see acceptMapChoice)
+function startPayload() {
+  return Object.assign({ type: 'start', map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload());
+}
+// v93: ship every identity this browser owns, the way the club calls do, so a
+// grudge recorded under the verified account uuid is still found when the poll
+// runs with the display name or the device pid.
+function revengeQuery(uid) {
+  const ids = (typeof crewIdentity === 'function') ? crewIdentity() : {};
+  const p = new URLSearchParams();
+  p.set('uid', uid || ids.uid || '');
+  if (ids.sbUid) p.set('sbUid', ids.sbUid);
+  if (ids.pid) p.set('pid', ids.pid);
+  if (ids.name) p.set('name', ids.name);
+  return p.toString();
+}
 let viewMode = 'race';
 let lastResults = null;
 
@@ -2585,11 +2642,24 @@ function renderChallengeBanner(ch) {
   if (cta) {
     cta.onclick = () => {
       b.style.display = 'none';
-      selectedMap = ch.map;
+      acceptMapChoice(ch.map); // v93: same path as revenge - paint the wizard, retune or create the room
       const sb = $('start-btn'); if (sb) sb.click();
     };
   }
 }
+
+// v93: honour ?map=N. The revenge-challenge share message points at
+// https://sridharrush.com/?map=3 and nothing ever read it, so every shared
+// grudge race opened on Highland instead of the track it was issued on.
+// Placed before the challenge bootstrap so an explicit ?ch= still wins.
+(function () {
+  const m = resolveMapParam(location.search);
+  if (m == null) return;
+  selectedMap = m;
+  paintMapCards(m);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => paintMapCards(m));
+  track('map_deeplink', m, { src: 'query' });
+})();
 
 (function () {
   const numId = (location.search.match(/[?&]ch=(\d+)/) || [])[1];
@@ -3602,7 +3672,7 @@ async function fetchAndRenderRetention() {
       fetch(`${base}/api/player/streak?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
       fetch(`${base}/api/season?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
       fetch(`${base}/api/player/next-action?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
-      fetch(`${base}/api/player/revenge?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null)
+      fetch(`${base}/api/player/revenge?${revengeQuery(uid)}`).then(r => r.json()).catch(() => null) // v93 all identities
     ]);
 
     // 0. Next Best Action hero
@@ -3632,14 +3702,20 @@ async function fetchAndRenderRetention() {
     const revBanner = $('revenge-banner');
     if (revBanner && revRes && revRes.ok && revRes.targets && revRes.targets.length) {
       const topRev = revRes.targets[0];
+      const revMap = revengeMapOf(topRev); // v93: map ?? mapId, clamped to a real track
+      const revTrack = topRev.mapName || (CORE.MAPS[revMap] || {}).name || 'Circuit';
       const rMsg = $('rev-msg');
-      if (rMsg) rMsg.textContent = `Settle the score against ${escapeHtml(topRev.targetName || 'Rival')} on ${((CORE.MAPS[topRev.map] || {}).name || 'Circuit')} (+50% XP & Coins)!`;
+      if (rMsg) {
+        rMsg.textContent = (typeof tI18n === 'function' ? tI18n('revengeBannerText', { rival: topRev.targetName || 'Rival', track: revTrack }) : null)
+          || ('Settle the score against ' + (topRev.targetName || 'Rival') + ' on ' + revTrack + ' (+50% XP & Coins)!');
+      }
       const rBtn = $('rev-accept-btn');
       if (rBtn) {
         rBtn.onclick = () => {
-          selectedMap = topRev.map || 0;
-          net.send({ type: 'map', map: selectedMap });
           revBanner.style.display = 'none';
+          acceptMapChoice(revMap); // v93: paints the wizard AND gets the map to the relay
+          toast((typeof tI18n === 'function' ? tI18n('revengeAcceptToast', { track: revTrack }) : null) || ('⚔️ Revenge match on ' + revTrack));
+          track('revenge_accept', revMap, { target: topRev.targetUid });
           const sb = $('start-btn'); if (sb) sb.click();
         };
       }
@@ -4330,9 +4406,11 @@ function renderProfile() {
   const br = $('beat-rival');
   if (br) br.onclick = () => {
     if (p.rival && p.rival.map != null) {
-      net.send({ type: 'map', map: p.rival.map });
-      selectedMap = p.rival.map;
-      toast('⚔️ Rival\'s track loaded — START when ready!');
+      // v93: was a bare { type: 'map' } that the relay dropped when the racer was
+      // still in the lobby pool, so the toast claimed a track that never loaded.
+      const rm = acceptMapChoice(p.rival.map);
+      const trackName = (CORE.MAPS[rm] || {}).name || 'Circuit';
+      toast((typeof tI18n === 'function' ? tI18n('rivalTrackLoaded', { track: trackName }) : null) || ('⚔️ Rival\'s track loaded (' + trackName + ') — START when ready!'));
     }
   };
   if (typeof document !== 'undefined' && document.querySelectorAll) fillMapMeta();
@@ -4652,7 +4730,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v92';
+const BUILD = 'v93';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -4774,6 +4852,18 @@ const net = new RoomLink({
       }
       case 'error':
         if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!');
+        else if (msg.code === 'map-host-only') {
+          // v93: only the host picks the track in a 3+ racer room. Repaint from the
+          // authoritative map so the wizard never promises a circuit we are not on.
+          const rm = validMapId(msg.map);
+          if (rm != null) { selectedMap = rm; paintMapCards(rm); }
+          toast((typeof tI18n === 'function' ? tI18n('mapHostOnly') : null) || '🔒 Only the host can change the track in a 3+ racer room');
+        }
+        else if (msg.code === 'map-in-race') {
+          const rm2 = validMapId(msg.map);
+          if (rm2 != null) { selectedMap = rm2; paintMapCards(rm2); }
+          toast((typeof tI18n === 'function' ? tI18n('mapInRace') : null) || '🏁 The track changes after this race — finish first');
+        }
         else if (msg.code === 'join-failed') {
           // v91: the relay refused the hop, so we are still seated where we were
           clearRoomHop();
@@ -4917,7 +5007,7 @@ if (qpBtn) qpBtn.addEventListener('click', () => {
   setTimeout(() => { // v59: never leave players stuck searching
     if (qpBtn.disabled && latest && latest.state === 'waiting') {
       toast('No rival found — racing AI 🤖');
-      net.send({ type: 'start' });
+      net.send(startPayload()); // v93 carries the chosen track + identity
       qpBtn.disabled = false; qpBtn.textContent = '⚡ QUICK PLAY — find a rival';
     }
   }, 8000);
@@ -5855,7 +5945,7 @@ $('start-btn').addEventListener('click', () => {
   TT.on = mode3 !== 'mp'; TT.practice = mode3 === 'practice'; TT.done = false;
   if (TT.on) { net.send({ type: 'bot', bot: false }); net.send({ type: 'record', record: !TT.practice }); }
   else net.send({ type: 'record', record: true });
-  net.send({ type: 'start' });
+  net.send(startPayload()); // v93 carries the chosen track + identity
   const p = Pget();
   if (p && p.races >= 1) track('second_race', selectedMap);
   track('race', selectedMap);
@@ -6137,7 +6227,7 @@ $('rematch-btn').addEventListener('click', () => {
   $('results').classList.add('hidden');
   const humanRival = latest && latest.cars && latest.cars.filter((c) => c && c.p === 1 && c.s !== mySlot).length > 0 && !latest.bot;
   if (humanRival) { net.send({ type: 'rematch' }); toast('🔁 Rematch requested — waiting for rival…'); }
-  else net.send({ type: 'start' });
+  else net.send(startPayload()); // v93 carries the chosen track + identity
   track('second_race', selectedMap);
   track('race', selectedMap);
   if (humanRival) track('multiplayer', selectedMap);

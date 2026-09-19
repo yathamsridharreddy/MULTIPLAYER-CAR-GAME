@@ -35,6 +35,7 @@ describe('Full-Game Internationalization (i18n) Engine', () => {
       'leaderboard', 'compHub', 'globalRating', 'trackRecords', 'dailyCup', 'foundersCup',
       'driverProfile', 'settings',
       'sensLabel', 'sensHint', 'sensReset', 'sensResetDone', // v92 steering sensitivity slider
+      'revengeBannerText', 'revengeAcceptToast', 'mapHostOnly', 'mapInRace', 'rivalTrackLoaded', // v93 revenge track
       'selectMode', 'modeMultiplayer', 'modeTimeTrial', 'modePractice',
       'mapTitle', 'mapHighland', 'mapNeon', 'mapIsland', 'mapCanyon', 'mapHairpin',
       'weatherTitle', 'wDry', 'wWet', 'wNight', 'wBlizzard',
