@@ -113,6 +113,69 @@
       } catch (e) { return { error: 'NETWORK' }; }
     },
 
-    logout() { save(null); },
+    // v119: forgot-password flow (GoTrue REST, no SDK).
+    // Sends the recovery mail; the link in it returns to /auth.html carrying
+    // either #access_token=...&type=recovery (implicit) or a PKCE code that
+    // leaves a recovery session behind - consumeRecovery() handles both.
+    async recover(email) {
+      try {
+        const r = await fetch(url + '/auth/v1/recover', {
+          method: 'POST', headers: hdrs(),
+          body: JSON.stringify({ email, redirect_to: location.origin + '/auth.html' }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return { error: j.msg || j.error_description || ('Could not send reset link (' + r.status + ')') };
+        return { ok: true };
+      } catch (e) { return { error: 'NETWORK' }; }
+    },
+
+    // v119: set a new password using the recovery session (PUT /auth/v1/user).
+    async updatePassword(password) {
+      await ensure();
+      if (!ses || !ses.access_token) return { error: 'NOAUTH' };
+      try {
+        const r = await fetch(url + '/auth/v1/user', {
+          method: 'PUT', headers: hdrs(ses.access_token), body: JSON.stringify({ password }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return { error: j.msg || j.error_description || ('Password change failed (' + r.status + ')') };
+        return { ok: true };
+      } catch (e) { return { error: 'NETWORK' }; }
+    },
+
+    // v119: if the URL carries a recovery token (email link), adopt it as the
+    // session and clean the address bar. Returns true when a recovery session
+    // is now active, so the page can show the "set a new password" view.
+    consumeRecovery() {
+      try {
+        const raw = location.hash.replace(/^#/, '') + '&' + location.search.replace(/^\?/, '');
+        const q = new URLSearchParams(raw);
+        if (q.get('type') !== 'recovery') return false;
+        const at = q.get('access_token'), rt = q.get('refresh_token');
+        if (at) {
+          save({
+            access_token: at, refresh_token: rt || '',
+            expires_at: (Date.now() / 1000) + (Number(q.get('expires_in')) || 3600),
+            uid: '', email: q.get('email') || '',
+          });
+        }
+        history.replaceState(null, '', location.pathname);
+        return !!(ses && ses.access_token);
+      } catch (e) { return false; }
+    },
+
+    logout() { save(null); try { localStorage.removeItem(NKEY); } catch (e) {} },  // v122: clear name on sign out so lobby never shows previous racer
   };
+
+  // v119: a stored-but-dead session must never strand the lobby. If the token
+  // is expired and cannot be refreshed, clear it and send the racer back to
+  // the account gate (main page only - the phone controller stays open).
+  if (url && key && ses && isExp()) {
+    refresh().then((ok) => {
+      if (ok) return;
+      save(null);
+      const p = location.pathname;
+      if (p === '/' || p === '/index.html' || p === '') location.replace('auth.html');
+    });
+  }
 })();

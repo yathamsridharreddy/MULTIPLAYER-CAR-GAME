@@ -443,6 +443,7 @@ h1 span {
 .lobby-code {
   display: flex;
   align-items: center;
+  flex-wrap: wrap; /* v91: room row now carries COPY / CREATE / JOIN / EXIT ROOM */
   gap: 8px;
   font: 700 12px var(--font-tech);
   letter-spacing: 1.5px;
@@ -1212,11 +1213,35 @@ h1 span {
   white-space: nowrap;
 }
 
+.btab:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #d7e3f0;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* v97: the three inactive hub tabs read as "greyed out / disabled" because nothing
+   told the eye they were buttons. They were never disabled - they were unwired - but
+   the flat dim state hid that. Give them the same affordance as every other control,
+   and a visible focus ring for keyboard and switch access. */
+.btab:focus-visible {
+  outline: 2px solid var(--cyber-cyan);
+  outline-offset: 2px;
+}
+
+.btab:active {
+  transform: translateY(1px);
+}
+
 .btab.active {
   background: var(--cyber-cyan);
   color: #05070c;
   border-color: var(--cyber-cyan);
   box-shadow: 0 0 14px var(--cyber-cyan-glow);
+}
+
+.btab.active:hover {
+  background: var(--cyber-cyan);
+  color: #05070c;
 }
 
 .comp-filter-row {
@@ -2653,6 +2678,15 @@ h1 span {
   gap: 6px;
 }
 
+.g-thumb {
+  width: 100%;
+  height: 78px;
+  object-fit: contain;
+  background: radial-gradient(120% 90% at 50% 20%, #16204011 0%, #0b1020 70%), #0b1020;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+}
+
 .g-car.sel {
   border-color: var(--cyber-cyan);
   box-shadow: 0 0 16px rgba(0, 240, 255, 0.3);
@@ -3225,4 +3259,150 @@ h1 span {
   .card-row { grid-template-columns: 1fr 1fr; }
   .weather-row { grid-template-columns: 1fr; }
   .rmc-body { grid-template-columns: 1fr; gap: 6px; }
+}
+
+/* ==========================================================================
+   v92 STEERING SENSITIVITY — phone-brightness style slider (Settings tab)
+   The filled portion of the track is driven by --fill, which game.js writes on
+   every input event (50%..150% -> 0%..100% of the track).
+   ========================================================================== */
+.sens-block {
+  margin: 2px 0 14px;
+  padding: 12px 14px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, rgba(0, 240, 255, 0.07), rgba(0, 240, 255, 0.02)),
+    var(--bg-glass-inset);
+}
+
+.sens-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.sens-title {
+  font: 900 12px var(--font-display);
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: #ffffff;
+}
+
+.sens-val {
+  font: 900 19px var(--font-display);
+  color: var(--cyber-cyan);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 14px var(--cyber-cyan-glow);
+  transition: transform 0.14s ease, color 0.14s ease;
+}
+
+.sens-val.pop { transform: scale(1.2); color: #ffffff; }
+
+.sens-track-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sens-end { font-size: 15px; line-height: 1; opacity: 0.7; user-select: none; }
+
+/* 44px tall hit area: this is mostly used on phones, thumbs are fat */
+#set-sens {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 44px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+
+#set-sens::-webkit-slider-runnable-track {
+  height: 12px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg,
+      var(--cyber-cyan) 0%,
+      var(--cyber-cyan) var(--fill, 50%),
+      rgba(255, 255, 255, 0.12) var(--fill, 50%),
+      rgba(255, 255, 255, 0.12) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 16px rgba(0, 240, 255, 0.18);
+}
+
+#set-sens::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -8px;
+  border-radius: 50%;
+  border: 2px solid #04121a;
+  background: radial-gradient(circle at 34% 28%, #ffffff 0%, #c9f7ff 42%, #00c6da 100%);
+  box-shadow: 0 0 0 4px rgba(0, 240, 255, 0.16), 0 0 20px var(--cyber-cyan-glow);
+  transition: box-shadow 0.16s ease, transform 0.1s ease;
+}
+
+#set-sens:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(0, 240, 255, 0.2), 0 0 24px var(--cyber-cyan-glow); }
+#set-sens:active::-webkit-slider-thumb { transform: scale(1.12); box-shadow: 0 0 0 8px rgba(0, 240, 255, 0.24), 0 0 30px var(--cyber-cyan-glow); }
+
+#set-sens::-moz-range-track {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+#set-sens::-moz-range-progress {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--cyber-cyan);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.18);
+}
+
+#set-sens::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #04121a;
+  background: radial-gradient(circle at 34% 28%, #ffffff 0%, #c9f7ff 42%, #00c6da 100%);
+  box-shadow: 0 0 0 4px rgba(0, 240, 255, 0.16), 0 0 20px var(--cyber-cyan-glow);
+}
+
+#set-sens:focus { outline: none; }
+#set-sens:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--velocity-gold); outline-offset: 3px; }
+#set-sens:focus-visible::-moz-range-thumb { outline: 2px solid var(--velocity-gold); outline-offset: 3px; }
+
+.sens-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.sens-hint {
+  flex: 1 1 auto;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #8fa2b8;
+}
+
+.sens-foot .ghost.sm { flex: 0 0 auto; }
+
+@media (max-width: 520px) {
+  .sens-block { padding: 10px 12px 8px; }
+  .sens-foot { flex-wrap: wrap; }
+  .sens-hint { flex: 1 0 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sens-val, #set-sens::-webkit-slider-thumb { transition: none; }
+  .sens-val.pop { transform: none; }
 }

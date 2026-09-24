@@ -229,7 +229,7 @@ describe('Competitive Leaderboard, Anti-Cheat & Retention Math', () => {
     assert.strictEqual(p1.weeklyPts, 30); // 25 for 1st + 5 for fastest lap
     assert.ok(p1.rd > 0, 'Winner should gain rating');
     assert.ok(p1.xp > 0, 'Winner should gain XP');
-    assert.ok(p1.coins > 0, 'Winner should gain coins');
+    assert.equal(p1.coins, 0, 'v115: the coin economy retired with the garage');
 
     assert.strictEqual(p2.pos, 2);
     assert.strictEqual(p2.weeklyPts, 18); // 18 for 2nd

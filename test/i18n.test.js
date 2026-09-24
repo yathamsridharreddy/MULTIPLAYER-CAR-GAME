@@ -26,6 +26,7 @@ describe('Full-Game Internationalization (i18n) Engine', () => {
   it('contains critical keys across all dictionaries', () => {
     const requiredKeys = [
       'tagline', 'roomLabel', 'copy', 'install', 'signin', 'signout',
+      'exitRoom', 'leftRoom', 'joiningRoom', 'createAnotherConfirm',
       'tabRace', 'tabRank', 'tabProf', 'tabSett',
       'clubs', 'badges', 'bounties', 'friends', 'garage',
       'quickplay', 'nextRival', 'dailyMissions', 'racingStreak',
@@ -33,6 +34,8 @@ describe('Full-Game Internationalization (i18n) Engine', () => {
       'inviteFriend', 'phoneController', 'setup',
       'leaderboard', 'compHub', 'globalRating', 'trackRecords', 'dailyCup', 'foundersCup',
       'driverProfile', 'settings',
+      'sensLabel', 'sensHint', 'sensReset', 'sensResetDone', // v92 steering sensitivity slider
+      'revengeBannerText', 'revengeAcceptToast', 'mapHostOnly', 'mapInRace', 'rivalTrackLoaded', // v93 revenge track
       'selectMode', 'modeMultiplayer', 'modeTimeTrial', 'modePractice',
       'mapTitle', 'mapHighland', 'mapNeon', 'mapIsland', 'mapCanyon', 'mapHairpin',
       'weatherTitle', 'wDry', 'wWet', 'wNight', 'wBlizzard',

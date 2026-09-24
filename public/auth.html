@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="theme-color" content="#05070c"/>
+  <meta name="description" content="Sridhar Rush — sign in or create your racer account to enter the game."/>
+  <meta property="og:title" content="Sridhar Rush — Racer Account"/>
+  <meta property="og:description" content="Sign in or create your racer account to enter the game."/>
+  <title>SRIDHAR RUSH — Racer Account</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap" media="print" onload="this.media='all'"/>
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap"/></noscript>
+  <link rel="stylesheet" href="css/style.css?v=140"/>
+  <style>
+    /* gate layout — everything else comes from the shared site stylesheet */
+    html, body { height: 100%; }
+    body {
+      margin: 0; overflow: hidden;
+      background:
+        radial-gradient(1100px 520px at 78% -10%, rgba(123, 47, 247, 0.20), transparent 60%),
+        radial-gradient(900px 480px at 12% 110%, rgba(0, 240, 255, 0.14), transparent 60%),
+        radial-gradient(760px 420px at 90% 88%, rgba(255, 46, 84, 0.14), transparent 60%),
+        var(--bg-obsidian);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Rajdhani', 'Chakra Petch', system-ui, sans-serif;
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none;
+      background:
+        repeating-linear-gradient(90deg, rgba(0, 240, 255, 0.05) 0 1px, transparent 1px 72px),
+        repeating-linear-gradient(0deg, rgba(0, 240, 255, 0.04) 0 1px, transparent 1px 72px);
+      mask-image: radial-gradient(70% 60% at 50% 45%, #000 30%, transparent 100%);
+    }
+    .a-wrap { position: relative; width: min(430px, calc(100vw - 28px)); max-height: calc(100vh - 24px); overflow-y: auto; padding: 6px 0; }
+    .a-head { text-align: center; margin-bottom: 14px; }
+    .a-head h1 { margin: 0; }
+    .a-head .tagline { margin: 6px 0 0; }
+    .a-card {
+      background: var(--bg-panel); border: 1px solid rgba(0, 240, 255, 0.22);
+      border-radius: 16px; padding: 18px 18px 16px;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 18px 60px rgba(0, 0, 0, 0.55), 0 0 34px rgba(0, 240, 255, 0.10);
+      backdrop-filter: blur(10px);
+    }
+    .a-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .a-tabs button {
+      flex: 1; padding: 10px 6px; border-radius: 10px; cursor: pointer;
+      font-family: 'Orbitron', sans-serif; font-size: 12px; letter-spacing: 0.14em;
+      color: var(--tx-secondary, #9fb0c8); background: var(--bg-glass-inset);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .a-tabs button.active {
+      color: #04121a; background: linear-gradient(90deg, var(--cyber-cyan), #35e0ff);
+      border-color: transparent; box-shadow: 0 0 18px var(--cyber-cyan-glow);
+    }
+    .a-field { margin-bottom: 12px; }
+    .a-field label {
+      display: block; font-family: 'Chakra Petch', sans-serif; font-size: 11px;
+      letter-spacing: 0.16em; color: #8fa3bd; margin-bottom: 5px; text-transform: uppercase;
+    }
+    .a-field input {
+      width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 10px;
+      background: var(--bg-glass-inset); color: var(--tx-primary, #eaf6ff);
+      border: 1px solid rgba(255, 255, 255, 0.10); font-size: 15px; font-family: 'Rajdhani', sans-serif;
+      outline: none; transition: border-color .15s, box-shadow .15s;
+    }
+    .a-field input:focus { border-color: var(--cyber-cyan); box-shadow: 0 0 0 3px var(--cyber-cyan-dim); }
+    .a-pw { position: relative; }
+    .a-pw input { padding-right: 46px; }
+    .a-eye {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      background: none; border: 0; cursor: pointer; padding: 7px 8px;
+      color: #8fa3bd; display: flex; align-items: center; border-radius: 8px;
+    }
+    .a-eye:hover, .a-eye:focus-visible { color: var(--cyber-cyan); background: var(--bg-glass-inset); outline: none; }
+    .a-eye svg { width: 20px; height: 20px; display: block; }
+    .a-eye .eye-off { display: none; }
+    .a-eye.on .eye-on { display: none; }
+    .a-eye.on .eye-off { display: block; }
+    .a-go {
+      width: 100%; padding: 13px; border: 0; border-radius: 11px; cursor: pointer;
+      font-family: 'Orbitron', sans-serif; font-size: 14px; letter-spacing: 0.16em; color: #04121a;
+      background: linear-gradient(90deg, var(--cyber-cyan), #35e0ff 55%, var(--apex-crimson));
+      box-shadow: 0 0 24px var(--cyber-cyan-glow);
+    }
+    .a-go:disabled { opacity: .6; cursor: wait; }
+    .a-msg { min-height: 18px; margin: 10px 2px 2px; font-size: 14px; font-weight: 600; color: var(--velocity-gold); }
+    .a-msg.err { color: var(--apex-crimson); }
+    .a-msg.ok { color: var(--boost-emerald); }
+    .a-link { margin-top: 12px; text-align: center; font-size: 14px; color: #8fa3bd; }
+    .a-link button {
+      background: none; border: 0; padding: 0; cursor: pointer; color: var(--cyber-cyan);
+      font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px;
+    }
+    .a-note { font-size: 14px; line-height: 1.5; color: #b9c8dc; margin: 4px 2px 12px; }
+    .a-foot { text-align: center; margin-top: 12px; font-size: 12px; letter-spacing: .12em; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="a-wrap">
+    <div class="a-head">
+      <h1>SRIDHAR <span>RUSH</span></h1>
+      <p class="tagline">Racer Account · Required To Enter The Game</p>
+    </div>
+
+    <div class="a-card">
+      <div class="a-tabs">
+        <button type="button" data-tab="view-signin">SIGN IN</button>
+        <button type="button" data-tab="view-signup">CREATE ACCOUNT</button>
+      </div>
+
+      <div id="msg" class="a-msg" role="status" aria-live="polite"></div>
+
+      <!-- SIGN IN -->
+      <div id="view-signin">
+        <form id="f-signin" novalidate>
+          <div class="a-field"><label for="si-email">Email</label><input id="si-email" type="email" autocomplete="email" placeholder="you@example.com" required/></div>
+          <div class="a-field"><label for="si-pass">Password</label><div class="a-pw"><input id="si-pass" type="password" autocomplete="current-password" placeholder="••••••••" required/><button type="button" class="a-eye" data-eye="si-pass" aria-label="Show password" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button></div></div>
+          <button id="si-go" class="a-go" type="submit">⚡ ENTER THE GRID</button>
+          <div class="a-link"><button type="button" data-tab="view-forgot">Forgot password?</button></div>
+        </form>
+      </div>
+
+      <!-- CREATE ACCOUNT -->
+      <div id="view-signup" hidden>
+        <form id="f-signup" novalidate>
+          <div class="a-field"><label for="su-name">Racer name</label><input id="su-name" type="text" maxlength="16" autocomplete="nickname" placeholder="e.g. SRIDHAR" required/></div>
+          <div class="a-field"><label for="su-email">Email</label><input id="su-email" type="email" autocomplete="email" placeholder="you@example.com" required/></div>
+          <div class="a-field"><label for="su-pass">Password</label><div class="a-pw"><input id="su-pass" type="password" autocomplete="new-password" placeholder="min 8 characters" required/><button type="button" class="a-eye" data-eye="su-pass" aria-label="Show password" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button></div></div>
+          <div class="a-field"><label for="su-pass2">Confirm password</label><div class="a-pw"><input id="su-pass2" type="password" autocomplete="new-password" placeholder="repeat password" required/><button type="button" class="a-eye" data-eye="su-pass2" aria-label="Show password" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button></div></div>
+          <button id="su-go" class="a-go" type="submit">🏁 CREATE RACER ACCOUNT</button>
+        </form>
+      </div>
+
+      <!-- FORGOT PASSWORD -->
+      <div id="view-forgot" hidden>
+        <form id="f-forgot" novalidate>
+          <p class="a-note">Enter the email you signed up with — we'll send a secure link to set a new password.</p>
+          <div class="a-field"><label for="fg-email">Email</label><input id="fg-email" type="email" autocomplete="email" placeholder="you@example.com" required/></div>
+          <button id="fg-go" class="a-go" type="submit">📨 SEND RESET LINK</button>
+          <div class="a-link"><button type="button" data-tab="view-signin">Back to sign in</button></div>
+        </form>
+      </div>
+
+      <!-- SET NEW PASSWORD (arrived from the recovery email) -->
+      <div id="view-reset" hidden>
+        <form id="f-reset" novalidate>
+          <p class="a-note">Recovery link verified. Choose a new password for your racer account.</p>
+          <div class="a-field"><label for="rs-pass">New password</label><div class="a-pw"><input id="rs-pass" type="password" autocomplete="new-password" placeholder="min 8 characters" required/><button type="button" class="a-eye" data-eye="rs-pass" aria-label="Show password" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button></div></div>
+          <div class="a-field"><label for="rs-pass2">Confirm new password</label><div class="a-pw"><input id="rs-pass2" type="password" autocomplete="new-password" placeholder="repeat password" required/><button type="button" class="a-eye" data-eye="rs-pass2" aria-label="Show password" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button></div></div>
+          <button id="rs-go" class="a-go" type="submit">🔐 SET NEW PASSWORD</button>
+        </form>
+      </div>
+
+      <!-- CONFIRM EMAIL NOTICE -->
+      <div id="view-confirm" hidden>
+        <p class="a-note" id="cf-text">Account created — confirm your email, then SIGN IN.</p>
+        <button id="to-signin" class="a-go" type="button">→ GO TO SIGN IN</button>
+      </div>
+
+      <!-- RESET LINK SENT NOTICE -->
+      <div id="view-sent" hidden>
+        <p class="a-note" id="sent-text">Password reset link sent.</p>
+        <button class="a-go" type="button" data-tab="view-signin">→ BACK TO SIGN IN</button>
+      </div>
+
+      <!-- AUTH NOT CONFIGURED ON THIS DEPLOY -->
+      <div id="view-noauth" hidden>
+        <p class="a-note">Accounts are not configured on this deployment (no Supabase keys in <code>js/config.js</code>). The live site enforces racer accounts; this copy can be entered for development.</p>
+        <button id="noauth-enter" class="a-go" type="button">ENTER (DEV ONLY)</button>
+      </div>
+    </div>
+
+    <p class="a-foot">SRIDHAR RUSH · RACER ACCOUNT GATE · NO GUEST PLAY</p>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script defer src="js/account.js?v=140"></script>
+  <script defer src="js/auth.js?v=140"></script>
+</body>
+</html>

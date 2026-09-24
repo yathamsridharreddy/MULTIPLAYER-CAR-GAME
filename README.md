@@ -4,20 +4,22 @@
 
 <img src="img/logo.png" width="130" alt="Sridhar Rush Logo"/>
 
-### **Browser-based real-time multiplayer 3D racing where your phone becomes the steering wheel.**
+### **Browser-based real-time multiplayer 3D racing — where your phone becomes the steering wheel.**
 
-[![Live Demo](https://img.shields.io/badge/▶_PLAY_NOW-LIVE_DEMO-00F0FF?style=for-the-badge&logo=googlechrome&logoColor=05070c)](https://sridhar-drift.vercel.app)
+[![Play Now](https://img.shields.io/badge/▶_PLAY_NOW-LIVE_DEMO-00F0FF?style=for-the-badge&logo=googlechrome&logoColor=05070c)](https://sridhar-drift.vercel.app)
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yathamsridharreddy/MULTIPLAYER-CAR-GAME)
 
-[![Tests](https://img.shields.io/badge/Tests-94%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
-[![Suites](https://img.shields.io/badge/Test%20Suites-21%20passing-00f59b?style=flat-square)](test/)
-[![Server](https://img.shields.io/badge/Simulation-30Hz%20Authoritative-ffd479?style=flat-square)](shared/game-core.js)
+[![Tests](https://img.shields.io/badge/Tests-391%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
+[![Simulation](https://img.shields.io/badge/Simulation-30Hz%20Authoritative-ffd479?style=flat-square)](public/js/game-core.js)
 [![Multiplayer](https://img.shields.io/badge/Multiplayer-1--6%20Players%20%2B%20AI-ff2e54?style=flat-square)](server.js)
-[![Rendering](https://img.shields.io/badge/3D%20Engine-Three.js%20WebGL-00f0ff?style=flat-square)](public/js/game.js)
+[![3D Engine](https://img.shields.io/badge/3D%20Engine-Three.js%20WebGL-00f0ff?style=flat-square)](public/js/game.js)
 [![PWA](https://img.shields.io/badge/PWA-Installable%20%2B%20Offline%20Cache-3b82f6?style=flat-square)](public/manifest.webmanifest)
 [![i18n](https://img.shields.io/badge/i18n-EN%20%7C%20TE%20%7C%20HI%20%7C%20ES-c084fc?style=flat-square)](public/js/i18n.js)
+[![License](https://img.shields.io/badge/License-Proprietary%20%2F%20All%20Rights%20Reserved-ff2e54?style=flat-square)](LICENSE)
 
-*Zero downloads. Zero app store friction. Scan a QR code on your desktop screen to turn any smartphone into a wireless dual-analog gamepad with haptics and gyro steering.*
+<img src="img/readme-banner.png" width="850" alt="Sridhar Rush — neon circuits and head-to-head racing"/>
+
+*Zero downloads. Zero app-store friction. Open a tab, scan a QR code on the desktop screen, and any smartphone becomes a wireless dual-analog gamepad with haptics and gyro steering.*
 
 </div>
 
@@ -25,439 +27,285 @@
 
 ## 📑 Table of Contents
 
-1. [Engineering Highlights](#-engineering-highlights)
-2. [What is SRIDHAR RUSH?](#-what-is-sridhar-rush)
-3. [Visual Showcase](#-visual-showcase)
-4. [System Architecture](#-system-architecture)
-5. [Real-Time Multiplayer Protocol](#-real-time-multiplayer-protocol)
-6. [Phone-as-Controller Technology](#-phone-as-controller-technology)
-7. [Server Authority & Anti-Cheat](#-server-authority--anti-cheat)
-8. [Competitive Systems & Retention](#-competitive-systems--retention)
-9. [Feature Matrix](#-feature-matrix)
-10. [Technology Stack](#-technology-stack)
-11. [Project Directory Structure](#-project-directory-structure)
-12. [Local Development & Quick Start](#-local-development--quick-start)
-13. [Environment Variables](#-environment-variables)
-14. [Production Deployment](#-production-deployment)
-15. [Automated Testing & QA](#-automated-testing--qa)
-16. [Performance Optimization](#-performance-optimization)
-17. [Accessibility & Ergonomics](#-accessibility--ergonomics)
-18. [Internationalization (i18n)](#-internationalization-i18n)
-19. [Troubleshooting](#-troubleshooting)
-20. [Contributing & Security](#-contributing--security)
-21. [License](#-license)
+1. [The Game](#-the-game)
+2. [The Five Circuits](#-the-five-circuits)
+3. [Your Phone Is the Joystick](#-your-phone-is-the-joystick)
+4. [Competitive Hub](#-competitive-hub)
+5. [Rivals, Revenge & Challenges](#-rivals-revenge--challenges)
+6. [Progression & Cosmetics](#-progression--cosmetics)
+7. [Clubs (Syndicates)](#-clubs-syndicates)
+8. [Controls](#-controls)
+9. [Racer Accounts & The Gate](#-racer-accounts--the-gate)
+10. [Real Car Models](#-real-car-models)
+11. [Architecture](#-architecture)
+12. [Repository Layout](#-repository-layout)
+13. [Run It Yourself](#-run-it-yourself)
+14. [Development & Tests](#-development--tests)
+15. [Version Highlights](#-version-highlights)
+16. [License](#-license)
 
 ---
 
-## ⚡ Engineering Highlights
+## 🌐 The Game
 
-- **30 Hz Authoritative Physics Engine**: Shared deterministic vehicle simulation (`shared/game-core.js`) running concurrently across Node.js servers and browser clients with zero desync.
-- **Cross-Device Phone Joystick Pipeline**: Uses WebSockets, Touch Events, DeviceOrientation (gyroscope accelerometer), and the Web Vibration API to transform smartphones into responsive gamepads with sub-20ms input transmission.
-- **Client Interpolation & Dead Reckoning**: Smooth 60 FPS rendering through an adaptive 120ms snapshot interpolation buffer with dead-reckoning extrapolation for packet jitter absorption.
-- **Anti-Cheat & Authoritative Settlement**: Server-calculated lap validation against physical theoretical minimums, preventing coordinate teleportation, forged lap times, and fabricated currency awards.
-- **Competitive Retention & Social Layer**: Real-time Elo rating, 4-tier milestone badges, seasonal championships, asynchronous ghost replays (`/replay`), daily UTC challenges, and Syndicate Crews with shared mileage pools.
-- **High-Performance WebGL & Zero-Allocation Loops**: Custom Three.js render loop with preallocated scratch vectors, instanced mesh geometry for track foliage and barriers, and half-rate minimap execution to eliminate garbage collection pauses.
-- **PWA & Offline Asset Strategy**: Dual web app manifests (`manifest.webmanifest` and `manifest-controller.webmanifest`) with versioned Service Worker caching (`sridhar-rush-v85`) for instant repeat visits.
+**🏁 Play now: [sridhar-drift.vercel.app](https://sridhar-drift.vercel.app)** — racer account required, no guest play.
 
----
+SRIDHAR RUSH is a browser 3D racing game with an **authoritative multiplayer server**: drift-tuned arcade physics, rooms of up to six racers, a ranked competitive layer with daily and weekly cups, clubs with weekly milestones, and a revenge system where a grudge is a challenge your rival must **accept** before the rematch exists. Everything runs in a plain browser tab.
 
-## 🏎️ What is SRIDHAR RUSH?
-
-**SRIDHAR RUSH** is an arcade-style 3D multiplayer racing game designed for instant web play. It bridges the gap between desktop screens and mobile hardware:
-
-1. **Desktop / Laptop View**: Displays the 3D race circuit rendered in WebGL with dynamic weather, procedural engine audio, dynamic racing line splines, and live telemetry HUD.
-2. **Mobile Phone View**: Acts as an untethered wireless controller displaying dual virtual thumbsticks, responsive gyro tilt steering, nitro boost trigger, drift button, and collision haptic feedback.
-3. **Multiplayer Scalability**: Supports 1 to 6 players per room over WebSockets, head-to-head quickplay matchmaking, split-screen local duels, time trials against personal best ghosts, and adaptive AI bots with selectable skill levels (Rookie / Pro).
+- 🏎️ **Arcade sim, server-authoritative at 30 Hz** — drift with the handbrake, burn a nitro meter, slipstream, photo-finish detection and server-validated lap records.
+- 🌦️ **Four weather conditions** — Dry Asphalt ☀️, Wet Rain 🌧️, Midnight Neon 🌙, Alpine Blizzard ❄️ — each changing grip and drag.
+- 🚗 **Three car classes** — Velocity (top speed), Accelerator (launch), Grip (cornering) — plus per-driver steering sensitivity.
+- 🏎️ **Distinct body shells per class** — Velocity races the Valkyrie hyper wedge, Accelerator the Volt formula car, Grip the Monza grand tourer.
+- 👻 **Ghosts & time trial** — your best lap becomes a ghost you race against, with live deltas.
+- 🔁 **1, 3 or 5 lap races**, chosen in the lobby and shown correctly on every readout.
+- ️ **Four languages** — English, తెలుగు, हिन्दी, Español — plus touch controls, gamepad support and an installable PWA shell.
 
 ---
 
-## 📸 Visual Showcase
+## 🗺️ The Five Circuits
+
+| | | |
+|:---:|:---:|:---:|
+| <img src="img/og-map-highland.png" width="260" alt="Highland Rush circuit"/><br/>**HIGHLAND RUSH**<br/>Day · pine forests & mountain passes | <img src="img/og-map-neon.png" width="260" alt="Neon City circuit"/><br/>**NEON CITY**<br/>Night · bloom-lit downtown cyber streets | <img src="img/og-map-island.png" width="260" alt="Island Motorfest circuit"/><br/>**ISLAND MOTORFEST**<br/>Sunset · ocean coastlines & volcano roads |
+| <img src="img/og-map-canyon.png" width="260" alt="Canyon Chicane circuit"/><br/>**CANYON CHICANE**<br/>Desert · high-speed S-curves & chicanes | <img src="img/og-map-snow.png" width="260" alt="Hairpin GP circuit"/><br/>**HAIRPIN GP**<br/>Snow · alpine hairpins & ice drifting | <img src="public/img/og-card.png" width="260" alt="Dynamic Open Graph share card"/><br/>**RICH METADATA**<br/>dynamic Open Graph cards for every share |
+
+---
+
+## 📱 Your Phone Is the Joystick
 
 <div align="center">
-  <img src="img/readme-banner.png" width="850" alt="Sridhar Rush Circuits and Showcase Banner"/>
+<img src="img/poster.png" width="420" alt="Sridhar Rush poster — your phone is the joystick, scan and race friends"/>
 </div>
 
-### Circuit Lineup
-
-| Highland Rush | Neon City | Island Motorfest |
-| :---: | :---: | :---: |
-| <img src="public/img/og-map-highland.png" width="260" alt="Highland Rush Circuit"/><br/>**HIGHLAND RUSH**<br/>Daytime · Pine Forests & Mountain Passes | <img src="public/img/og-map-neon.png" width="260" alt="Neon City Circuit"/><br/>**NEON CITY**<br/>Night · Bloom-Lit Downtown Cyber Streets | <img src="public/img/og-map-island.png" width="260" alt="Island Motorfest Circuit"/><br/>**ISLAND MOTORFEST**<br/>Sunset · Ocean Coastlines & Volcano Roads |
-
-| Canyon Chicane | Hairpin GP | Social & Open Graph Previews |
-| :---: | :---: | :---: |
-| <img src="public/img/og-map-canyon.png" width="260" alt="Canyon Chicane Circuit"/><br/>**CANYON CHICANE**<br/>Desert · High-Speed S-Curves & Chicanes | <img src="public/img/og-map-snow.png" width="260" alt="Hairpin GP Circuit"/><br/>**HAIRPIN GP**<br/>Snow · Alpine Hairpins & Ice Drifting | <img src="public/img/og-card.png" width="260" alt="Social Card Share"/><br/>**RICH METADATA**<br/>Dynamic Open Graph Cards for Link Sharing |
-
-> **Recommended Additional Showcase Assets**: For expanded media kits, developers can capture high-resolution in-game screenshots of:
-> 1. Phone Gamepad UI (`/controller.html` in active landscape mode)
-> 2. Post-Race Podium & Rating Movement Card (`#results` dialog)
-> 3. Standalone Ghost Replay Spectator Theater (`/replay.html`)
+Every race screen draws a **QR code**. Scan it and the phone becomes a wireless controller for that seat: dual-analog steering, throttle/brake pedals, drift and nitro buttons, haptics and gyro steering on supported devices. Up to six screens plus spectators can share one room; phones and keyboards mix freely, and empty seats can be filled by **bots with tunable skill**.
 
 ---
 
-## 🏗️ System Architecture
+## 🏆 Competitive Hub
 
-SRIDHAR RUSH uses a client-server topology where the browser focuses on rendering and user interaction, while the Node.js server acts as the authoritative source of truth.
+Four live boards, each scoped **TOP 20** or **NEARBY (you ±3)** and filterable per circuit:
 
-```mermaid
-flowchart TD
-    subgraph Clients["Player Devices"]
-        Desktop["🖥️ Desktop / Laptop Screen<br/>(Three.js WebGL + Web Audio + HUD)"]
-        Phone["📱 Smartphone Joystick<br/>(Touch Analog + Gyroscope + Haptics)"]
-        Replay["🎥 Spectator Replay View<br/>(2D Canvas + Timeline Scrubbing)"]
-    end
+| Board | What it ranks | Reset |
+| --- | --- | --- |
+| **Global Rank** | Elo-style rating across ranked races | seasons |
+| **Track Records** | best lap per circuit | never |
+| **Daily Cup** | fastest lap of the day | 00:00 UTC |
+| **Founders Cup** | the weekly competition | Monday 00:00 UTC |
 
-    subgraph Server["Node.js Game Server (30 Hz Authoritative Loop)"]
-        WS["WebSocket Server (ws)<br/>• 64 KB Payload Limit<br/>• Sliding-Window Rate Limiting"]
-        RoomMgr["Room & Lobby Manager<br/>• 1-6 Player Slots<br/>• Matchmaking & State Machine"]
-        Physics["Shared Game Core (game-core.js)<br/>• 30 Hz Physics Simulation<br/>• Ray Probing & Barrier Clamping<br/>• Checkpoint & Lap Validation"]
-        AntiCheat["Anti-Cheat & Race Settlement<br/>• Physical Lap-Time Bounds<br/>• Authoritative Elo & XP Calculation<br/>• Idempotent Bounty Settlement"]
-    end
-
-    subgraph Storage["Persistence & Edge Infrastructure"]
-        Supabase["🐘 Supabase / PostgreSQL<br/>• Player Profiles & Stats<br/>• Row Level Security (RLS)<br/>• Seasonal Standings & Challenges"]
-        Vercel["⚡ Vercel Edge Network<br/>• Static PWA Distribution<br/>• Service Worker Cache (v85)<br/>• Dynamic OG Card Routing (/api/og)"]
-    end
-
-    Desktop <-->|WebSocket RFC 6455| WS
-    Phone <-->|WebSocket Input @ 30 Hz| WS
-    Replay <-->|HTTP REST /ghost| WS
-    WS --> RoomMgr
-    RoomMgr --> Physics
-    Physics --> AntiCheat
-    AntiCheat -->|PostgREST + Service Role Key| Supabase
-    Vercel -.->|Serves Static Bundle| Desktop
-    Vercel -.->|Serves Controller App| Phone
-```
+Rank-movement cards show your climb, the summary bar always answers *"where am I?"* for the asker, and one tap shares your rank to WhatsApp or Telegram.
 
 ---
 
-## 🌐 Real-Time Multiplayer Protocol
+## ⚔️ Rivals, Revenge & Challenges
 
-### 1. Connection & Room Lifecycle
-- **Room Creation**: The screen client connects via WebSocket with `{ type: 'hello', role: 'screen' }`. The server assigns a unique 5-letter room code (e.g., `ALPHA`) and returns `{ type: 'welcome', slot: 1, code: 'ALPHA' }`.
-- **Matchmaking**: Players can initiate 1v1 quickplay via `{ type: 'matchmake' }`, grouping matched drivers into dedicated rooms with zero manual setup.
-- **Phone Controller Pairing**: A smartphone scanning the room's QR code connects with `{ type: 'hello', role: 'controller', room: 'ALPHA', slot: 1 }`.
-
-### 2. The 30 Hz Authoritative Simulation Loop
-- Every 33.33ms ($1/30\text{s}$), the server advances the physics world:
-  1. Gathers the latest inputs from all player and controller sockets.
-  2. Applies vehicle acceleration, steering angle, braking force, drift drag, and nitro multipliers.
-  3. Evaluates track boundary collision constraints using exact normal projections and tire stack hazards.
-  4. Detects checkpoint crossings, lap increments, and race finishes.
-  5. Broadcasts a compact state snapshot `{ type: 'state', cars: [...], raceTime, events: [...] }` to all connected screens.
-
-### 3. Client Interpolation & Reconciliation
-- The Three.js client maintains a circular snapshot buffer with an adaptive target delay of 120ms.
-- Positions and velocities are interpolated between adjacent snapshots using spherical linear angle interpolation (`lerpAngle`) and cubic smoothing.
-- If a temporary network gap occurs, the client performs local dead-reckoning extrapolation for up to 130ms, preventing visible frame stuttering.
-
-### 4. 10-Second Auto-Rematch Loop
-- Upon race completion, the server calculates placements, broadcasts finish events, and opens a 10-second rematch countdown.
-- Clicking **`🔁 REMATCH`** from either the desktop screen or mobile controller queues the room for an immediate grid reset without full page reloads.
+- The game tracks your **next rival** (the racer just above you) and the **chaser** behind you.
+- Lose a race and a **grudge** is recorded. The revenge banner offers a rematch — clicking it **sends a challenge request** to the racer who beat you. They see it live (or in their lobby next visit) and **accept or decline**.
+- **Only an accept creates the race:** the server seats you both in one room, bots off, and starts the countdown. Win it and a **+50% Revenge Bounty** pays out in bonus XP.
+- Friends can also send **personal time challenges** with a target time and a share link.
 
 ---
 
-## 📱 Phone-as-Controller Technology
+## 📈 Progression & Cosmetics
 
-```
-[ Laptop / Desktop Screen ]                 [ Smartphone ]
-       │                                          │
-       ├──── Displays Dynamic QR Code ───────────►│ (Camera Scan)
-       │                                          │
-       │                                          ├──── Opens /controller.html
-       │                                          ├──── Locks Landscape Orientation
-       │                                          ├──── Activates Touch Zones & Gyro
-       │                                          │
-       │◄─── WebSocket Input Stream (30 Hz) ──────┤ (Steer / Throttle / Nitro)
-       │                                          │
-       ├──── Telemetry Feedback Stream ──────────►│ (Speed / Lap / Haptic Buzz)
-```
-
-1. **Dual-Zone Analog Virtual Sticks**:
-   - **Left Thumb Zone**: Controls precision steering deflection ($\pm 1.0$).
-   - **Right Thumb Zone**: Vertical deflection controls progressive throttle ($0.0 \to 1.0$) and braking ($0.0 \to 1.0$).
-2. **DeviceOrientation Gyroscope Steering**:
-   - Tapping **`GYRO`** requests orientation permissions and binds device tilt ($\gamma$ axis) directly to steering input, letting drivers tilt their phone like a steering wheel.
-3. **Web Vibration Haptic Feedback**:
-   - Distinct vibration patterns trigger for countdown ticks (`[60ms, 40ms, 60ms]`), high-speed barrier collisions (`70ms`), nitro ignition (`18ms`), and checkered flag finishes (`[120ms, 60ms, 120ms]`).
-4. **Resilient Reconnection**:
-   - If the mobile browser enters the background, inputs zero out automatically. Upon returning, the controller seamlessly reconnects to its designated player slot.
+XP & levels · daily and weekly **missions** with claimable rewards · login **streaks** · **seasons** with season rewards · earned **badges** · free cosmetics in the lobby (paint, decals, wheel finish, trail). All of it persists per verified racer identity — since **v119** there is no guest play: every racer signs up and signs in, and since **v121** the server itself refuses any non-controller connection without a valid Supabase session. (The old garage shop and Rush Coin economy were retired in v115.)
 
 ---
 
-## 🛡️ Server Authority & Anti-Cheat
+## 🛡️ Clubs (Syndicates)
 
-SRIDHAR RUSH enforces a strict server-authoritative trust model to maintain competitive integrity:
-
-| Security Domain | Implementation Details |
-| :--- | :--- |
-| **Input Validation** | Clients only transmit raw control values (`steer`, `throttle`, `brake`, `handbrake`, `nitro`). Position coordinates submitted by clients are rejected. |
-| **Physical Lap Anti-Cheat** | Every lap time is checked against map-specific physical theoretical minimum thresholds. Impossible times are discarded before leaderboard recording. |
-| **Authoritative Economy** | Level, XP, Rush Coins, and cosmetic unlocks are calculated and persisted server-side. |
-| **Idempotent Bounties** | Weekly bounties and seasonal claim endpoints enforce strict idempotency to prevent replay attacks and duplicate reward claims. |
-| **DoS & Payload Defense** | Maximum WebSocket payload is capped at 64 KB; incoming messages pass through sliding 1-second rate-limiting. |
-| **Credential Isolation** | Frontend client builds only receive public anonymous keys (`SUPABASE_ANON`). The `SUPABASE_SERVICE_ROLE` key is strictly kept in server environment variables. |
+Found or join a club, watch the roster and the **Championship Standings**, and collect **weekly milestone rewards** — each tier claimable once per member per week. Club counters roll over every **Monday 00:00 UTC**, and claims carry the week in their primary key so no week can be collected twice.
 
 ---
 
-## 🏆 Competitive Systems & Retention
+## 🎮 Controls
 
-- **Elo Rating & Divisions**: Full implementation of the Elo matchmaking rating system, grouping drivers into tiered divisions (*Bronze, Silver, Gold, Platinum, Diamond, Master*).
-- **Rivalry & Target Engine**: Identifies nearby rivals on the global ladder, displaying real-time rating point gaps and celebrating rank overtakes.
-- **Asynchronous Ghost Racing & Replay Theater**: Personal best laps generate compressed telemetry recordings. Players can challenge their own ghost, race friend ghosts via deep links (`/?g=UUID`), or view them top-down in `/replay.html`.
-- **Dynamic Weather & Grip**: Four weather presets (*Dry Asphalt, Wet Rain, Midnight Neon, Alpine Blizzard*) alter physics grip multipliers ($0.88\times \to 1.00\times$) and trigger dynamic rain/snow particle systems.
-- **Racing Syndicate Crews**: Players can form or join motorsport crews, pool weekly racing distance, earn Grand Prix points, and claim team milestone rewards.
-
----
-
-## 📊 Feature Matrix
-
-| Category | Implemented Capabilities |
-| :--- | :--- |
-| **Gameplay** | 5 circuits, 4 weather conditions, nitro boost, power-ups, drifting economy, dynamic racing line splines. |
-| **Multiplayer** | 1–6 player rooms, quickplay matchmaking, split-screen local duel, spectator mode, 10s rematch. |
-| **Controls** | Wireless phone gamepad (touch sticks + gyro steering + haptics), keyboard fallback, USB/BT gamepad support. |
-| **Competitive** | Elo ratings, divisions, track records, daily challenges, weekly Founders Cup, anti-cheat validation. |
-| **Retention** | Daily missions, login streaks, milestone badge showcase, weekly bounties, rival overtake alerts. |
-| **Cosmetics** | Garage catalog with cars, paints, wheel rims, neon underglows, and animated exhaust trails. |
-| **Graphics** | Three.js WebGL rendering, instanced meshes, bloom post-processing, dynamic shadows, particle pools. |
-| **Audio** | Web Audio synthesizer with engine RPM harmonics, shift drops, skids, nitro whoosh, crash impacts. |
-| **Platform** | Installable PWA, offline Service Worker (`sridhar-rush-v85`), dual manifests, safe-area inset compliance. |
-| **Accessibility** | Reduced motion mode, colorblind UI palette, full keyboard navigation, ARIA screen-reader labels. |
-| **i18n** | Full game localization in English (`en`), Telugu (`te`), Hindi (`hi`), and Spanish (`es`). |
+| Action | Keyboard | Touch / phone |
+| --- | --- | --- |
+| Steer | `A` / `D` or `←` / `→` | wheel / arrows |
+| Accelerate | `W` or `↑` | pedal |
+| Brake / reverse | `S` or `↓` | pedal |
+| Drift / handbrake | `Space` | button |
+| Nitro | `Shift` | button |
+| Camera | `C` | — |
 
 ---
 
-## 💻 Technology Stack
+## 🔐 Racer Accounts & The Gate
 
-### Frontend
-- **Languages & Markup**: Vanilla JavaScript (ES6+), HTML5, CSS3
-- **3D Graphics & Shaders**: [Three.js](https://threejs.org/) (WebGL 3D Rendering, Instanced Mesh Batching, UnrealBloomPass)
-- **Audio & Haptics**: Web Audio API (procedural engine synth), Web Vibration API
-- **Device Hardware**: DeviceOrientation API (accelerometer gyro steering), Touch Events API
-- **PWA & Offline**: Service Worker API, Web App Manifests
+Since **v119** the game sits behind a proper account gate on every deploy that
+has Supabase keys configured: opening the site with no session redirects to
+`auth.html` — a standalone page in the exact visual language of the lobby
+(same fonts, same stylesheet, same neon lockup) with **SIGN IN**, **CREATE
+ACCOUNT**, **FORGOT PASSWORD** and a **SET NEW PASSWORD** view for recovery
+links. Sign up stores your racer name with the account; if the Supabase
+project requires email confirmation the gate shows a "confirm your email"
+step; the reset mail links back to the gate with a recovery token that swaps
+straight into the new-password form. Only after a successful sign-in does the
+lobby boot — **there is no guest play**. Expired tokens that cannot refresh
+bounce back to the gate automatically. The phone controller and the replay
+viewer stay open (they join by room code), and deploys without Supabase keys
+(local development) skip the gate with a clearly-labelled dev notice. The gate
+is pure client-side auth glue (`js/account.js` + `js/auth.js`, plain GoTrue
+REST, no SDK); gameplay and physics never learned about it.
 
-### Backend
-- **Runtime & Framework**: [Node.js](https://nodejs.org/) (v18+ / v22 LTS), [Express 5](https://expressjs.com/)
-- **Real-Time WebSockets**: [`ws`](https://github.com/websockets/ws) (RFC 6455 compliant)
-- **Deterministic Core**: Shared deterministic physics module (`shared/game-core.js`)
+**v121 closes the last guest door at the server:** with Supabase configured,
+the WebSocket handshake rejects every `hello` that is not a phone controller
+and cannot verify a Supabase JWT, answering `auth-required` and closing the
+socket - so even a hand-rolled client cannot race without an account. The
+game client likewise never dials the relay unauthenticated and treats
+`auth-required` as "back to the gate".
 
-### Database & Authentication
-- **Database Engine**: [PostgreSQL](https://www.postgresql.org/) managed via [Supabase](https://supabase.com/)
-- **Security Layer**: Row Level Security (RLS) policies, PostgREST parameterization, transactional RPC functions
+> Supabase console checklist for the live project: Auth → URL
+> Configuration → add `https://sridhar-drift.vercel.app/auth.html` to
+> **Redirect URLs** so recovery mails return to the gate.
 
-### Deployment & Tooling
-- **Edge Static Hosting**: [Vercel](https://vercel.com/) (Edge routing, caching headers, Open Graph serverless functions)
-- **Containerization**: Docker (`Dockerfile`), Render (`render.yaml`)
+## 🏎️ Real Car Models
+
+Since **v117** the eight selectable racers can be driven by real licensed 3D
+models instead of the procedural shells — a **visual-only** pipeline: physics,
+collision, networking, spawn/respawn, camera and the phone controller never see
+a GLB. `public/js/car-models.js` maps the paint hex that already travels on the
+wire (`cs.col`) to a car id, loads `public/assets/cars/<id>/` asynchronously
+through a vendored `GLTFLoader`, caches the parsed scene, clones it per slot,
+rigs wheels/steering/brake lights from named nodes, normalises scale and
+grounding, and recolours the paint materials. Any load failure keeps the
+procedural shell with a console warning — a race never depends on a download.
+
+Every bundled model ships its own `LICENSE.txt` next to the asset and is listed
+in [ASSETS-CREDITS.md](ASSETS-CREDITS.md); only CC0 / CC-BY assets with
+satisfiable attribution are accepted. Today `GHOST` runs the Khronos
+**CarConcept** (CC-BY-4.0); the remaining slots run their own v118 procedural
+silhouettes and upgrade automatically the moment a documented model is dropped
+into their folder. Models are runtime-cached by the service worker (never
+precached), so first load pays once and every later race is instant.
+
+## 🧱 Architecture
+
+<div align="center">
+<img src="img/readme-architecture.png" width="760" alt="Sridhar Rush architecture — static client, Node relay, Supabase"/>
+</div>
+
+1. **Client (`public/`)** — plain HTML/CSS/JS, no bundler. `game-core.js` is the shared simulation, `game.js` the screen app, `controller.js` the phone wheel. A service worker precaches versioned assets (`?v=NNN`) so a deploy never serves mixed builds, and `js/config.js` is **generated at build time** from environment variables — no secrets ship in source.
+2. **Game server (`server.js`)** — one Node process: the authoritative 30 Hz race sim, the WebSocket relay (screens, controllers, spectators), the REST API for boards, missions, clubs, revenge and ghosts, and boot-time schema diagnostics at `GET /health`.
+3. **Database (Supabase / PostgreSQL)** — 25 tables with row-level security. The server writes with the service role; signed-in clients may write only their own verified rows. Guest identities are plain text keys, which is why identity columns are `text`, not `uuid`.
 
 ---
 
-## 📁 Project Directory Structure
+## 📁 Repository Layout
 
 ```
-MULTIPLAYER-CAR-GAME/
-├── api/
-│   └── og.js                      # Vercel serverless function for dynamic per-map Open Graph previews
-├── img/                           # Project banners, posters, and repository branding assets
-├── public/                        # Static web application client assets
-│   ├── css/
-│   │   ├── controller.css         # Mobile phone controller cockpit styling
-│   │   └── style.css              # Main dark motorsport design system & responsive UI
-│   ├── img/                       # In-game circuit thumbnails, map webp images, icons, and textures
-│   ├── js/
-│   │   ├── vendor/                # Three.js r128, QRCode generator, post-processing shaders
-│   │   ├── account.js             # Supabase auth, session management, profile synchronization
-│   │   ├── controller.js          # Phone controller touch sticks, gyro tilt, and haptic logic
-│   │   ├── cosmetics.js           # Client cosmetics catalog and garage UI helpers
-│   │   ├── game-core.js           # [Build Generated] Copied shared physics module
-│   │   ├── game.js                # Three.js 3D rendering, HUD, audio synth, and main animation loop
-│   │   ├── i18n.js                # Internationalization dictionaries (EN, TE, HI, ES) & interpolation
-│   │   ├── net.js                 # WebSocket client connection manager and message dispatcher
-│   │   ├── progression.js         # [Build Generated] Copied progression and Elo calculations
-│   │   └── replay.js              # Standalone 2D canvas ghost replay visualizer
-│   ├── controller.html            # Mobile wireless joystick view
-│   ├── index.html                 # Main desktop / screen race interface
-│   ├── manifest-controller.webmanifest # PWA manifest for standalone mobile controller
-│   ├── manifest.webmanifest       # PWA manifest for main racing game
-│   ├── replay.html                # Standalone ghost replay viewer
-│   └── sw.js                      # Service worker with versioned cache strategy (sridhar-rush-v85)
+├── public/                      the website: index, controller, replay, assets
+│   ├── js/game-core.js          shared physics/sim (client + server)
+│   ├── js/game.js               screen app: lobby, HUD, hub, clubs, revenge
+│   ├── js/controller.js         phone wheel page logic
+│   ├── js/progression.js        missions, streaks, seasons, badges
+│   ├── js/i18n.js               en / te / hi / es strings
+│   └── sw.js                    service worker precache (cache name = build)
+├── img/                         logo, posters, circuit cards, README artwork
+├── server.js                    relay + authoritative sim + REST API
 ├── scripts/
-│   └── vercel-build.js            # Build script: copies shared modules and generates client config
-├── shared/
-│   ├── cosmetics.js               # Vehicle stats, paints, decals, wheels, and neon catalog
-│   ├── game-core.js               # Core deterministic 30 Hz physics engine and track definitions
-│   └── progression.js             # XP curves, Elo calculations, badges, and milestone formulas
-├── test/                          # 11 test suites verifying gameplay, anti-cheat, networking, and i18n
-├── .gitignore                     # Git ignore rules
-├── CONTRIBUTING.md                # Open-source contribution guidelines
-├── Dockerfile                     # Production Node.js container definition
-├── package.json                   # Project metadata, dependencies, and test/build scripts
-├── render.yaml                    # Render service configuration
-├── SECURITY.md                    # Vulnerability reporting and security architecture policy
-├── server.js                      # Authoritative Node.js Express 5 + WebSocket race server
-├── supabase-setup.sql             # PostgreSQL schema, RLS policies, and database functions
-└── vercel.json                    # Vercel deployment configuration, headers, and rewrites
+│   ├── vercel-build.js          writes public/js/config.js from env vars
+│   ├── sql-lint.js              parses every .sql against the Postgres grammar
+│   └── live-probe.js            probes a deployed server's /health
+├── supabase-setup.sql           canonical schema for a NEW database
+├── supabase-migration-v98.sql   ONE re-runnable script that converges ANY database
+├── supabase-migration-v99.sql   converges `challenges` for the revenge flow
+├── supabase-migration-v94/96/97 superseded by v98 — kept for history, do not run
+├── test/                        389 node:test tests (client harnesses + server + SQL)
+└── LICENSE                      proprietary — All Rights Reserved
 ```
 
 ---
 
-## 🚀 Local Development & Quick Start
+## 🚀 Run It Yourself
 
-### Prerequisites
-- **Node.js**: `v18.0.0` or higher (`v22` LTS recommended)
-- **npm**: `v9.0.0` or higher
-
-### Step-by-Step Setup
-
+### Local
 ```bash
-# 1. Clone the repository
-git clone https://github.com/yathamsridharreddy/MULTIPLAYER-CAR-GAME.git
-cd MULTIPLAYER-CAR-GAME
-
-# 2. Install dependencies
 npm install
-
-# 3. Execute the automated test suite
-npm test
-
-# 4. Build the client assets and generate configuration
-npm run build
-
-# 5. Start the local server
-npm start
+npm start                 # http://localhost:3000
 ```
+Open a second tab — or your phone on the same network at `/controller?room=<CODE>` — to drive a seat. Without `SUPABASE_*` variables the server runs fully in RAM and says so in `/health`.
 
-Once started, open your browser:
-- **Main Game View**: `http://localhost:3000`
-- **Mobile Controller (Simulated / Local)**: `http://localhost:3000/controller.html`
-- **Ghost Replay Viewer**: `http://localhost:3000/replay.html`
+### Environment variables
 
----
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `SERVER_URL` | frontend build | URL of the game server the client should talk to |
+| `SUPABASE_URL`, `SUPABASE_ANON` | frontend build | baked into `config.js` for verified client calls |
+| `COMMUNITY_WA`, `COMMUNITY_DC` | frontend build | community invite links shown in the lobby |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE` | game server | server-side persistence (service role) |
+| `PORT` | game server | bind port (your host sets it) |
+| `LOW_BANDWIDTH`, `CSP`, `FRAME_DENY` | optional | tick-rate reduction and security headers |
 
-## 🔐 Environment Variables
+### Database
+- **New project:** run [`supabase-setup.sql`](supabase-setup.sql) once in the SQL Editor.
+- **Existing project:** run [`supabase-migration-v98.sql`](supabase-migration-v98.sql) — one file that converges *any* older shape (creates missing tables, converges all 165 columns and 15 indexes, relaxes identity columns `uuid → text`, recreates policies, widens the club claim key) — then [`supabase-migration-v99.sql`](supabase-migration-v99.sql), which converges the `challenges` table for the revenge request flow. Both are idempotent; v98 **supersedes v94, v96 and v97**.
+- **Verify:** restart the game server and read `GET /health` — `persistence.verdict` should be `"ok"`, `playerStatsKeyType` `"text"`, and `crews` / `crewMembers` / `crewClaims` `"ok"`. Any other value names the exact migration that is missing.
 
-Environment variables are divided into **Public Client Config** (injected into `public/js/config.js` at build time) and **Server-Only Secrets** (used exclusively by `server.js`).
-
-### Public Client Configuration (Vercel / Build-Time)
-| Variable | Description | Required? | Example |
-| :--- | :--- | :---: | :--- |
-| `SERVER_URL` | WebSocket backend URL for client connections. If blank or `'local'`, defaults to the host origin. | Optional | `wss://relay.yourdomain.com` |
-| `SUPABASE_URL` | Public URL of your Supabase PostgreSQL instance. | Optional | `https://xyz.supabase.co` |
-| `SUPABASE_ANON` | Public Anonymous API Key for client-side reads. | Optional | `eyJhbGciOi...` |
-| `COMMUNITY_WA` | Community WhatsApp group invitation link. | Optional | `https://chat.whatsapp.com/...` |
-| `COMMUNITY_DC` | Community Discord server invitation link. | Optional | `https://discord.gg/...` |
-
-### Server-Only Secrets (Node.js Server Runtime)
-| Variable | Description | Required? | Example |
-| :--- | :--- | :---: | :--- |
-| `PORT` | HTTP & WebSocket server port (Default: `3000`). | Optional | `3000` |
-| `SUPABASE_SERVICE_ROLE` | **SECRET** Service-Role key for server-side race settlement and writes. **NEVER expose to frontend.** | Optional | `eyJhbGciOi...` |
-| `LOW_BANDWIDTH` | Set to `'1'` to enable reduced broadcast cadence for bandwidth-constrained server hosts. | Optional | `0` or `1` |
-
-> *Note: SRIDHAR RUSH works completely out of the box without any environment variables. In the absence of Supabase credentials, the server stores records in an in-memory ring buffer with local browser persistence.*
+### Deploy
+- **Frontend:** any static host (this project uses Vercel: static output plus one OG-card function); the build step generates `config.js` from the env vars above.
+- **Game server:** any Node host (this project uses Render): `npm start`. Rooms live in its memory; durable state lives in Supabase.
 
 ---
 
-## 🚢 Production Deployment
-
-### 1. Frontend Edge Deployment (Vercel)
-- Connect the repository to Vercel.
-- Build Command: `node scripts/vercel-build.js` (or `npm run build`).
-- Output Directory: `public`.
-- Configure `SERVER_URL`, `SUPABASE_URL`, and `SUPABASE_ANON` in Vercel project environment variables.
-
-### 2. WebSocket Game Relay Deployment (Render / Railway / Docker)
-- Deploy using the provided `Dockerfile` or `render.yaml`.
-- Start Command: `node server.js`.
-- Provide `PORT`, `SUPABASE_URL`, `SUPABASE_ANON`, and `SUPABASE_SERVICE_ROLE`.
-- Health Check Endpoints: `/health` and `/api/health`.
-
-### 3. Database Initialization (Supabase)
-- Create a new project on [Supabase](https://supabase.com/).
-- Navigate to the **SQL Editor** and run the contents of [`supabase-setup.sql`](supabase-setup.sql) to initialize tables, RLS policies, and RPC functions (`earn_coins`, `spend_coins`).
-
----
-
-## 🧪 Automated Testing & QA
-
-The project maintains an automated test suite executed with Node.js's built-in test runner:
+## 🧪 Development & Tests
 
 ```bash
-npm test
+npm test                  # 389 tests: client harnesses, server rooms, SQL invariants
+npm run sql-lint          # every .sql parsed against the Postgres grammar
+npm run probe             # probe a deployed game server's /health
 ```
 
-### Test Suite Summary: `94 / 94 Passed (100%)`
-```
-# Subtest: Analytics Engine & Funnel Tracking (8 tests) — PASS
-# Subtest: Garage Cosmetics & Economy System (5 tests) — PASS
-# Subtest: Syndicate Crews, Weather, Racing Line & Photo Finish (18 tests) — PASS
-# Subtest: Full-Game Internationalization Engine (5 tests) — PASS
-# Subtest: Competitive Leaderboards, Anti-Cheat & Retention Math (6 tests) — PASS
-# Subtest: Authoritative Race Lifecycle & 30Hz Simulation (6 tests) — PASS
-# Subtest: Milestone Badges, Weekly Bounties & Revenge Matches (18 tests) — PASS
-# Subtest: Competitive Rivals, Ghost Racing & Season Divisions (10 tests) — PASS
-# Subtest: Social Features, Challenges & Daily Rotations (9 tests) — PASS
---------------------------------------------------------------------------------
-Total: 94 tests | 21 suites | 0 failed | 0 skipped | Duration: ~3.5s
-```
+Conventions worth knowing: client and server share `game-core.js`; every release bumps one build marker (`BUILD` in `game.js`, `/version` on the server, the service-worker cache name and the `?v=` asset tags) so caches never mix versions; migration files are **convergence scripts** — idempotent, guarded, safe to re-run — because production databases come in many shapes.
 
 ---
 
-## ⚡ Performance Optimization
+## 🔖 Version Highlights
 
-- **Zero-Allocation Animation Loop**: Scratch vector buffers (`_camCarPos`, `_camDir`, `_camDesired`, `_camLook`) are allocated once at module scope, eliminating per-frame allocations during 60 FPS rendering.
-- **Instanced Geometry**: Track barriers, trees, and skid marks utilize Three.js `InstancedMesh`, rendering hundreds of objects in a single draw call.
-- **Throttled Minimap**: The 2D track overview executes at 30 Hz (half the display frame rate), conserving CPU bandwidth for WebGL rasterization.
-- **Adaptive Resolution Ladder**: On low-end mobile devices dropping below 48 FPS, the engine automatically scales resolution pixel ratio dynamically.
-- **Texture Memory Management**: Track and building canvas textures are cached in `_texCache`, properly recycling WebGL textures upon circuit switching.
-
----
-
-## ♿ Accessibility & Ergonomics
-
-- **Reduced Motion Support**: Honored via system `prefers-reduced-motion` or the in-game toggle (`set-rm`); disables camera screen shake, intense crash flashes, and particle explosions.
-- **Colorblind Palettes**: Toggling Colorblind UI replaces default vehicle and HUD markers with high-contrast, distinguishable orange/blue pigments.
-- **Full Keyboard Navigation**: Complete desktop driving support with `WASD` / Arrow Keys, `Shift` (Nitro), `Space` (Drift), and `C` (Camera Cycle).
-- **Accessible ARIA Semantics**: Results modals, tutorial cards, and live event announcements include appropriate ARIA roles (`role="dialog"`, `aria-modal="true"`, `role="status"`, `aria-live="polite"`).
-
----
-
-## 🌐 Internationalization (i18n)
-
-SRIDHAR RUSH features full UI, HUD, and results localization across 4 languages:
-
-- 🇺🇸 **English** (`en`)
-- 🇮🇳 **Telugu** (`te` / తెలుగు)
-- 🇮🇳 **Hindi** (`hi` / हिन्दी)
-- 🇪🇸 **Spanish** (`es` / Español)
-
-### Switching Languages
-Click the **`🌐 Language`** button in the top navigation bar or change language in Settings. Translations are dynamically rendered and interpolated via `tI18n(key, params)` in `public/js/i18n.js`.
-
----
-
-## ❓ Troubleshooting
-
-| Symptom | Cause | Solution |
-| :--- | :--- | :--- |
-| **No Sound / Audio Silent** | Browser autoplay policy requires an initial user interaction. | Click or tap anywhere on the screen to resume the Web Audio context. |
-| **Phone Controller Cannot Connect** | Phone and laptop are on different networks or firewall blocks port. | Ensure your device has internet access and can reach the WebSocket host. |
-| **Low FPS on Old Hardware** | High-end bloom shaders or resolution saturation. | Open **Settings** and set GFX to **LOW** or **MED**, or enable **Adaptive Resolution**. |
-| **Gyro Steering Inverted / Unresponsive** | iOS Safari requires explicit permission for motion sensors. | Tap **`GYRO`** on the phone controller and approve the device motion permission prompt. |
+- **v140** — production hardening (stability · lag · connection): a lost WebGL context is now reclaimed instead of leaving a black frozen canvas (the top "sometimes it renders, sometimes it is broken" cause on mobile), an unavailable WebGL renderer explains itself rather than leaving a dead page, connections can no longer leak a second socket or storm-reconnect (generation-guarded dials, connect watchdog, 15 s silence detector), the relay heartbeats and reaps dead sockets, returning from a backgrounded tab re-dials instead of rendering a frozen world, the lobby no longer rebuilds its DOM and leaderboard 30×/second (the visible lobby lag), the bloom chain keeps its pixel ratio in step with adaptive resolution, a failing frame is contained and reported instead of silently skipping the render, and player names no longer show raw HTML entities
+- **v139** — cars audit (wheels + glass + cost): the GLB wheel rig is rebuilt so the asset's baked-in front steering is gone (front wheels no longer sit ~21-26 deg crooked and mismatched while driving straight), wheels roll forward instead of backwards, brake calipers no longer spin with the wheel, tinted opaque glass replaces the transmission windscreen (no see-through hollow cabin, cheaper shader), wipers (24 336 tris) and the wheel shadow pass culled, rim/caliper materials cloned per car so one racer's cosmetic cannot recolour everybody
+- **v138** — fix yellow car body damage: removed the v126 "yellow card" colour heuristic that hid any mesh whose paint matched r>200 && g>170 && b<130 — the yellow car's own paint 0xffd400 matched it, so roof/hood/doors/pillars were switched off; plate + interior culling now happens once per build, name-based only, with paint materials protected
+- **v137** — friends adding by racer name: partial ilike %name% search, shows results with ADD per racer, excludes self/already friends
+- **v136** — fix damaged bodies (clone GLB per car) + lag fix (512 shadow all, no second context on low/med, all procedural fallback = ghost)
+- **v135** — fix rendering: revert SW aggressive bust that deleted current cache + caused blank, keep old-cache-only delete
+- **v134** — fix old cars still showing: aggressive SW cache bust (delete all caches + reload clients), BUILD mismatch reload even in race, always new ghost GLB
+- **v133** — fix old car models still showing: always use new ghost GLB for all 8 (remove low-quality skip), prefetch all 8 on lobby load, single URL cache
+- **v132** — low-network & lag fix: disable FLAME decal, skip GLB on LOW quality, reduce shadow map 512, touch-action manipulation, fast pointerdown handlers, auto low-quality on 2g/saveData, map images on-demand not precached
+- **v131** — fix old/new car flicker: cache GLB by URL not id (single download for all 8), force SW update
+- **v130** — lobby account bar visible before CREATE (removed hidden) + name shows driver identity not email
+- **v129** — restore ghost tiers (tyres) — keep Tire/Rim/Disc/Brake/Panel meshes that were hidden by ultra filter
+- **v128** — all 8 cars now use ghost CarConcept GLB with their own colours (fury red, storm blue, volt yellow, etc)
+- **v127** — yellow card was orange FLAME decal (0xff6a00) on hood appearing as yellow rectangle before car — disabled all decals + ultra-aggressive GLB interior hide
+- **v126** — remove yellow card completely: hide all interior/mechanical meshes in GLB, keep only body/glass/lights (fixes yellow rectangle still showing in front of car)
+- **v125** — remove yellow roof card (License Plate mesh hidden in GLB, all cars)
+- **v124** — ghost car front/back fix: yaw 0° (was 180°), now faces track forward
+- **v123** — CarConcept GLB double-tilt fix: car no longer stands on its nose; orientation corrected (GHOST slot).
+- **v122** — sign-out now returns to the account gate (no more lobby with previous name after SIGN OUT) and clears the stored racer name.
+- **v121** — no guests anywhere: server-side handshake enforcement (valid Supabase JWT required for every player/lobby/spectator socket; controllers exempt), client never connects unauthenticated, `auth-required` bounces to the gate, and the last guest strings/chips are purged.
+- **v120** — password visibility: eye toggle on every password field of the account gate (sign in, create account, new-password), with aria labels and keyboard focus kept on the field.
+- **v119** — racer account gate: standalone sign-in / sign-up / forgot-password page between the main page and the game, no guest play on configured deploys, recovery-link password reset, expired-session kick-back; phone controller and replay untouched; game code auth-agnostic.
+- **v118** — eight distinct silhouettes: the shell generator is now parameterised and keyed to the car id (fury..reaper), so every lobby card and every car on the grid is its own machine - low-wide aggression, aero teardrop, sharp wedge, cockpit-forward tail, winged racer, canopy hyper, premium GT, stealth low - while physics stays class-based; licensed GLB models still override their slot.
+- **v117** — real-car model pipeline: vendored GLTFLoader, per-slot async loading with caching, cloning, wheel/steer/brake rigging, paint recolour and procedural fallback; Khronos CarConcept (CC-BY-4.0, attributed) ships as GHOST; server and protocol stay model-agnostic.
+- **v116** — restored the lobby ready-state declaration swallowed by the v115 slice; purged the last coin copy from the revenge banner (all four locales).
+- **v115** — the garage, coin economy and equipped-loadout persistence are retired entirely: no shop, no wallet writes, no coin awards; body shells now follow the free class choice and cosmetics are free lobby picks.
+- **v114** — realism pass: curved-surface body shells (no more faceted cardboard), reflective clearcoat paint and tinted glass that read the sky, glowing head/tail lenses, tire sidewalls, contact shadows that glue cars to the road; rain turns the asphalt into a glossy sky-reflecting slick and blizzard packs it snow-bright.
+- **v113** — hotfix: the garage refresh now travels through a `window` export, so a net callback can never ReferenceError again.
+- **v112** — every garage car now owns a distinct HD body shell (GT, night coupe, rally 4x4, Le-Mans prototype, open-wheel formula, hypercar wedge), synced to every screen in the room and previewed in the garage; neon underglow and spoilers finally sync too.
+- **v111** — revenge became a request/accept head-to-head; stuck-key input fix; `challenges` converged for guest identities (v99).
+- **v110** — lap readouts show the race length actually being run, not the default.
+- **v109** — in-game fix instructions point at the convergent migration.
+- **v108** — the client finds its server instead of assuming one, and says so when it cannot.
+- **v98 / v99** — the convergence migrations that make any database, however old, match this README.
 
 ---
 
-## 🤝 Contributing & Security
+## 📜 License
 
-- For coding standards, testing instructions, and pull request workflows, please see [CONTRIBUTING.md](CONTRIBUTING.md).
-- To report security vulnerabilities or review our server-authoritative defense model, please see [SECURITY.md](SECURITY.md).
+**Copyright © 2026 Yatham Sridhar Reddy — All Rights Reserved.**
 
----
+SRIDHAR RUSH is **proprietary, source-available software**. It is published for demonstration, portfolio, and educational reference only — it is **not** open source, and no rights are granted by implication, estoppel, or otherwise. Full terms: [`LICENSE`](LICENSE).
 
-## 📄 License
-
-> **LICENSE decision required from repository owner.**
-> All rights reserved by the original project author unless explicitly stated otherwise.
+Permission requests: [yathamsridharreddy99@gmail.com](mailto:yathamsridharreddy99@gmail.com)
 
 ---
 

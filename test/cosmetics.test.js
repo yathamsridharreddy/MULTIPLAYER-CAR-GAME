@@ -77,4 +77,18 @@ describe('Garage Cosmetics & Economy System', () => {
     const knownCar = cos.findCar('volt_gt');
     assert.equal(knownCar.id, 'volt_gt');
   });
+
+  test('v112: every garage car owns a distinct HD body shell', () => {
+    assert.equal(cos.BODIES.length, 6, 'six body shells');
+    assert.equal(new Set(cos.BODIES).size, 6, 'shell ids are unique');
+    const seen = new Set();
+    for (const car of cos.CARS) {
+      assert.ok(cos.BODIES.includes(car.body), car.id + ' references a real shell');
+      assert.ok(!seen.has(car.body), car.id + ' shell is not shared with another car');
+      seen.add(car.body);
+    }
+    assert.equal(cos.bodyIndexOf('street_runner'), 0);
+    assert.equal(cos.bodyIndexOf('apex_x'), 5);
+    assert.equal(cos.bodyIndexOf('no_such_car'), 0, 'unknown ids fall back to the starter shell');
+  });
 });

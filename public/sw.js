@@ -1,5 +1,5 @@
 /* ============================================================================
-   SRIDHAR RUSH — service worker (v89)
+   SRIDHAR RUSH — service worker (v91)
    Makes the game installable (home-screen app) and loads repeat visits fast.
    Purely additive: if this file is missing/broken the site works exactly as before.
 
@@ -9,20 +9,19 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v95';
+const CACHE = 'sridhar-rush-v140';
 
 const CORE = [
-  '/', '/controller',
-  '/css/style.css?v=95', '/css/controller.css?v=95',
-  '/js/game-core.js?v=95', '/js/progression.js?v=95', '/js/cosmetics.js?v=95', '/js/net.js?v=95', '/js/game.js?v=95', '/js/controller.js?v=95', '/js/account.js?v=95', '/js/i18n.js?v=95',
+  '/', '/controller', '/auth.html',
+  '/css/style.css?v=140', '/css/controller.css?v=140',
+  '/js/game-core.js?v=140', '/js/progression.js?v=140', '/js/net.js?v=140', '/js/game.js?v=140', '/js/controller.js?v=140', '/js/account.js?v=140', '/js/i18n.js?v=140', '/js/auth.js?v=140',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
   '/js/vendor/post/RenderPass.js', '/js/vendor/post/UnrealBloomPass.js',
-  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=95',
-  '/icon.svg', '/img/icon-192.png', '/img/icon-512.png',
-  '/img/map-highland.webp', '/img/map-neon.webp', '/img/map-island.webp',
-  '/img/map-canyon.webp', '/img/map-snow.webp'
+  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=140',
+  '/icon.svg', '/img/icon-192.png', '/img/icon-512.png'
+  // v132 low-network: map images NOT precached — cached on demand via cache-first fetch handler
 ];
 
 // live data — always straight from the network, never stored

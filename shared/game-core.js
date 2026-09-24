@@ -296,6 +296,7 @@
       this.participating = slot === 1;
       this.name = 'PLAYER ' + slot;
       this.color = slot === 1 ? 0xe10600 : 0x0a84ff;
+      this.sens = 1; // v92 per-driver steering sensitivity, 0.5-1.5, applied in the authoritative sim
       this.resetState(0);
     }
 
@@ -305,12 +306,25 @@
     }
 
     setClass(key) { if (CAR_CLASSES[key]) this.cls = CAR_CLASSES[key]; }
+    // v92 STEERING SENSITIVITY. The client sends its slider value; it is clamped
+    // here because nothing from a socket is trusted. The gain term only ever
+    // REDUCES lock from the baseline, so cranking the slider up buys a quicker
+    // wheel but never extra cornering grip over a default driver.
+    setSens(v) { const n = parseFloat(v); this.sens = isFinite(n) ? clamp(n, 0.5, 1.5) : 1; }
     setMeta(name, color, pid) {
       if (name) this.name = String(name).slice(0, 14);
       if (typeof color === 'number' && isFinite(color)) this.color = Math.floor(color) & 0xffffff; // v65 sanitize
       if (pid) this.pid = String(pid).slice(0, 24); // stable account-lite id
     }
-    setCos(cos, title) { if (cos) this.cos = { decal: cos.decal | 0, wheels: cos.wheels | 0, trail: cos.trail | 0 }; if (title) this.title = String(title).slice(0, 10); } // v59 cosmetic-only
+    setCos(cos, title) {
+      // v112: keep EVERY cosmetic the snapshot publishes. The v59 version kept
+      // only decal/wheels/trail, so neon underglow and the sp spoiler - both
+      // readable in the snapshot and both purchasable in the shop - were
+      // silently dropped here and never reached any screen. cos.b is the new
+      // body-shell index (0..5, see SRCos.BODIES).
+      if (cos) this.cos = { decal: cos.decal | 0, wheels: cos.wheels | 0, trail: cos.trail | 0, neon: cos.neon | 0, sp: cos.sp | 0, b: Math.max(0, Math.min(5, cos.b | 0)) };
+      if (title) this.title = String(title).slice(0, 10);
+    }
 
     resetState(raceTime) {
       const st = trackStart(this.track, this.slot);
@@ -404,7 +418,10 @@
       this.slip = Math.abs(lat);
       if (this.slip > 3.5 && Math.abs(fwd) > 6 && !this.finished) this.driftScore += this.slip * dt * 2;
 
-      this.steerS += (inp.steer - this.steerS) * Math.min(1, dt * 9);
+      // v92 steering sensitivity: gain softens the lock, rate sets how fast it is reached
+      const sGain = Math.min(1, 0.6 + 0.4 * (this.sens || 1));
+      const sRate = 9 * (0.45 + 0.55 * (this.sens || 1));
+      this.steerS += (clamp(inp.steer * sGain, -1, 1) - this.steerS) * Math.min(1, dt * sRate);
       const speedFactor = clamp(Math.abs(fwd) / 7, 0, 1);
       const agility = CFG.steerRate * this.cls.steer * speedFactor / (1 + Math.abs(fwd) * 0.022);
       let yaw = this.steerS * agility * (fwd >= 0 ? 1 : -1);
@@ -529,6 +546,7 @@
       const car = this.cars[slot - 1];
       if (car && meta) car.setMeta(meta.name, meta.color, meta.pid);
       if (car && meta && meta.cls) car.setClass(meta.cls);
+      if (car && meta) car.setSens(meta.sens != null ? meta.sens : 1); // v92 absent = default
     }
 
     participants() { return this.cars.filter((c) => c.participating); }
@@ -589,6 +607,7 @@
           const BOT_NAMES = ['REDLINE_ACE', 'TAKUMI_86', 'PHANTOM_GT', 'VORTEX_99', 'SHADOW_PILOT', 'STORM_VALKYRIE', 'APEX_HUNTER'];
           const botName = BOT_NAMES[(c.slot - 1) % BOT_NAMES.length];
           c.setMeta(botName, 0x0a84ff);
+          c.setSens(1); // v92 bots never inherit a human's sensitivity
         }
       }
       this._botActive = botOn;
@@ -837,7 +856,7 @@
           elim: c.eliminated ? 1 : 0,
           p: c.participating ? 1 : 0,
           pb: c.puB > 0 ? 1 : 0, ps: c.puSh ? 1 : 0, pl: c.puS > 0 ? 1 : 0,
-          dc: (c.cos && c.cos.decal) || 0, wh: (c.cos && c.cos.wheels) || 0, tr: (c.cos && c.cos.trail) || 0, ne: (c.cos && c.cos.neon) || 0, sp: (c.cos && c.cos.sp) || 0, ti: c.title || ''
+          dc: (c.cos && c.cos.decal) || 0, wh: (c.cos && c.cos.wheels) || 0, tr: (c.cos && c.cos.trail) || 0, ne: (c.cos && c.cos.neon) || 0, sp: (c.cos && c.cos.sp) || 0, b: (c.cos && c.cos.b) || 0, ti: c.title || ''
         })),
         pu: this.pickups.map((p) => (p.on ? 1 : 0)).join(''),
         events: this.events.splice(0, this.events.length)
@@ -990,7 +1009,10 @@
     this.vx = dirX * fwd + rightX * latAfter; this.vy = dirY * fwd + rightY * latAfter;
     this.slip = Math.abs(lat);
     if (this.slip > 3.5 && Math.abs(fwd) > 6 && !this.finished) this.driftScore += this.slip * dt * 2;
-    this.steerS += (inp.steer - this.steerS) * Math.min(1, dt * 9);
+    // v92 steering sensitivity: gain softens the lock, rate sets how fast it is reached
+    const sGain = Math.min(1, 0.6 + 0.4 * (this.sens || 1));
+    const sRate = 9 * (0.45 + 0.55 * (this.sens || 1));
+    this.steerS += (clamp(inp.steer * sGain, -1, 1) - this.steerS) * Math.min(1, dt * sRate);
     const speedFactor = clamp(Math.abs(fwd) / 7, 0, 1);
     const agility = CFG.steerRate * this.cls.steer * speedFactor / (1 + Math.abs(fwd) * 0.022);
     let yaw = this.steerS * agility * (fwd >= 0 ? 1 : -1);

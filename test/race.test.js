@@ -245,4 +245,105 @@ describe('Authoritative Race Lifecycle & Simulation', () => {
       assert.ok(!isNaN(car.x) && !isNaN(car.z), `Map ${mapId}: Inner collision must not produce NaN`);
     }
   });
+
+  // -------------------------------------------------------------------------
+  // v92 STEERING SENSITIVITY (Settings slider -> authoritative sim).
+  // The slider is a per-driver preference, so the guarantees that matter are:
+  //   1. default 1.0 changes nothing for existing players,
+  //   2. turning it down genuinely calms the car,
+  //   3. turning it up can NEVER buy more cornering grip than the baseline,
+  //   4. the value from a socket is clamped and never inherited by the next
+  //      occupant of a slot or by a bot.
+  // -------------------------------------------------------------------------
+  const STEER_INPUT = (steer) => ({ steer, throttle: 1, brake: 0, handbrake: false, nitro: false });
+
+  test('default sensitivity reproduces the pre-v92 steering filter tick for tick', () => {
+    const track = core.MAPS[0];
+    const car = new core.Car(1, track.a, track);
+    car.participating = true;
+    assert.equal(car.sens, 1, 'a fresh car must default to 1.0');
+
+    let ref = 0; // the hardcoded filter that shipped before the slider existed
+    const dt = 1 / 30;
+    for (let i = 0; i < 90; i++) {
+      const want = i % 2 ? 1 : -1; // alternate lock so both directions are exercised
+      car.input = STEER_INPUT(want);
+      car.update(dt, i * dt, 'racing', [], null);
+      ref += (want - ref) * Math.min(1, dt * 9);
+      assert.ok(Math.abs(car.steerS - ref) < 1e-12, 'tick ' + i + ': steerS ' + car.steerS + ' != legacy ' + ref);
+    }
+  });
+
+  test('lower sensitivity softens the lock and converges slower; higher never exceeds baseline', () => {
+    const track = core.MAPS[0];
+    const mk = (sens) => { const c = new core.Car(1, track.a, track); c.participating = true; c.setSens(sens); return c; };
+    const calm = mk(0.5), base = mk(1), quick = mk(1.5);
+    const dt = 1 / 30;
+
+    const early = [];
+    // 150 ticks (5 s) so even the calmest rate has fully settled: 0.7825^150 ~ 1e-16
+    for (let i = 0; i < 150; i++) {
+      for (const c of [calm, base, quick]) { c.input = STEER_INPUT(1); c.update(dt, i * dt, 'racing', [], null); }
+      if (i < 6) early.push([calm.steerS, base.steerS, quick.steerS]);
+    }
+    for (const [a, b, c] of early) {
+      assert.ok(a < b, 'calmer setting must lag the baseline (' + a + ' !< ' + b + ')');
+      assert.ok(b <= c + 1e-12, 'quicker setting must lead the baseline (' + b + ' > ' + c + ')');
+    }
+    assert.ok(Math.abs(calm.steerS - 0.8) < 1e-9, 'sens 0.5 settles at 80% lock, got ' + calm.steerS);
+    assert.ok(Math.abs(base.steerS - 1.0) < 1e-9, 'sens 1.0 settles at the baseline lock, got ' + base.steerS);
+    assert.ok(Math.abs(quick.steerS - 1.0) < 1e-9, 'sens 1.5 must never exceed the baseline lock, got ' + quick.steerS);
+  });
+
+  test('steady-state turn rate: 150% matches baseline, 50% turns 20% less (no free grip)', () => {
+    const track = core.MAPS[0];
+    const car = new core.Car(1, track.a, track);
+    car.participating = true;
+    const dt = 1 / 30;
+    // build one converged, identical starting state: straight wheel, up to speed
+    car.input = STEER_INPUT(0);
+    for (let i = 0; i < 120; i++) car.update(dt, i * dt, 'racing', [], null);
+    const snap = Object.assign({}, car);
+
+    // measure a single tick from that same state with the wheel already at the
+    // setting's own converged lock, so only the sensitivity differs
+    const yawAt = (sens, steady) => {
+      Object.assign(car, snap);
+      car.setSens(sens);
+      car.steerS = steady;
+      const h0 = car.heading;
+      car.input = STEER_INPUT(1);
+      car.update(dt, 10, 'racing', [], null);
+      return Math.abs(car.heading - h0);
+    };
+    const base = yawAt(1, 1.0), quick = yawAt(1.5, 1.0), calm = yawAt(0.5, 0.8);
+    assert.ok(base > 0, 'the car must actually turn');
+    assert.ok(Math.abs(quick - base) < 1e-12, '150% must not out-turn the baseline: ' + quick + ' vs ' + base);
+    assert.ok(Math.abs(calm / base - 0.8) < 1e-6, '50% should turn at 80% of baseline, ratio ' + (calm / base));
+  });
+
+  test('sensitivity from a socket is clamped, never inherited, and bots stay at baseline', () => {
+    const track = core.MAPS[0];
+    const car = new core.Car(1, track.a, track);
+    car.setSens(0.05); assert.equal(car.sens, 0.5, 'below range clamps to 0.5');
+    car.setSens(99); assert.equal(car.sens, 1.5, 'above range clamps to 1.5');
+    car.setSens('abc'); assert.equal(car.sens, 1, 'garbage falls back to 1.0');
+    car.setSens(null); assert.equal(car.sens, 1, 'null falls back to 1.0');
+    car.setSens(NaN); assert.equal(car.sens, 1, 'NaN falls back to 1.0');
+    car.setSens('1.25'); assert.equal(car.sens, 1.25, 'a numeric string off the wire is accepted');
+
+    const room = new core.RaceRoom('SENS1', 'race', 0, 6);
+    room.setPlayerMeta(2, { name: 'AAA', sens: 0.7 });
+    assert.equal(room.cars[1].sens, 0.7, 'meta applies the driver value');
+    room.setPlayerMeta(2, { name: 'BBB' });
+    assert.equal(room.cars[1].sens, 1, 'a new occupant must not inherit the previous sensitivity');
+    room.setPlayerMeta(3, { name: 'CCC', sens: 42 });
+    assert.equal(room.cars[2].sens, 1.5, 'meta values are clamped too');
+
+    room.cars[4].setSens(1.5); // pretend a human left this seat mid-session
+    room.setBot(true);
+    room.start();
+    assert.ok(room.cars.some((c) => c._bot), 'the room should have spawned bots');
+    for (const c of room.cars) if (c._bot) assert.equal(c.sens, 1, 'bot in slot ' + c.slot + ' must drive at baseline');
+  });
 });

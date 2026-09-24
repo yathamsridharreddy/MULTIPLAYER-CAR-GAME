@@ -52,9 +52,9 @@ function lerpAngle(a, b, t) {
 function loadPrefs() {
   try { return Object.assign({
     name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: 'en', hdLobby: true
+    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: 'en', hdLobby: true, sens: 1
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
-  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true }; }
+  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true, sens: 1 }; }
 }
 let prefs = loadPrefs();
 function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
@@ -62,13 +62,46 @@ try {
   if (!localStorage.getItem('sr_prefs') && prefs.botSkill == null) { prefs.botSkill = 0; savePrefs(); }
 } catch (e) {}
 if (prefs.botSkill == null) prefs.botSkill = 1;
+// v92 steering sensitivity: a hand-edited or stale localStorage value must never
+// reach the wire out of range - the server clamps too, but normalise at the source.
+if (!(prefs.sens >= 0.5 && prefs.sens <= 1.5)) prefs.sens = 1;
+else prefs.sens = Math.round(prefs.sens * 20) / 20; // snap to the slider's 5% step so thumb and readout agree
 if (!prefs.pid) { prefs.pid = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
 if (!prefs.name) { prefs.name = 'RACER-' + prefs.pid.slice(1, 5).toUpperCase(); savePrefs(); }
 
 // ---------------------------------------------------------------------------
 // Renderer / scene
 // ---------------------------------------------------------------------------
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+// v140 PRODUCTION FIX — the renderer is created defensively.
+// `new THREE.WebGLRenderer()` THROWS when the browser cannot give a WebGL context
+// (iOS Lockdown Mode, a GPU blocklist, "out of memory" after a heavy session, an
+// exhausted context pool). It used to sit unguarded at module scope, so a throw here
+// skipped EVERY remaining line of this file: no input wiring, no menu handlers, no
+// network - a dead page that only looks half-alive. Now it degrades: retry without
+// antialias, then a full-screen explanation instead of a silent broken UI.
+function createRenderer() {
+  const opts = [
+    { antialias: true, powerPreference: 'high-performance' },
+    { antialias: false, powerPreference: 'default' }
+  ];
+  for (const o of opts) {
+    try { return new THREE.WebGLRenderer(o); } catch (e) { /* try the next profile */ }
+  }
+  return null;
+}
+const renderer = createRenderer();
+if (!renderer) {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#0a0e18;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px;font:600 15px system-ui,sans-serif;line-height:1.5;';
+  d.innerHTML = '<div><div style="font-size:34px;margin-bottom:10px">🏁</div>' +
+    '<b>3D graphics are not available on this device/browser right now.</b><br><br>' +
+    'Turn off Lockdown/private browsing, close other tabs using 3D, then reload.<br>' +
+    'Your account, races and stats are safe.</div>';
+  const mount = () => { const st = $('stage') || document.body; st.appendChild(d); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
+  window.__SR_NO_WEBGL = true;
+  throw new Error('WebGL unavailable');
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
@@ -77,6 +110,40 @@ renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 $('stage').appendChild(renderer.domElement);
+
+// v140 PRODUCTION FIX — WebGL context loss.
+// Mobile browsers drop the GPU context when the tab is backgrounded, on memory
+// pressure, or when the GPU process restarts. three.js r128 does NOT restore it on
+// its own: the canvas froze or went black while the game kept running - the single
+// biggest "sometimes it renders, sometimes it is completely broken" report. The
+// context is now reclaimed (preventDefault marks it restorable) and every
+// renderer-owned resource is rebuilt on restore.
+let glLost = false;
+renderer.domElement.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();                 // without this the context is never restored
+  glLost = true;
+  try { toast('⚙️ Graphics context lost — restoring…'); } catch (err) {}
+}, false);
+renderer.domElement.addEventListener('webglcontextrestored', () => {
+  try {
+    fxComposer = null;                // its render targets died with the old context
+    fxFailed = false;
+    scene.traverse((o) => {
+      const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      mats.forEach((m) => {
+        if (!m) return;
+        m.needsUpdate = true;         // re-upload every shader/program
+        if (m.map) m.map.needsUpdate = true;   // and every cached texture
+      });
+    });
+    renderer.shadowMap.needsUpdate = true;
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    resizeViewport();
+    glLost = false;
+    toast('✅ Graphics restored');
+  } catch (e) { glLost = false; }
+}, false);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 2600);
@@ -671,6 +738,8 @@ function build3DTrackAndRoad(map, T) {
   const pts = getTrackPts(map, 512);
 
   // 1. Road Surface Ribbon
+  roadMatRef = asphaltMat; // v114: applyWeather makes it rain-slick
+  applyRoadWeather();
   ribbon3D(pts, 0, RH, 0.08, asphaltMat, map);
 
   // 2. White Edge Lines
@@ -1562,8 +1631,27 @@ function buildRacingLine(map) {
 
 // v83 Dynamic Weather Visuals
 let currentWeather = 'dry';
+// v114 REALISM: wet asphalt is the single biggest cue in rain - dark, glossy,
+// reflecting the sky instead of swallowing it. Blizzard packs snow-bright mat.
+let roadMatRef = null;
+function applyRoadWeather() {
+  const m = roadMatRef;
+  if (!m) return;
+  if (currentWeather === 'wet') {
+    m.roughness = 0.24; m.metalness = 0.28; m.envMapIntensity = 1.5;
+    if (m.color) m.color.setHex(0x9aa0a8);
+  } else if (currentWeather === 'blizzard') {
+    m.roughness = 0.55; m.metalness = 0.05; m.envMapIntensity = 0.9;
+    if (m.color) m.color.setHex(0xd8dce0);
+  } else {
+    m.roughness = 0.92; m.metalness = 0.05; m.envMapIntensity = 1.0;
+    if (m.color) m.color.setHex(0xffffff);
+  }
+  m.needsUpdate = true;
+}
 function applyWeather(weatherId) {
   currentWeather = weatherId || 'dry';
+  applyRoadWeather();
   const cond = (CORE.WEATHER_CONDITIONS && CORE.WEATHER_CONDITIONS[currentWeather]) || {
     name: 'Dry Asphalt', gripMod: 1.0, icon: '☀️'
   };
@@ -1595,150 +1683,341 @@ camera.position.set(A - 3, 3.4, -14);
 // ---------------------------------------------------------------------------
 // Car visuals (AAA High-Definition Procedural GT Supercar)
 // ---------------------------------------------------------------------------
-function createCar(paintColor, num, accent) {
+// Car visuals (v112) — SIX DISTINCT HD BODY SHELLS, one per garage car.
+// Until v111 every catalog car rendered the same GT mesh tinted differently.
+// Now each car owns a silhouette: a grand tourer, a night street coupe, a
+// rally-raider 4x4, a Le-Mans prototype, an open-wheel formula car and a
+// hypercar wedge. Bodies are pure cosmetics (physics stay with the free
+// class choice) and travel over the wire as cos.b, so every screen in a
+// room sees the same shell. Low cost on purpose: extruded side profiles +
+// primitives, shared material set, no textures beyond the number roundel.
+function createCar(paintColor, num, accent, shellId) {
+  const SID = (typeof shellId === 'string' && shellId) ? shellId : 'ghost'; // v118: silhouette follows the car id
   const g = new THREE.Group();
   const body = new THREE.Group();
   g.add(body);
+
+  // ---- shared material set (v80 clearcoat paint response) ----
   const paint = new THREE.MeshPhysicalMaterial({
     color: paintColor,
-    metalness: 0.68,
-    roughness: 0.18,
+    metalness: 0.72,
+    roughness: 0.22,
     clearcoat: 1.0,
-    clearcoatRoughness: 0.04,
-    envMapIntensity: 1.25
+    clearcoatRoughness: 0.03,
+    envMapIntensity: 1.6   // v114: the sky now reads in the bodywork
   });
   const glass = new THREE.MeshPhysicalMaterial({
     color: 0x0a101d,
     metalness: 0.9,
-    roughness: 0.05,
+    roughness: 0.03,
     clearcoat: 1.0,
     transparent: true,
-    opacity: 0.82
+    opacity: 0.6,          // v114: tinted reflective glass, not a black blob
+    envMapIntensity: 2.0
   });
-  const carbon = new THREE.MeshStandardMaterial({
-    color: 0x121418,
-    metalness: 0.5,
-    roughness: 0.45
-  });
-  const s = new THREE.Shape();
-  s.moveTo(-2.30, 0.16); s.lineTo(-2.42, 0.62); s.lineTo(-2.28, 0.92); s.lineTo(-1.10, 0.98);
-  s.lineTo(-0.45, 1.16); s.lineTo(0.30, 1.00); s.lineTo(1.25, 0.66); s.lineTo(2.25, 0.50);
-  s.lineTo(2.40, 0.26); s.lineTo(2.30, 0.14); s.closePath();
-  const bodyGeo = new THREE.ExtrudeGeometry(s, { depth: 1.56, bevelEnabled: true, bevelThickness: 0.16, bevelSize: 0.16, bevelSegments: 4, steps: 1, curveSegments: 6 });
-  bodyGeo.translate(0, 0, -0.78); bodyGeo.rotateY(-Math.PI / 2);
-  body.add(new THREE.Mesh(bodyGeo, paint));
-
-  // Sculpted aerodynamic cockpit canopy
-  const canopy = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), glass);
-  canopy.scale.set(0.78, 0.42, 1.45); canopy.position.set(0, 0.88, -0.35);
-  body.add(canopy);
-
-  // Carbon high-downforce rear aerodynamic wing
-  const wing = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.06, 0.55), carbon);
-  wing.position.set(0, 1.35, -2.25); wing.rotation.x = -0.12; body.add(wing);
-  for (const sx of [-0.95, 0.95]) {
-    const end = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.34, 0.6), paint);
-    end.position.set(sx, 1.38, -2.25); body.add(end);
-  }
-  for (const sx of [-0.55, 0.55]) {
-    const stay = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.42, 0.08), carbon);
-    stay.position.set(sx, 1.1, -2.3); stay.rotation.x = 0.35; body.add(stay);
-  }
-
-  // Front carbon splitter with aerodynamic side winglets
-  const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.05, 0.5), carbon);
-  splitter.position.set(0, 0.10, 2.62); body.add(splitter);
-  for (const sx of [-1, 1]) {
-    const can = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.03, 0.4), carbon);
-    can.position.set(sx * 1.0, 0.45, 2.2); can.rotation.z = sx * 0.5; can.rotation.y = -sx * 0.2; body.add(can);
-    const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 3.4), carbon);
-    skirt.position.set(sx * 0.95, 0.2, -0.1); body.add(skirt);
-    const intake = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.6), carbon);
-    intake.position.set(sx * 0.95, 0.55, -1.1); body.add(intake);
-  }
-
-  // Rear aerodynamic diffuser channels
-  const diff = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.06, 0.6), carbon);
-  diff.position.set(0, 0.16, -2.55); diff.rotation.x = 0.4; body.add(diff);
-
-  // Dual projector LED headlights & transparent lens cover
+  const carbon = new THREE.MeshStandardMaterial({ color: 0x121418, metalness: 0.5, roughness: 0.45 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0x8a8f98, metalness: 0.95, roughness: 0.25 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.92 });
   const headMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0xfff0c0, emissiveIntensity: 2.8 });
   const headLensMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, roughness: 0.1 });
   const tailMat = new THREE.MeshStandardMaterial({ color: 0xff1515, emissive: 0xff1515, emissiveIntensity: 2.0 });
 
-  for (const sx of [-1, 1]) {
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.09, 0.22), headMat);
-    head.position.set(sx * 0.62, 0.58, 2.42); head.rotation.y = -sx * 0.35; head.rotation.z = sx * 0.12; body.add(head);
-    const lens = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.11, 0.24), headLensMat);
-    lens.position.set(sx * 0.62, 0.58, 2.43); lens.rotation.y = -sx * 0.35; lens.rotation.z = sx * 0.12; body.add(lens);
-    const stay = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 0.05), carbon);
-    stay.position.set(sx * 0.88, 0.93, 0.55); body.add(stay);
-    const mir = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.16), carbon);
-    mir.position.set(sx * 0.97, 0.96, 0.55); body.add(mir);
-    const vent = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.5), carbon);
-    vent.position.set(sx * 0.38, 0.86, 1.35); vent.rotation.x = 0.28; body.add(vent);
+  const add = (geo, mat, x, y, z, rx, ry, rz) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x || 0, y || 0, z || 0);
+    if (rx) m.rotation.x = rx;
+    if (ry) m.rotation.y = ry;
+    if (rz) m.rotation.z = rz;
+    body.add(m);
+    return m;
+  };
+  const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+  const cyl = (r1, r2, h, seg) => new THREE.CylinderGeometry(r1, r2, h, seg || 12);
+  // Extrude a side profile (x = length, y = height) across the car's width.
+  const shell = (pts, width, bevel) => {
+    // v114 REALISM: a polygon profile extrudes into a faceted "dummy" look.
+    // Corner-cutting quadratic interpolation turns the same points into a
+    // smooth curved surface - rounded fenders, hood and tail - which is what
+    // makes the clearcoat paint read as bodywork instead of cardboard.
+    const n = pts.length;
+    const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const s = new THREE.Shape();
+    const m0 = mid(pts[n - 1], pts[0]);
+    s.moveTo(m0[0], m0[1]);
+    for (let i = 0; i < n; i++) {
+      const pt = pts[i], m = mid(pt, pts[(i + 1) % n]);
+      s.quadraticCurveTo(pt[0], pt[1], m[0], m[1]);
+    }
+    s.closePath();
+    const geo = new THREE.ExtrudeGeometry(s, { depth: width, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 5, steps: 1, curveSegments: 12 });
+    geo.translate(0, 0, -width / 2);
+    geo.rotateY(-Math.PI / 2);
+    return geo;
+  };
+
+  // ---- wheels: multi-spoke alloys, ventilated disc, colored caliper ----
+  function buildWheels(o) {
+    const r = o.r, tx = o.tx, tz = o.tz, w = o.w || 0.3;
+    const wheelGeo = cyl(r, r, w, 20); wheelGeo.rotateZ(Math.PI / 2);
+    const hubGeo = cyl(r * 0.56, r * 0.56, w + 0.01, 12); hubGeo.rotateZ(Math.PI / 2);
+    const discGeo = cyl(r * 0.74, r * 0.74, 0.04, 16); discGeo.rotateZ(Math.PI / 2);
+    const capGeo = cyl(r * 0.2, r * 0.2, w + 0.02, 10); capGeo.rotateZ(Math.PI / 2);
+    const spokeGeo = box(w * 0.18, r * 0.95, 0.09);
+    const hubMat = new THREE.MeshStandardMaterial({ color: 0xb9bec7, metalness: 0.9, roughness: 0.3 });
+    const discMat = new THREE.MeshStandardMaterial({ color: 0xb0b5bc, metalness: 0.92, roughness: 0.28 });
+    const calMat = new THREE.MeshStandardMaterial({ color: accent, metalness: 0.4, roughness: 0.35 });
+    const wheels = [];
+    [[tx, tz], [-tx, tz], [tx, -tz], [-tx, -tz]].forEach(([x, z], i) => {
+      const pivot = new THREE.Group(); pivot.position.set(x, r, z);
+      const spin = new THREE.Group();
+      const inx = x > 0 ? -1 : 1;
+      const disc = new THREE.Mesh(discGeo, discMat); disc.position.x = inx * w * 0.33;
+      spin.add(new THREE.Mesh(wheelGeo, rubber), new THREE.Mesh(hubGeo, hubMat), new THREE.Mesh(capGeo, calMat), disc);
+      for (let k = 0; k < 5; k++) { const sp = new THREE.Mesh(spokeGeo, hubMat); sp.rotation.x = (k * Math.PI) / 5; spin.add(sp); }
+      // v114: rubber sidewall shoulders so tires read as tires, not cylinders
+      const sideGeo = new THREE.TorusGeometry(r * 0.82, 0.07, 8, 20); sideGeo.rotateY(Math.PI / 2);
+      for (const sxx of [-1, 1]) { const sd = new THREE.Mesh(sideGeo, rubber); sd.position.x = sxx * (w / 2 - 0.03); spin.add(sd); }
+      const cal = new THREE.Mesh(box(0.1, r * 0.7, 0.3), calMat);
+      cal.position.set(inx * w * 0.55, 0, r * 0.6);
+      pivot.add(spin, cal);
+      g.add(pivot);
+      wheels.push({ pivot, spin, front: i < 2 });
+      if (o.faired) { // closed fender arch (prototype body)
+        const arch = new THREE.Mesh(new THREE.TorusGeometry(r * 1.16, 0.1, 8, 14, Math.PI), paint);
+        arch.rotation.y = Math.PI / 2;
+        arch.position.set(x, r * 0.94, z);
+        body.add(arch);
+      }
+    });
+    return { wheels, hubMat, calMat, wheelR: r };
   }
 
-  // Full-width continuous LED brake lightbar + high-mount brake light
-  const tailBar = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.05), tailMat);
-  tailBar.position.set(0, 0.78, -2.62); body.add(tailBar);
-  const highBrake = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.04, 0.04), tailMat);
-  highBrake.position.set(0, 1.15, -1.82); body.add(highBrake);
-
-  // Dual stainless steel exhaust pipes with blued titanium finish
-  const exGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.3, 10); exGeo.rotateX(Math.PI / 2);
-  const exMat = new THREE.MeshStandardMaterial({ color: 0x8a8f98, metalness: 0.95, roughness: 0.25 });
-  for (const sx of [-0.35, 0.35]) { const ex = new THREE.Mesh(exGeo, exMat); ex.position.set(sx, 0.35, -2.6); body.add(ex); }
-
-  // Race Number roundel decal
-  const rc = document.createElement('canvas'); rc.width = rc.height = 128;
-  const rg = rc.getContext('2d');
-  rg.fillStyle = '#f4f4f4'; rg.beginPath(); rg.arc(64, 64, 62, 0, PI2); rg.fill();
-  rg.strokeStyle = '#111'; rg.lineWidth = 6; rg.stroke();
-  rg.fillStyle = '#111'; rg.font = '900 78px Arial Black, Arial'; rg.textAlign = 'center'; rg.textBaseline = 'middle';
-  rg.fillText(String(num || 1), 64, 70);
-  const rTex = new THREE.CanvasTexture(rc); rTex.encoding = THREE.sRGBEncoding;
-  const rGeo = new THREE.CircleGeometry(0.32, 24);
-  for (const sx of [-1, 1]) {
-    const r = new THREE.Mesh(rGeo, new THREE.MeshStandardMaterial({ map: rTex, roughness: 0.5 }));
-    r.rotation.y = sx * Math.PI / 2; r.position.set(sx * 0.95, 0.62, 0.35); body.add(r);
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.1, 3.6), new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.4 }));
-    stripe.position.set(sx * 0.96, 0.32, -0.1); body.add(stripe);
+  // ---- race-number roundels on both doors/flanks ----
+  function roundels(y, x) {
+    const rc = document.createElement('canvas'); rc.width = rc.height = 128;
+    const rg = rc.getContext('2d');
+    rg.fillStyle = '#f4f4f4'; rg.beginPath(); rg.arc(64, 64, 62, 0, PI2); rg.fill();
+    rg.strokeStyle = '#111'; rg.lineWidth = 6; rg.stroke();
+    rg.fillStyle = '#111'; rg.font = '900 78px Arial Black, Arial'; rg.textAlign = 'center'; rg.textBaseline = 'middle';
+    rg.fillText(String(num || 1), 64, 70);
+    const rTex = new THREE.CanvasTexture(rc); rTex.encoding = THREE.sRGBEncoding;
+    const rGeo = new THREE.CircleGeometry(0.3, 24);
+    for (const sx of [-1, 1]) {
+      const r = new THREE.Mesh(rGeo, new THREE.MeshStandardMaterial({ map: rTex, roughness: 0.5 }));
+      r.rotation.y = (sx * Math.PI) / 2; r.position.set(sx * x, y, 0.35); body.add(r);
+    }
   }
 
-  // Multi-spoke alloy wheels with ventilated brake discs and colored calipers
-  const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 20); wheelGeo.rotateZ(Math.PI / 2);
-  const hubGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.31, 12); hubGeo.rotateZ(Math.PI / 2);
-  const discGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.04, 16); discGeo.rotateZ(Math.PI / 2);
-  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.92 });
-  const hubMat = new THREE.MeshStandardMaterial({ color: 0xb9bec7, metalness: 0.9, roughness: 0.3 });
-  const discMat = new THREE.MeshStandardMaterial({ color: 0xb0b5bc, metalness: 0.92, roughness: 0.28 });
-  const calMat = new THREE.MeshStandardMaterial({ color: accent, metalness: 0.4, roughness: 0.35 });
-  const capGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.32, 10); capGeo.rotateZ(Math.PI / 2);
-  const wheels = [];
-  [[0.98, 1.45], [-0.98, 1.45], [0.98, -1.45], [-0.98, -1.45]].forEach(([x, z], i) => {
-    const pivot = new THREE.Group(); pivot.position.set(x, 0.35, z);
-    const spin = new THREE.Group();
-    const disc = new THREE.Mesh(discGeo, discMat);
-    disc.position.set(x > 0 ? -0.1 : 0.1, 0, 0);
-    spin.add(new THREE.Mesh(wheelGeo, wheelMat), new THREE.Mesh(hubGeo, hubMat), new THREE.Mesh(capGeo, calMat), disc);
-    const cal = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.26, 0.3), calMat);
-    cal.position.set(x > 0 ? -0.16 : 0.16, 0, 0.24);
-    pivot.add(spin, cal);
-    g.add(pivot);
-    wheels.push({ pivot, spin, front: i < 2 });
+  // ==========================================================================
+  // v118: ONE parameterised shell builder, EIGHT silhouettes.
+  // Visual identity follows the selected car (fury..reaper), not the race
+  // class: every card in the lobby and every car on the grid is a distinct
+  // machine. Physics/collision stay class-based and untouched.
+  // ==========================================================================
+  function buildShellCar(P) {
+    add(shell(P.pts, P.w, P.bev), paint);
+    if (P.canopy) {
+      const c = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), glass);
+      c.scale.set(P.canopy[0], P.canopy[1], P.canopy[2]);
+      c.position.set(P.canopy[3], P.canopy[4], P.canopy[5]);
+      body.add(c);
+    }
+    if (P.wing === 'gt') {
+      add(box(1.9, 0.06, 0.55), carbon, 0, 1.32, -2.25, -0.12);
+      for (const sx of [-0.95, 0.95]) add(box(0.05, 0.34, 0.6), paint, sx, 1.35, -2.25);
+    } else if (P.wing === 'duck') add(box(1.7, 0.07, 0.35), paint, 0, P.duckY || 0.96, -2.30, -0.15);
+    else if (P.wing === 'hyper') {
+      add(box(2.0, 0.04, 0.42), carbon, 0, 1.42, -2.15, -0.06);
+      for (const sx of [-0.7, 0.7]) add(box(0.05, 0.5, 0.5), carbon, sx, 1.16, -2.15, 0.25);
+    }
+    if (P.splitter) add(box(1.95, 0.05, 0.44 + P.splitter * 0.14), carbon, 0, 0.10, 2.62);
+    if (P.canards) for (const sx of [-1, 1]) {
+      add(box(0.28, 0.03, 0.4), carbon, sx, 0.45, 2.2, 0, 0, sx * 0.5);
+      add(box(0.24, 0.03, 0.32), carbon, sx * 0.92, 0.62, 1.95, 0, 0, sx * 0.55);
+    }
+    if (P.skirts) for (const sx of [-1, 1]) add(box(0.1, 0.14, 3.2), carbon, sx * (P.w / 2 + 0.26), 0.18, -0.1);
+    if (P.lights === 'quad') for (const sx of [-1, 1]) {
+      add(box(0.42, 0.09, 0.22), headMat, sx * 0.62, 0.58, 2.42, 0, -sx * 0.35, sx * 0.12);
+      add(box(0.44, 0.11, 0.24), headLensMat, sx * 0.62, 0.58, 2.43, 0, -sx * 0.35, sx * 0.12);
+    } else if (P.lights === 'blade') {
+      add(box(1.5, 0.03, 0.04), headMat, 0, 0.55, 2.44);
+      for (const sx of [-1, 1]) add(box(0.5, 0.06, 0.18), headMat, sx * 0.62, 0.62, 2.36, 0, -sx * 0.3);
+    } else if (P.lights === 'tri') for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) {
+      add(box(0.16, 0.05, 0.14), headMat, sx * (0.45 + k * 0.18), 0.56 + k * 0.05, 2.4 - k * 0.06, 0, -sx * 0.3);
+    } else for (const sx of [-1, 1]) {
+      const lg = cyl(0.11, 0.11, 0.1, 14); lg.rotateX(Math.PI / 2);
+      add(lg, headMat, sx * 0.6, 0.6, 2.38);
+    }
+    if (P.tails === 'bar') add(box(1.7, 0.07, 0.05), tailMat, 0, 0.78, -2.62);
+    else if (P.tails === 'strip') add(box(1.8, 0.04, 0.04), tailMat, 0, 0.82, -2.58);
+    else for (const sx of [-0.55, 0.55]) add(box(0.5, 0.08, 0.06), tailMat, sx, 0.8, -2.6);
+    const ex = (x, y) => { const e2 = cyl(0.07, 0.07, 0.3, 10); e2.rotateX(Math.PI / 2); add(e2, chrome, x, y, -2.6); };
+    if (P.exhaust === 'quad') { ex(-0.5, 0.32); ex(-0.32, 0.32); ex(0.32, 0.32); ex(0.5, 0.32); }
+    else if (P.exhaust === 'center') { ex(-0.09, 0.4); ex(0.09, 0.4); }
+    else { ex(-0.35, 0.35); ex(0.35, 0.35); }
+    if (P.vents) for (const sx of [-1, 1]) add(box(0.06, 0.1, 0.16), carbon, sx * (P.w / 2 + 0.22), 0.94, 0.55);
+    if (P.mirrors) for (const sx of [-1, 1]) add(box(0.16, 0.05, 0.22), paint, sx * 0.86, 1.02, 0.55);
+    if (P.stripes) for (const sx of [-1, 1]) {
+      const st = new THREE.Mesh(box(0.02, 0.1, 3.6), new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.4 }));
+      st.position.set(sx * 0.4, (P.decalY || 1.0) + 0.02, -0.1); body.add(st);
+    }
+    roundels(P.round[0], P.round[1]);
+    const built = Object.assign(buildWheels(P.wheels), { decalY: P.decalY, hasWing: P.wing !== 'none' });
+    // v138 BUG: the v126 "yellow card" heuristic hid every mesh whose material colour
+    // was yellowish (r>200 && g>170 && b<130). The YELLOW car's own paint is 0xffd400
+    // - it matched exactly, so its roof/hood/panels were switched off and the car
+    // rendered with holes ("damaged"). The card the user saw was the DECAL, already
+    // fixed in v127 by disabling decals; a colour heuristic must never touch paint.
+    return built;
+  }
+
+  // Eight silhouettes matched to the eight car briefs:
+  // fury  low/wide aggression   storm  sleek aero-teardrop   volt   sharp wedge
+  // viper cockpit-forward tail  blaze  dramatic winged racer phantom canopy hyper
+  // ghost premium clean GT      reaper stealth faceted low
+  const SHELL_PROFILES = {
+    fury: { pts: [[-2.35, 0.13], [-2.52, 0.52], [-2.34, 0.78], [-1.20, 0.84], [-0.50, 1.04], [0.40, 0.94], [1.40, 0.62], [2.35, 0.46], [2.52, 0.20], [2.35, 0.11]], w: 1.74, bev: 0.15, canopy: [0.80, 0.34, 1.50, 0.05, 0.86, -0.45], wing: 'gt', splitter: 2, canards: true, skirts: true, lights: 'quad', tails: 'twin', exhaust: 'quad', vents: true, round: [0.60, 1.02], wheels: { r: 0.34, tx: 1.03, tz: 1.45 }, decalY: 0.94 },
+    storm: { pts: [[-2.30, 0.16], [-2.40, 0.62], [-2.16, 0.88], [-1.10, 0.98], [-0.35, 1.14], [0.55, 1.04], [1.55, 0.74], [2.28, 0.52], [2.40, 0.24], [2.28, 0.13]], w: 1.60, bev: 0.17, canopy: [0.70, 0.40, 1.80, 0.10, 0.92, -0.55], wing: 'duck', splitter: 1, skirts: true, lights: 'blade', tails: 'strip', exhaust: 'center', mirrors: true, round: [0.64, 0.94], wheels: { r: 0.35, tx: 0.96, tz: 1.50 }, decalY: 1.00 },
+    volt: { pts: [[-2.28, 0.14], [-2.46, 0.50], [-2.20, 0.86], [-1.30, 0.90], [-0.60, 1.10], [0.30, 1.06], [1.30, 0.70], [2.30, 0.50], [2.46, 0.22], [2.30, 0.12]], w: 1.66, bev: 0.12, canopy: [0.66, 0.30, 1.30, -0.15, 0.94, -0.30], wing: 'none', splitter: 2, canards: true, lights: 'tri', tails: 'twin', exhaust: 'dual', vents: true, round: [0.62, 0.98], wheels: { r: 0.34, tx: 0.99, tz: 1.42 }, decalY: 0.98 },
+    viper: { pts: [[-2.40, 0.15], [-2.48, 0.58], [-2.26, 0.84], [-1.00, 0.92], [-0.20, 1.12], [0.70, 1.00], [1.70, 0.68], [2.36, 0.50], [2.46, 0.22], [2.34, 0.12]], w: 1.62, bev: 0.15, canopy: [0.68, 0.36, 1.35, 0.45, 0.92, -0.15], wing: 'duck', duckY: 0.92, splitter: 1, canards: true, lights: 'round', tails: 'twin', exhaust: 'quad', stripes: true, round: [0.62, 0.96], wheels: { r: 0.35, tx: 0.98, tz: 1.40 }, decalY: 0.98 },
+    blaze: { pts: [[-2.32, 0.14], [-2.46, 0.56], [-2.24, 0.82], [-1.15, 0.90], [-0.45, 1.10], [0.45, 0.98], [1.45, 0.66], [2.32, 0.48], [2.46, 0.21], [2.32, 0.12]], w: 1.70, bev: 0.14, canopy: [0.74, 0.34, 1.55, 0.05, 0.90, -0.40], wing: 'hyper', splitter: 2, canards: true, skirts: true, lights: 'quad', tails: 'bar', exhaust: 'quad', vents: true, stripes: true, round: [0.60, 1.00], wheels: { r: 0.36, tx: 1.02, tz: 1.44 }, decalY: 0.96 },
+    phantom: { pts: [[-2.26, 0.16], [-2.38, 0.64], [-2.12, 0.92], [-1.05, 1.02], [-0.30, 1.20], [0.60, 1.08], [1.60, 0.76], [2.26, 0.54], [2.38, 0.25], [2.26, 0.14]], w: 1.58, bev: 0.18, canopy: [0.72, 0.48, 1.70, 0.05, 0.98, -0.50], wing: 'hyper', splitter: 1, skirts: true, lights: 'blade', tails: 'strip', exhaust: 'center', mirrors: true, round: [0.66, 0.93], wheels: { r: 0.35, tx: 0.95, tz: 1.52 }, decalY: 1.04 },
+    ghost: { pts: [[-2.30, 0.16], [-2.42, 0.62], [-2.28, 0.92], [-1.10, 0.98], [-0.45, 1.16], [0.30, 1.00], [1.25, 0.66], [2.25, 0.50], [2.40, 0.26], [2.30, 0.14]], w: 1.56, bev: 0.16, canopy: [0.78, 0.42, 1.45, 0, 0.88, -0.35], wing: 'none', splitter: 0, lights: 'round', tails: 'bar', exhaust: 'dual', mirrors: true, round: [0.62, 0.95], wheels: { r: 0.35, tx: 0.98, tz: 1.45 }, decalY: 1.02 },
+    reaper: { pts: [[-2.34, 0.12], [-2.48, 0.48], [-2.28, 0.74], [-1.25, 0.80], [-0.55, 0.98], [0.35, 0.90], [1.35, 0.60], [2.34, 0.44], [2.48, 0.18], [2.34, 0.10]], w: 1.68, bev: 0.13, canopy: [0.70, 0.28, 1.45, 0.05, 0.82, -0.45], wing: 'duck', duckY: 0.88, splitter: 1, skirts: true, lights: 'tri', tails: 'strip', exhaust: 'center', vents: true, round: [0.56, 0.99], wheels: { r: 0.34, tx: 1.00, tz: 1.46 }, decalY: 0.92 }
+  };
+
+  const meta = buildShellCar(SHELL_PROFILES[SID] || SHELL_PROFILES.ghost);
+
+  // v114 REALISM: emissive bars alone look like stickers. Additive glow
+  // sprites at every head/tail emitter give the bloom pass something to
+  // catch, day or night, and read as lit lenses even without bloom (LOW/MED).
+  const glowTex = getCachedTexture('lamp_glow', () => {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const gg = c.getContext('2d');
+    const gr = gg.createRadialGradient(32, 32, 2, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,0.9)');
+    gr.addColorStop(0.4, 'rgba(255,255,255,0.28)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    gg.fillStyle = gr; gg.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
   });
+  body.traverse((o) => {
+    if (!o.isMesh || (o.material !== headMat && o.material !== tailMat)) return;
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: o.material === headMat ? 0xfff2c0 : 0xff2020,
+      transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+    }));
+    const wide = o.material === tailMat;
+    spr.scale.set(wide ? 1.1 : 0.8, wide ? 0.5 : 0.45, 1);
+    spr.position.copy(o.position);
+    body.add(spr);
+  });
+
+  // v114 REALISM: ambient-occlusion contact patch. The shadow map alone leaves
+  // cars visually floating; a soft dark ellipse glues them to the asphalt.
+  const patchTex = getCachedTexture('contact_patch', () => {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 256;
+    const gg = c.getContext('2d');
+    const gr = gg.createRadialGradient(64, 128, 8, 64, 128, 120);
+    gr.addColorStop(0, 'rgba(0,0,0,0.55)');
+    gr.addColorStop(0.6, 'rgba(0,0,0,0.28)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    gg.fillStyle = gr; gg.fillRect(0, 0, 128, 256);
+    return new THREE.CanvasTexture(c);
+  });
+  const patch = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.9, 5.6),
+    new THREE.MeshBasicMaterial({ map: patchTex, transparent: true, depthWrite: false, opacity: 0.85 })
+  );
+  patch.rotation.x = -Math.PI / 2;
+  patch.position.y = 0.02;
+  patch.renderOrder = 1;
+  g.add(patch);
+
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  return { group: g, body, wheels, paint, hubMat, calMat, headMat, tailMat, glassMat: glass };
+  patch.castShadow = false;
+  return {
+    group: g, body, wheels: meta.wheels, paint, hubMat: meta.hubMat, calMat: meta.calMat,
+    headMat, tailMat, glassMat: glass,
+    bodyIdx: SID, shellId: SID, carId: SID, decalY: meta.decalY || 1.02, hasWing: !!meta.hasWing, wheelR: meta.wheelR || 0.35
+  };
 }
+
 const carVisuals = {}; // v76: lazy up to 6
 const SLOT_HEX = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7];
+// v118: visual identity follows the selected car, not the race class.
+const SHELL_BY_HEX = {
+  0xe10600: 'ghost', 0x0a84ff: 'ghost', 0xffd400: 'ghost', 0x00a651: 'ghost',
+  0xff6a00: 'ghost', 0x7b2ff7: 'ghost', 0xffffff: 'ghost', 0x111111: 'ghost'
+};
+function shellForHex(h) { return SHELL_BY_HEX[h | 0] || 'ghost'; } // v136: all procedural fallback = ghost shape (same as GLB) to avoid damaged look
 const SLOT_ACC = [0xffd400, 0xff2038, 0x111111, 0xffffff, 0x111111, 0xffffff];
-function ensureCarVisual(s) {
-  if (!carVisuals[s]) { carVisuals[s] = Object.assign(createCar(SLOT_HEX[(s - 1) % 6], s, SLOT_ACC[(s - 1) % 6]), { spinAngle: 0 }); scene.add(carVisuals[s].group); }
+function ensureCarVisual(s, b) {
+  if (!carVisuals[s]) { carVisuals[s] = Object.assign(createCar(SLOT_HEX[(s - 1) % 6], s, SLOT_ACC[(s - 1) % 6], shellForHex(SLOT_HEX[(s - 1) % 6])), { spinAngle: 0 }); scene.add(carVisuals[s].group); }
   return carVisuals[s];
 }
+// v112: a racer's body shell arrives with the snapshot (cs.b). Swapping shells
+// must NOT reset the network smoothing state or the wheel spin, otherwise a
+// body change mid-race would snap the car to a raw snapshot for one frame.
+// v118: rebuild a slot's procedural visual as the shell of car `id`, carrying
+// network smoothing, wheel spin and visibility across the swap.
+function ensureCarShell(slot, id, colHex) {
+  const old = carVisuals[slot];
+  const col = colHex != null ? colHex : (old && old.paint ? old.paint.color.getHex() : SLOT_HEX[(slot - 1) % 6]);
+  if (old) { scene.remove(old.group); disposeCarVisual(old); }
+  const nv = Object.assign(createCar(col, slot, SLOT_ACC[(slot - 1) % 6], id), { spinAngle: (old && old.spinAngle) || 0 });
+  if (old) {
+    nv.netX = old.netX; nv.netZ = old.netZ; nv.netH = old.netH; nv.netInit = old.netInit;
+    nv.group.visible = old.group.visible;
+  }
+  carVisuals[slot] = nv;
+  scene.add(nv.group);
+  return nv;
+}
 ensureCarVisual(1); ensureCarVisual(2);
+
+// v117 — real-car model swap (visual only). The snapshot keeps carrying just the
+// paint hex; mapping hex -> car id -> licensed GLB happens client-side, so the
+// server and the WebSocket protocol stay completely model-agnostic. A slot
+// always starts life as the procedural shell (instant, offline-safe) and is
+// upgraded in place when its model finishes loading. Any failure keeps the
+// shell: the race never depends on a GLB.
+function disposeCarVisual(v) {
+  if (!v) return;
+  if (v.isGlb) { v.dispose(); return; }
+  v.group.traverse((o) => {
+    if (o.isMesh && o.geometry) o.geometry.dispose();
+    if (o.isMesh && o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (m && m.dispose) m.dispose(); });
+  });
+}
+function upgradeCarVisual(slot, id, b, colHex) {
+  const old = carVisuals[slot];
+  if (!old || old.glbPending) return;
+  // v140 FIX: this used to bail out whenever `old.carId === id`, and EVERY procedural
+  // shell carries carId 'ghost' (v136 made them all the ghost silhouette). 'ghost' is
+  // also the id the WHITE paint (0xffffff) maps to, so a white car - one of the eight
+  // colours in the paint picker - was stuck on the low-poly shell forever: it never
+  // upgraded to the real model while every other car did. Only skip when the slot is
+  // already showing this GLB.
+  if (old.isGlb && old.carId === id) return;
+  if (typeof CarModels !== 'undefined' && CarModels.hasModel(id)) {
+    if (old.glbFailed) return;   // never retry-loop a broken download
+    old.glbPending = true;
+    CarModels.acquire(id, colHex == null ? null : colHex, b).then((w) => {
+      const cur = carVisuals[slot];
+      if (!w) { if (cur) { cur.glbPending = false; cur.glbFailed = true; } return; }
+      if (cur) {
+        w.netX = cur.netX; w.netZ = cur.netZ; w.netH = cur.netH; w.netInit = cur.netInit;
+        w.spinAngle = cur.spinAngle || 0; w.group.visible = cur.group.visible;
+        scene.remove(cur.group); disposeCarVisual(cur);
+      }
+      carVisuals[slot] = w; scene.add(w.group);
+    });
+    return;
+  }
+  if (!old.isGlb && old.shellId === id) return;
+  ensureCarShell(slot, id, colHex);   // v118: silhouette follows the car id
+}
 
 // ---------------------------------------------------------------------------
 // ===========================================================================
@@ -1773,6 +2052,17 @@ function ghostDelta(myTotalAlong, raceT) {
   const f = (myTotalAlong - a.d) / Math.max(1e-6, b.d - a.d);
   return (a.t + (b.t - a.t) * f) - raceT;
 }
+// v110: THE HUD SHOWED THE WRONG RACE LENGTH. CFG.totalLaps is only the DEFAULT
+// room length (3). The distance a race actually runs is room.laps - chosen in the
+// lobby (1/3/5), sent with 'start', and published on every server snapshot as
+// `laps`. Every lap readout used the constant instead, so a five-lap race displayed
+// "LAP 4/3" while the finish line behaved perfectly. One accessor for every
+// readout: the live snapshot first, then the local preference, then the default.
+function raceLapsTotal() {
+  const n = (latest && latest.laps) || (prefs && prefs.laps) || CFG.totalLaps;
+  const i = parseInt(n, 10);
+  return i >= 1 ? i : CFG.totalLaps;
+}
 function ttHudUpdate(mine) {
   const el = $('tt-hud'); if (!el) return;
   if (!TT.on || !latest || latest.state !== 'racing') { el.style.display = 'none'; return; }
@@ -1789,17 +2079,18 @@ function ttHudUpdate(mine) {
     if (TT.lapNum !== mine.lap) { TT.lapNum = mine.lap; TT.lapStart = latest.raceTime; }
     const mId2 = (latest.map != null) ? latest.map : builtMapId;
     const bl2 = Pget().bestLap; const bestLapT = bl2 && bl2[mId2] != null ? bl2[mId2] : null;
+    const LT = raceLapsTotal();
     if (bestLapT != null) {
       const cur = (latest.raceTime || 0) - (TT.lapStart || 0);
       const dLap = cur - bestLapT;
-      el.dataset.lap = 'LAP ' + Math.min((mine.lap || 0) + 1, CFG.totalLaps) + '/' + CFG.totalLaps + ' · ' + fmtTime(cur) + ' vs ⚡' + fmtTime(bestLapT) + ' (' + (dLap >= 0 ? '+' : '-') + Math.abs(dLap).toFixed(2) + ')';
-    } else el.dataset.lap = 'LAP ' + Math.min((mine.lap || 0) + 1, CFG.totalLaps) + '/' + CFG.totalLaps;
+      el.dataset.lap = 'LAP ' + Math.min((mine.lap || 0) + 1, LT) + '/' + LT + ' · ' + fmtTime(cur) + ' vs ⚡' + fmtTime(bestLapT) + ' (' + (dLap >= 0 ? '+' : '-') + Math.abs(dLap).toFixed(2) + ')';
+    } else el.dataset.lap = 'LAP ' + Math.min((mine.lap || 0) + 1, LT) + '/' + LT;
   }
   if (!TT.practice && ghostCum && mine && performance.now() - TT.lastCmp > 1000) {
     TT.lastCmp = performance.now();
     const d = ghostDelta((mine.lap || 0) + (mine.pr || 0), latest.raceTime);
     if (d != null) {
-      const laps2 = (latest && latest.laps) || CFG.totalLaps;
+      const laps2 = raceLapsTotal();
       const nearEnd = mine && ((mine.lap || 0) + (mine.pr || 0)) > (laps2 - 0.25);
       line3 = (d < 0 ? (nearEnd ? 'NEW BEST PACE 🟢' : '-' + Math.abs(d).toFixed(2) + 's AHEAD 🟢') : '+' + d.toFixed(2) + 's BEHIND 🔴');
     }
@@ -2156,6 +2447,63 @@ function spawnSkid(x, z, heading) {
 let pingMs = -1;
 let fps = 0, fpsFrames = 0, fpsTime = 0;
 let selectedMap = 0;
+
+// ---------------------------------------------------------------------------
+// v93 REVENGE / DEEP-LINK TRACK RESOLUTION (pure helpers, unit-tested by
+// lifting them out of this file in test/client-revenge-map.test.js).
+// A revenge target used to arrive as { mapId } while this code read `.map`, so
+// the banner said "on Circuit" and accepting always forced map 0. Every track
+// choice that does not come from a tap on a map card now resolves through here.
+// ---------------------------------------------------------------------------
+function validMapId(m) {
+  const n = parseInt(m, 10);
+  return (isFinite(n) && CORE.MAPS[n]) ? n : null;
+}
+function revengeMapOf(t) {
+  if (!t) return 0;
+  const m = validMapId(t.map != null ? t.map : t.mapId);
+  return m == null ? 0 : m;
+}
+function resolveMapParam(search) {
+  try {
+    const raw = new URLSearchParams(search || '').get('map');
+    return raw == null ? null : validMapId(raw);
+  } catch (e) { return null; }
+}
+function paintMapCards(map) {
+  document.querySelectorAll('.map-card').forEach((b) => b.classList.toggle('active', parseInt(b.dataset.map, 10) === map));
+}
+// Applies a track chosen programmatically (revenge, challenge, deep link):
+// paints the wizard first, because without it the setup page keeps showing the
+// previous circuit while the room runs the new one, then either retunes the room
+// we are in or creates one carrying the map AND the full identity - a bare
+// { type: 'start' } from the lobby made the relay build a room on map 0 with a
+// default driver, which is the other half of the revenge-map bug.
+function acceptMapChoice(m) {
+  const v = validMapId(m);
+  const map = v == null ? 0 : v;
+  selectedMap = map;
+  paintMapCards(map);
+  if (inARoom()) net.send({ type: 'map', map });
+  else ensureRoomCreated();
+  return map;
+}
+// every START now carries the chosen track + identity (see acceptMapChoice)
+function startPayload() {
+  return Object.assign({ type: 'start', map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload());
+}
+// v93: ship every identity this browser owns, the way the club calls do, so a
+// grudge recorded under the verified account uuid is still found when the poll
+// runs with the display name or the device pid.
+function revengeQuery(uid) {
+  const ids = (typeof crewIdentity === 'function') ? crewIdentity() : {};
+  const p = new URLSearchParams();
+  p.set('uid', uid || ids.uid || '');
+  if (ids.sbUid) p.set('sbUid', ids.sbUid);
+  if (ids.pid) p.set('pid', ids.pid);
+  if (ids.name) p.set('name', ids.name);
+  return p.toString();
+}
 let viewMode = 'race';
 let lastResults = null;
 
@@ -2165,13 +2513,10 @@ const CAR_NAMES = [
   { e: '🟠', n: 'BLAZE' }, { e: '🟣', n: 'PHANTOM' }, { e: '⚪', n: 'GHOST' }, { e: '⚫', n: 'REAPER' }
 ];
 
-let myEq = null; // v75 server-validated equipped loadout (null = guest/local prefs)
-async function loadEquipped() {
-  const acc = window.SRAccount;
-  if (!(acc && acc.loggedIn && acc.loggedIn())) { myEq = null; return; }
-  const r = await sbGet('/rest/v1/player_equipped?user_id=eq.' + acc.uid() + '&select=car,paint,wheels,trail,decal,neon,title');
-  myEq = (r && r[0]) || null;
-}
+// v115: the garage & coin economy are retired. Body shells now follow the
+// FREE class choice so every grid still shows distinct machines:
+// velocity = Valkyrie hyper wedge, accel = Volt formula, grip = Monza GT.
+const BODY_FOR_CLASS = { velocity: 5, accel: 4, grip: 0 };  // v118: wire field only - visuals follow the car id
 function identityPayload() {
   // v37: a signed-in racer uses their Supabase id, so times follow them across devices
   let name = prefs.name, pid = prefs.pid;
@@ -2181,21 +2526,114 @@ function identityPayload() {
   }
   // v75: signed-in racers race with their server-validated garage loadout
   let color = prefs.color, cos = prefs.cos || { decal: 0, wheels: 0, trail: 0 }, title = playerTitle().title;
-  if (myEq && window.SRCos) {
-    const car = SRCos.findCar(myEq.car);
-    const paint = SRCos.PAINTS[myEq.paint || 0] || SRCos.PAINTS[0];
-    color = paint.hex;
-    cos = { decal: myEq.decal || 0, wheels: myEq.wheels || 0, trail: myEq.trail || 0, neon: myEq.neon || 0, sp: car.sp };
-    title = myEq.title || title;
-  }
-  return { name, pid, color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, map: selectedMap, weather: currentWeather, cos, title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined, chid: window.__chId || undefined }; // v73/v74/v83
+  cos = Object.assign({}, cos, { b: BODY_FOR_CLASS[prefs.cls] || 0 }); // v115 body follows class
+  return { name, pid, color, cls: prefs.cls, laps: prefs.laps, bot: prefs.bot, botSkill: prefs.botSkill, sens: prefs.sens, map: selectedMap, weather: currentWeather, cos, title, tok: (window.SRAccount && SRAccount.token && SRAccount.token()) || undefined, chid: window.__chId || undefined }; // v73/v74/v83
+}
+
+// ---------------------------------------------------------------------------
+// v90 CLUB SYNC FIX — one racer, many identity strings.
+// The club APIs used to send ONLY `SRAccount.name() || prefs.pid`, while the
+// server credits race mileage against the verified Supabase uuid (or, without
+// Supabase, the in-race display name). Only the member whose two keys happened
+// to coincide was ever credited, so a club showed one racer's distance and
+// points while everybody else stayed at 0.0 km / 0 pts. Every club call now
+// ships ALL identities this browser owns and the server aliases them together.
+// ---------------------------------------------------------------------------
+function crewIdentity() {
+  const signedIn = !!(window.SRAccount && typeof SRAccount.loggedIn === 'function' && SRAccount.loggedIn() && SRAccount.uid && SRAccount.uid());
+  const sbUid = signedIn ? String(SRAccount.uid()) : '';
+  return {
+    uid: (window.SRAccount && typeof SRAccount.name === 'function' && SRAccount.name()) ? SRAccount.name() : (prefs.pid || prefs.name || 'racer'),
+    pid: signedIn ? ('sb:' + sbUid) : (prefs.pid || ''), // exactly what identityPayload() sends
+    sbUid,
+    name: prefs.name || ''
+  };
+}
+function crewQuery(ci) {
+  return Object.keys(ci).filter((k) => ci[k]).map((k) => k + '=' + encodeURIComponent(ci[k])).join('&');
+}
+// v97: the competitive boards are asked with EVERY identity this browser owns.
+// A racer's rows are stored under their account uuid when signed in and under their
+// device pid when not, and rows saved before v97 are keyed by display name. Asking
+// with one of the three is why "your rank" came back empty and the summary bar above
+// the board showed the tier and rating of whoever was rendered last.
+function boardIdentityQuery() {
+  const ids = (typeof crewIdentity === 'function') ? crewIdentity() : {};
+  const p = new URLSearchParams();
+  const key = ids.sbUid || String(ids.pid || '').replace(/^sb:/, '') || ids.name || '';
+  if (key) p.set('uid', key);
+  if (ids.sbUid) p.set('sbUid', ids.sbUid);
+  if (ids.pid) p.set('pid', ids.pid);
+  if (ids.name) p.set('name', ids.name);
+  return p.toString();
+}
+function crewRowIsMe(m, ci) {
+  if (!m) return false;
+  const strip = (v) => String(v).replace(/^sb:/i, '').trim().toLowerCase();
+  const mine = [ci.uid, ci.pid, ci.sbUid, ci.name].filter(Boolean).map(strip);
+  const row = [m.uid].concat(m.aliases || []).filter(Boolean).map(strip);
+  return row.some((r) => r && mine.indexOf(r) !== -1);
+}
+
+// ---------------------------------------------------------------------------
+// v96 FIX — the lobby's account row must not take guest features down with it.
+//
+// #account-line holds CLUBS, BADGES, BOUNTIES and GARAGE as well as SIGN IN.
+// It used to stay hidden unless the optional Supabase account client reported
+// available(), which needs window.SB_U and window.SB_A — values injected into
+// js/config.js at deploy time. When they did not arrive (a deploy without
+// SUPABASE_ANON, a blocked or still-loading account.js, a tab open since before
+// the config was injected, a CDN edge holding an older copy) the whole row stayed
+// hidden and that racer simply had no CLUBS button — while a friend in the same
+// lobby, whose config had arrived, had one. Two players, one room, different game.
+//
+// Clubs, badges, bounties and the garage are GUEST features: the server keys them
+// by device pid or display name, which is exactly why their rows are durable for
+// signed-out racers too. Only signing in needs the SDK. So the row is always
+// shown and only the account controls are gated.
+//
+// Both helpers are pure (no DOM, no globals) so the truth table is testable.
+function accountRowVisibility(accountsOn, signedIn) {
+  const on = !!accountsOn;
+  const me = !!signedIn;
+  return {
+    line: true,                 // CLUBS / BADGES / BOUNTIES / GARAGE are guest features
+    chip: true,
+    signIn: on && !me,
+    signOut: on && me,
+    friends: on && me           // the friends list is account-only (it needs a uuid)
+  };
+}
+
+function applyAccountRowVisibility(v, getEl) {
+  const set = (id, val) => { const el = getEl(id); if (el) el.hidden = !val; };
+  set('account-line', v.line);
+  set('account-btn', v.signIn);
+  set('account-out', v.signOut);
+  set('friends-btn', v.friends);
+  return v;
 }
 
 function applyQuality(q) {
   const dpr = window.devicePixelRatio || 1;
-  if (q === 'low') { renderer.setPixelRatio(1); sunLight.castShadow = false; }
-  else if (q === 'med') { renderer.setPixelRatio(Math.min(dpr, 1.5)); sunLight.castShadow = true; }
-  else { renderer.setPixelRatio(Math.min(dpr, 2)); sunLight.castShadow = true; }
+  // v136: lag fix — 512 shadow for all, lower pixelRatio, disable shadows on low/med
+  if (q === 'low') {
+    renderer.setPixelRatio(1);
+    sunLight.castShadow = false;
+    try{ sunLight.shadow.mapSize.set(512,512); sunLight.shadow.map=null; }catch(e){}
+    try{ if(window._prev){ _prev=null; _prevFailed=true; } }catch(e){}
+  } else if (q === 'med') {
+    renderer.setPixelRatio(Math.min(dpr, 1.1));
+    sunLight.castShadow = false;
+    try{ sunLight.shadow.mapSize.set(512,512); sunLight.shadow.map=null; }catch(e){}
+  } else {
+    renderer.setPixelRatio(Math.min(dpr, 1.35));
+    sunLight.castShadow = true;
+    try{ sunLight.shadow.mapSize.set(512,512); sunLight.shadow.map=null; }catch(e){}
+  }
+  // v140: the bloom chain carries its own pixel ratio - if it is left behind the
+  // whole frame is composited at the wrong resolution (blurry glow, or wasted GPU)
+  try { resizeViewport(); } catch (e) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -2229,12 +2667,19 @@ function initFX() {
   } catch (e) { fxComposer = null; fxFailed = true; }
 }
 function renderMain() {
+  if (glLost) return;                 // v140: drawing into a lost context throws/spams
   if (fxActive() && !fxFailed) {
     if (fxComposer) { fxComposer.render(); return; }
-    loadFxScripts().then(initFX); // plain render until the pass is ready
+    // plain render until the pass is ready - and ask for it exactly once per asset
+    // load, not once per frame (60 promises/second was pure GC pressure)
+    if (!fxInitPending) {
+      fxInitPending = true;
+      loadFxScripts().then(() => { fxInitPending = false; initFX(); });
+    }
   }
   renderer.render(scene, camera);
 }
+let fxInitPending = false;
 
 // audio: master mute + simple synth music loop
 let musicNodes = null;
@@ -2293,6 +2738,84 @@ function stopMusic() { if (musicNodes) { clearInterval(musicNodes.timer); try { 
 
 
 function wireLobbyV2() {
+  // -------------------------------------------------------------------------
+  // v96: GUEST FEATURES ARE WIRED FIRST, each in its own try/catch.
+  //
+  // Everything further down can throw. The 3D car previews create a SECOND WebGL
+  // context, and a GPU on the browser's blocklist, hardware acceleration turned
+  // off, the per-page context limit, or a context lost mid-session all make that
+  // fail. This function used to build those previews BEFORE it wired CLUBS, so
+  // one such failure unwound the whole function and silently deleted CLUBS,
+  // BADGES, BOUNTIES, GARAGE and SIGN IN for that one browser: the lobby still
+  // rendered (it is static HTML), the buttons were simply never wired and never
+  // revealed. Two racers in the same lobby saw different games, and the only
+  // clue was an empty car picker.
+  //
+  // So: the buttons a guest needs come first, nothing cosmetic can preempt them,
+  // and a failure in one block cannot take out the next.
+  // -------------------------------------------------------------------------
+  try {
+    // v83 Racing Syndicate Crews button & modal wiring
+    const crewBtn = $('crew-btn');
+    if (crewBtn) crewBtn.addEventListener('click', () => openCrewModal('my'));
+    const crewClose = $('crew-close');
+    if (crewClose) crewClose.addEventListener('click', () => { const d = $('crew-dlg'); if (d) d.hidden = true; });
+    ['my', 'join', 'create', 'board'].forEach((t) => {
+      const cTabBtn = $(`ctab-${t}`);
+      if (cTabBtn) cTabBtn.addEventListener('click', () => openCrewModal(t));
+    });
+  } catch (e) { console.warn('[lobby] club wiring failed', e); }
+
+  try {
+    // ---- optional racer account (Supabase, v37) — purely additive ----------
+    (function () {
+      const acc = window.SRAccount;
+      const accountsOn = !!(acc && typeof acc.available === 'function' && acc.available());
+      let signedIn = false;
+      if (accountsOn) { try { signedIn = !!acc.loggedIn(); } catch (e) { signedIn = false; } }
+
+      // v96: reveal the row BEFORE anything can bail out. Everything in it except
+      // the sign-in controls works for a guest, so a missing account SDK must never
+      // hide CLUBS, BADGES, BOUNTIES or GARAGE.
+      applyAccountRowVisibility(accountRowVisibility(accountsOn, signedIn), $);
+      const chip0 = $('account-chip'); if (chip0) chip0.textContent = '👤 ' + (prefs.name || 'racer');   // v121: no guest identity anywhere
+      if (!accountsOn) return;
+
+      const chip = $('account-chip'), btn = $('account-btn'), out = $('account-out'), dlg = $('account-dlg');
+      function paint(s) {
+        applyAccountRowVisibility(accountRowVisibility(true, !!s), $);
+        // v130: show driver identity (prefs.name) not email — name from account OR driver identity, email only as last resort
+        if (chip) chip.textContent = '👤 ' + (s ? (s.name || prefs.name || (s.email || 'racer').split('@')[0]) : (prefs.name || 'racer'));
+        sendMeta();
+      }
+      acc.session().then((s) => { if (s && !acc.name()) acc.setName(prefs.name || (s.email ? s.email.split('@')[0] : '')); paint(s); }).catch(() => {});
+      // Guarded: a throw here aborts the rest of the lobby wiring, and the account
+      // dialog markup is optional.
+      if (btn) btn.addEventListener('click', () => { if (dlg) dlg.hidden = false; const e = $('acc-err'); if (e) e.textContent = ''; });
+      const accClose = $('acc-close'); if (accClose) accClose.addEventListener('click', () => { if (dlg) dlg.hidden = true; });
+      if (out) out.addEventListener('click', () => { acc.logout(); location.replace('auth.html'); });  // v122: sign out returns to the gate
+      function doIt(fn) {
+        const err = $('acc-err'); err.textContent = '…';
+        const em = $('acc-email').value.trim(), pw = $('acc-pass').value;
+        const nm = ($('acc-name').value.trim() || prefs.name).slice(0, 14);
+        fn(em, pw, nm).then(async (r) => {
+          if (r.error === 'CHECK_EMAIL') { err.textContent = r.msg; return; }
+          if (r.error) { err.textContent = r.error === 'NETWORK' ? 'Network error — try again.' : r.error; return; }
+          if (!acc.name()) acc.setName(nm);
+          // v73: bind a unique username to the account (server-validated by DB)
+          const un = (nm || '').replace(/[^A-Za-z0-9_]/g, '_').slice(0, 16) || ('RACER_' + Math.floor(Math.random() * 9999));
+          const pr = await acc.ensureProfile(un);
+          if (pr && pr.error === 'TAKEN') toast('⚠ Username taken — using a variant. Change it in your profile soon.');
+          if (dlg) dlg.hidden = true;
+          paint(await acc.session());
+          toast('Welcome, ' + un + '! 🏁');
+        });
+      }
+      const su = $('acc-signup'); if (su) su.addEventListener('click', () => doIt((e, p, n) => acc.signup(e, p, n)));
+      const li = $('acc-login'); if (li) li.addEventListener('click', () => doIt((e, p) => acc.login(e, p)));
+    })();
+  } catch (e) { console.warn('[lobby] account row wiring failed', e); }
+
   const nameEl = $('inp-name');
   if (nameEl) {
     nameEl.value = prefs.name;
@@ -2303,7 +2826,11 @@ function wireLobbyV2() {
   // two-page lobby navigation
   const p1 = $('page1'), p2 = $('page2');
   const nb = $('next-btn'), bb = $('back-btn');
-  if (nb) nb.addEventListener('click', () => { ensureRoomCreated(); p1.style.display = 'none'; p2.style.display = ''; buildCarCards(); });
+  if (nb) {
+    const _nbHandler = () => { ensureRoomCreated(); p1.style.display = 'none'; p2.style.display = ''; buildCarCards(); };
+    nb.addEventListener('click', _nbHandler);
+    nb.addEventListener('pointerdown', (e)=>{ try{ e.preventDefault(); }catch(_){} _nbHandler(); }, {passive:false});
+  }
   if (bb) bb.addEventListener('click', () => { p2.style.display = 'none'; p1.style.display = ''; });
   document.querySelectorAll('.cls-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.cls === prefs.cls);
@@ -2313,7 +2840,6 @@ function wireLobbyV2() {
       sendMeta();
       const isAuth = (window.SRAccount && typeof SRAccount.loggedIn === 'function' && SRAccount.loggedIn());
       const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !isAuth;
-      if (isAuth) loadEquipped();
     });
   });
   document.querySelectorAll('.laps-btn').forEach((b) => {
@@ -2334,7 +2860,15 @@ function wireLobbyV2() {
     b.addEventListener('click', () => {
       prefs.quality = b.dataset.q; savePrefs();
       document.querySelectorAll('.q-btn').forEach((x) => x.classList.toggle('active', x === b));
-      applyQuality(prefs.quality);
+      // v132 auto low-quality for very low network (2g, slow-2g, saveData) — keeps game playable
+try{
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if(conn){
+    const slow = (conn.effectiveType && /2g/.test(conn.effectiveType)) || conn.saveData;
+    if(slow && prefs.quality==='high'){ prefs.quality='low'; savePrefs(); }
+  }
+}catch(e){}
+applyQuality(prefs.quality);
       applyHD();
     });
   });
@@ -2365,7 +2899,6 @@ function wireLobbyV2() {
       sendMeta();
       const isAuth = (window.SRAccount && typeof SRAccount.loggedIn === 'function' && SRAccount.loggedIn());
       const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !isAuth;
-      if (isAuth) loadEquipped();
     });
   });
   const muteEl = $('set-mute'); if (muteEl) { muteEl.checked = !!prefs.mute; muteEl.addEventListener('change', () => { prefs.mute = muteEl.checked; savePrefs(); setAudio(); }); }
@@ -2382,6 +2915,48 @@ function wireLobbyV2() {
   const hdEl = $('set-hd');
   if (hdEl) { hdEl.checked = prefs.hdLobby !== false; hdEl.addEventListener('change', () => { prefs.hdLobby = hdEl.checked; savePrefs(); applyHD(); }); }
 
+  // -------------------------------------------------------------------------
+  // v92 STEERING SENSITIVITY - phone-brightness style slider.
+  // The value is a pure preference: it travels with identityPayload() on join /
+  // create and live via sendMeta(), and the AUTHORITATIVE sim applies it inside
+  // Car.setSens() (clamped to 0.5-1.5 server-side). Nothing here changes the
+  // physics locally, so the client and the server can never disagree.
+  // -------------------------------------------------------------------------
+  const sensEl = $('set-sens');
+  if (sensEl) {
+    const sensVal = $('sens-val');
+    let popTimer = 0;
+    const paintSens = (pop) => {
+      const pct = Math.round((prefs.sens || 1) * 100);
+      sensEl.value = String(pct);
+      sensEl.style.setProperty('--fill', (pct - 50).toFixed(1) + '%'); // 50..150 -> 0..100% of the track
+      if (sensVal) sensVal.textContent = pct + '%';
+      sensEl.setAttribute('aria-valuetext', pct + '%');
+      if (pop && sensVal && !prefs.rm) {
+        sensVal.classList.add('pop');
+        clearTimeout(popTimer);
+        popTimer = setTimeout(() => sensVal.classList.remove('pop'), 150);
+      }
+    };
+    sensEl.addEventListener('input', () => {
+      prefs.sens = clamp(parseInt(sensEl.value, 10) / 100, 0.5, 1.5);
+      savePrefs();
+      paintSens(true);
+      sendMeta(); // applied to your car immediately, mid-race included
+    });
+    sensEl.addEventListener('change', () => {
+      const pct = Math.round((prefs.sens || 1) * 100);
+      toast(((typeof tI18n === 'function' ? tI18n('sensLabel') : null) || '🎚️ STEERING SENSITIVITY') + ': ' + pct + '%');
+      track('sens_change', selectedMap, { sens: pct });
+    });
+    const sensReset = $('sens-reset');
+    if (sensReset) sensReset.addEventListener('click', () => {
+      prefs.sens = 1; savePrefs(); paintSens(true); sendMeta();
+      toast((typeof tI18n === 'function' ? tI18n('sensResetDone') : null) || '🎚️ Steering sensitivity reset to 100%');
+    });
+    paintSens(false);
+  }
+
   // v83 Weather Selection in Wizard
   document.querySelectorAll('.weather-btn').forEach((b) => {
     b.addEventListener('click', () => {
@@ -2392,15 +2967,6 @@ function wireLobbyV2() {
     });
   });
 
-  // v83 Racing Syndicate Crews button & modal wiring
-  const crewBtn = $('crew-btn');
-  if (crewBtn) crewBtn.addEventListener('click', () => openCrewModal('my'));
-  const crewClose = $('crew-close');
-  if (crewClose) crewClose.addEventListener('click', () => { $('crew-dlg').hidden = true; });
-  ['my', 'join', 'create', 'board'].forEach((t) => {
-    const cTabBtn = $(`ctab-${t}`);
-    if (cTabBtn) cTabBtn.addEventListener('click', () => openCrewModal(t));
-  });
 
   // v81 Competitive Retention lobby buttons
   const rivalBtn = $('lcomp-rival-btn');
@@ -2430,43 +2996,6 @@ function wireLobbyV2() {
     });
   }
 
-  // ---- optional racer account (Supabase, v37) — purely additive ------------
-  (function () {
-    const line = $('account-line'); if (!line) return;
-    if (!(window.SRAccount && SRAccount.available())) return;
-    line.hidden = false;
-    const chip = $('account-chip'), btn = $('account-btn'), out = $('account-out'), dlg = $('account-dlg');
-    function paint(s) {
-      if (s) { chip.textContent = '👤 ' + (s.name || (s.email || 'racer').split('@')[0]); btn.hidden = true; out.hidden = false; }
-      else { chip.textContent = '👤 guest'; btn.hidden = false; out.hidden = true; }
-      sendMeta();
-      const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !s;
-      if (s) loadEquipped();
-    }
-    SRAccount.session().then((s) => { if (s && !SRAccount.name() && s.email) SRAccount.setName(s.email.split('@')[0]); paint(s); });
-    btn.addEventListener('click', () => { dlg.hidden = false; $('acc-err').textContent = ''; });
-    $('acc-close').addEventListener('click', () => { dlg.hidden = true; });
-    out.addEventListener('click', () => { SRAccount.logout(); paint(null); toast('Signed out'); });
-    function doIt(fn) {
-      const err = $('acc-err'); err.textContent = '…';
-      const em = $('acc-email').value.trim(), pw = $('acc-pass').value;
-      const nm = ($('acc-name').value.trim() || prefs.name).slice(0, 14);
-      fn(em, pw, nm).then(async (r) => {
-        if (r.error === 'CHECK_EMAIL') { err.textContent = r.msg; return; }
-        if (r.error) { err.textContent = r.error === 'NETWORK' ? 'Network error — try again.' : r.error; return; }
-        if (!SRAccount.name()) SRAccount.setName(nm);
-        // v73: bind a unique username to the account (server-validated by DB)
-        const un = (nm || '').replace(/[^A-Za-z0-9_]/g, '_').slice(0, 16) || ('RACER_' + Math.floor(Math.random() * 9999));
-        const pr = await SRAccount.ensureProfile(un);
-        if (pr && pr.error === 'TAKEN') toast('⚠ Username taken — using a variant. Change it in your profile soon.');
-        dlg.hidden = true;
-        paint(await SRAccount.session());
-        toast('Welcome, ' + un + '! 🏁');
-      });
-    }
-    $('acc-signup').addEventListener('click', () => doIt((e, p, n) => SRAccount.signup(e, p, n)));
-    $('acc-login').addEventListener('click', () => doIt((e, p) => SRAccount.login(e, p)));
-  })();
   // ---------------------------------------------------------------------------
 // v74/v80 — friends, challenges, shareable results, profile league/achievements
 // ---------------------------------------------------------------------------
@@ -2509,11 +3038,24 @@ function renderChallengeBanner(ch) {
   if (cta) {
     cta.onclick = () => {
       b.style.display = 'none';
-      selectedMap = ch.map;
+      acceptMapChoice(ch.map); // v93: same path as revenge - paint the wizard, retune or create the room
       const sb = $('start-btn'); if (sb) sb.click();
     };
   }
 }
+
+// v93: honour ?map=N. The revenge-challenge share message points at
+// https://sridharrush.com/?map=3 and nothing ever read it, so every shared
+// grudge race opened on Highland instead of the track it was issued on.
+// Placed before the challenge bootstrap so an explicit ?ch= still wins.
+(function () {
+  const m = resolveMapParam(location.search);
+  if (m == null) return;
+  selectedMap = m;
+  paintMapCards(m);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => paintMapCards(m));
+  track('map_deeplink', m, { src: 'query' });
+})();
 
 (function () {
   const numId = (location.search.match(/[?&]ch=(\d+)/) || [])[1];
@@ -2592,7 +3134,7 @@ function openFriends() {
     (mine || []).forEach((f) => fids.push(f.from_uid === uid ? f.to_uid : f.from_uid));
     let names = {};
     if (fids.length) { const p = await sbGet('/rest/v1/profiles?' + fids.map((f) => 'id=eq.' + f).join('&') + '&select=id,username'); (p || []).forEach((x) => { names[x.id] = x.username; }); }
-    let html = '<div class="f-row"><input id="f-search" class="f-in" placeholder="search username…" maxlength="16"/><button id="f-add" class="ghost sm">ADD</button></div>';
+    let html = '<div class="f-row"><input id="f-search" class="f-in" placeholder="search racer name…" maxlength="16"/><button id="f-add" class="ghost sm">SEARCH</button></div><div id="f-search-res" class="f-search-res"></div>';
     // v78 incoming challenges (accept/decline allowed by RLS "ch answer")
     const week = Date.now() - 7 * 86400000;
     const inch = await sbGet('/rest/v1/challenges?to_uid=eq.' + uid + '&status=eq.open&select=id,from_name,map,target_ms,created_at', tok);
@@ -2614,17 +3156,35 @@ function openFriends() {
     if (!fids.length) html += '<div class="p-empty">No friends yet — search a username above.</div>';
     fids.forEach((f) => { html += '<div class="f-item"><span>' + escapeHtml(names[f] || 'RACER') + '</span><button class="ghost sm f-ch" data-uid="' + f + '" data-name="' + escapeHtml(names[f] || 'RACER') + '">⚔️ CHALLENGE</button></div>'; });
     body.innerHTML = html;
-    $('f-add').addEventListener('click', async () => {
+    const doSearch = async () => {
       const q = $('f-search').value.trim();
-      const p = await sbGet('/rest/v1/profiles?username=ilike.' + encodeURIComponent(q) + '&select=id,username&limit=5');
-      if (!p || !p.length) { toast('No racer named ' + q); return; }
-      const t = p.find((x) => x.username.toLowerCase() === q.toLowerCase()) || p[0];
-      if (t.id === uid) { toast('That is you 🙂'); return; }
-      const c = sbCfg();
-      const r = await fetch(c.url + '/rest/v1/friends', { method: 'POST', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ from_uid: uid, to_uid: t.id }) });
-      toast(r.ok ? '✉️ Request sent to ' + t.username : 'Request failed (already friends?)');
-      openFriends();
-    });
+      const resEl = $('f-search-res');
+      if (!q || q.length < 2) { if(resEl) resEl.innerHTML = '<div class="p-empty">Type at least 2 letters of racer name</div>'; return; }
+      if(resEl) resEl.innerHTML = '<div class="p-empty">Searching…</div>';
+      // v138: search by racer name (username) using ilike %q% — partial, case-insensitive, like in-game names
+      const like = encodeURIComponent('%' + q + '%');
+      const p = await sbGet('/rest/v1/profiles?username=ilike.' + like + '&select=id,username&limit=10');
+      if (!p || !p.length) { if(resEl) resEl.innerHTML = '<div class="p-empty">No racer named \"' + escapeHtml(q) + '\" found</div>'; return; }
+      let out = '';
+      for (const t of p) {
+        if (t.id === uid) continue;
+        if (fids.includes(t.id)) { out += '<div class="f-item"><span>' + escapeHtml(t.username) + ' — already friends</span></div>'; continue; }
+        out += '<div class="f-item"><span>' + escapeHtml(t.username) + '</span><button class="ghost sm f-send" data-uid="' + t.id + '" data-name="' + escapeHtml(t.username) + '">ADD</button></div>';
+      }
+      if (!out) out = '<div class="p-empty">No new racers found for \"' + escapeHtml(q) + '\"</div>';
+      if(resEl) resEl.innerHTML = out;
+      resEl.querySelectorAll('.f-send').forEach((b)=>{
+        b.addEventListener('click', async ()=>{
+          const c = sbCfg();
+          const r = await fetch(c.url + '/rest/v1/friends', { method: 'POST', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ from_uid: uid, to_uid: b.dataset.uid }) });
+          if (r.ok) { toast('✉️ Request sent to ' + b.dataset.name); b.textContent='SENT'; b.disabled=true; }
+          else { const j=await r.json().catch(()=>null); toast(j && j.message && j.message.includes('duplicate') ? 'Already sent / already friends' : 'Request failed'); }
+        });
+      });
+    };
+    $('f-add').addEventListener('click', doSearch);
+    const fsIn = $('f-search');
+    if (fsIn) fsIn.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); doSearch(); } });
     body.querySelectorAll('.ch-acc').forEach((b) => b.addEventListener('click', async () => { const c = sbCfg(); await fetch(c.url + '/rest/v1/challenges?id=eq.' + b.dataset.id, { method: 'PATCH', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'accepted' }) }); toast('⚔️ Challenge accepted — race!'); location.href = location.origin + '/?ch=' + b.dataset.id; }));
     body.querySelectorAll('.ch-rej').forEach((b) => b.addEventListener('click', async () => { const c = sbCfg(); await fetch(c.url + '/rest/v1/challenges?id=eq.' + b.dataset.id, { method: 'PATCH', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'declined' }) }); openFriends(); }));
     body.querySelectorAll('.f-acc').forEach((b) => b.addEventListener('click', async () => { const c = sbCfg(); await fetch(c.url + '/rest/v1/friends?id=eq.' + b.dataset.id, { method: 'PATCH', headers: { apikey: c.anon, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'accepted' }) }); openFriends(); }));
@@ -2638,89 +3198,8 @@ function openFriends() {
 // ---------------------------------------------------------------------------
 // v75 — GARAGE: collection, customization, coin shop (server-validated)
 // ---------------------------------------------------------------------------
-function garageData() {
-  return (async () => {
-    const acc = window.SRAccount;
-    if (!(acc && acc.loggedIn())) return null;
-    const uid = acc.uid();
-    const [st, w, inv] = await Promise.all([
-      sbGet('/rest/v1/player_stats?user_id=eq.' + uid + '&select=xp,wins,rating'),
-      sbGet('/rest/v1/player_wallet?user_id=eq.' + uid + '&select=coins', acc.token()),
-      sbGet('/rest/v1/player_inventory?user_id=eq.' + uid + '&select=item_id', acc.token()),
-    ]);
-    const s0 = (st && st[0]) || {};
-    return {
-      d: { level: (window.SRProg ? SRProg.levelFromXp(Number(s0.xp) || 0).level : 1), wins: s0.wins || 0, rating: s0.rating || 1000, owned: (inv || []).map((x) => x.item_id) },
-      coins: (w && w[0] && Number(w[0].coins)) || 0
-    };
-  })();
-}
-function openGarage() {
-  const dlg = $('garage-dlg'); if (!dlg) return;
-  dlg.hidden = false;
-  const body = $('garage-body');
-  const acc = window.SRAccount;
-  if (!(acc && acc.loggedIn())) {
-    body.innerHTML = '<div class="p-empty">' + (tI18n('accountSub') || 'Sign in to open your garage — cars, paints, neon and more unlock as you race.') + '<br><br><button id="g-signin" class="big-cta">' + (tI18n('signin') || 'SIGN IN / CREATE ACCOUNT') + '</button></div>';
-    const b = $('g-signin'); if (b) b.addEventListener('click', () => { dlg.hidden = true; const ab = $('account-btn'); if (ab) ab.click(); });
-    return;
-  }
-  body.innerHTML = '<div class="p-empty">' + (tI18n('loadingCircuit') || 'Opening garage…') + '</div>';
-  (async () => {
-    const gd = await garageData();
-    if (!gd) return;
-    const { d, coins } = gd;
-    const eq = myEq || { car: 'street_runner', paint: 0, wheels: 0, trail: 0, decal: 0, neon: 0 };
-    let html = '<div class="g-head">🪙 <b>' + coins + '</b> ' + (tI18n('rushCoins') || 'RUSH COINS') + ' <span class="g-hint">earn coins by racing · dailies · wins</span></div>';
-    html += '<div class="p-sub">' + (tI18n('myCars') || 'MY CARS') + '</div><div class="g-cars">';
-    for (const c of (window.SRCos ? SRCos.CARS : [])) {
-      const un = SRCos.itemUnlocked(c.unlock, d, 'car:' + c.id);
-      const sel = eq.car === c.id;
-      html += '<div class="g-car' + (sel ? ' sel' : '') + '" style="border-color:' + (un ? SRCos.RARITY[c.rarity] : '#232c47') + '">' +
-        '<div class="g-cn" style="color:' + SRCos.RARITY[c.rarity] + '">' + c.name + '</div>' +
-        '<div class="g-cr">' + c.rarity.toUpperCase() + '</div>' +
-        '<div class="g-bars">' + c.bars.map((b) => '<i style="width:' + (b * 10) + '%"></i>').join('') + '</div>' +
-        (sel ? '<div class="g-st">' + (tI18n('selected') || 'SELECTED') + '</div>' : un ? '<button class="ghost sm g-eq" data-car="' + c.id + '">' + (tI18n('select') || 'SELECT') + '</button>' : '<div class="g-lock">🔒 ' + SRCos.unlockText(c.unlock) + '</div>') +
-        '</div>';
-    }
-    html += '</div>';
-    const sect = (title, list, kind) => {
-      let h = '<div class="p-sub">' + title + '</div><div class="g-items">';
-      for (const it of list) {
-        const un = SRCos.itemUnlocked(it.unlock, d, kind + ':' + it.id);
-        const cur = eq[kind === 'paint' ? 'paint' : kind] === it.id;
-        h += '<button class="g-it' + (cur ? ' sel' : '') + '" data-kind="' + kind + '" data-id="' + it.id + '" ' + (!un ? '' : '') + '>' +
-          (it.hex != null ? '<i class="sw" style="background:#' + it.hex.toString(16).padStart(6, '0') + '"></i>' : '') +
-          '<span>' + it.name + '</span>' +
-          (cur ? '<em>✔</em>' : un ? '' : '<em class="lk">🔒 ' + SRCos.unlockText(it.unlock) + '</em>') + '</button>';
-      }
-      return h + '</div>';
-    };
-    html += sect(tI18n('paint') || 'PAINT', SRCos.PAINTS, 'paint') +
-      sect(tI18n('wheelsCat') || 'WHEELS', SRCos.WHEELS, 'wheels') +
-      sect(tI18n('trailsCat') || 'TRAILS', SRCos.TRAILS, 'trail') +
-      sect(tI18n('decalsCat') || 'DECALS', SRCos.DECALS, 'decal') +
-      sect(tI18n('neonCat') || 'NEON', SRCos.NEONS, 'neon');
-    body.innerHTML = html;
-    body.querySelectorAll('.g-eq').forEach((b) => b.addEventListener('click', () => {
-      net.send({ type: 'equip', eq: Object.assign({}, eq, { car: b.dataset.car }) });
-    }));
-    body.querySelectorAll('.g-it').forEach((b) => b.addEventListener('click', () => {
-      const kind = b.dataset.kind, id = parseInt(b.dataset.id, 10);
-      const list = kind === 'paint' ? SRCos.PAINTS : kind === 'wheels' ? SRCos.WHEELS : kind === 'trail' ? SRCos.TRAILS : kind === 'decal' ? SRCos.DECALS : SRCos.NEONS;
-      const it = list.find((x) => x.id === id);
-      if (!it) return;
-      if (!SRCos.itemUnlocked(it.unlock, d, kind + ':' + id)) {
-        if (SRCos.isCoinItem(it.unlock)) { net.send({ type: 'buy', item: kind + ':' + id }); }
-        else toast('🔒 ' + SRCos.unlockText(it.unlock));
-        return;
-      }
-      net.send({ type: 'equip', eq: Object.assign({}, eq, { [kind]: id }) });
-    }));
-  })();
-}
 // v76 — room lobby panel (players / rating / ready / host)
-let iAmReady = false;
+let iAmReady = false; // v116: restored - the v115 garage slice swallowed this declaration
 function renderRoomLobby(e) {
   if (!e) return;
   const el = $('room-players'); if (!el) return;
@@ -2744,7 +3223,6 @@ window.renderRoomLobby = renderRoomLobby;
 (function () {
   const pc = $('profile-close'); if (pc) pc.addEventListener('click', () => { const d = $('profile-dlg'); if (d) d.hidden = true; });
   const fb = $('friends-btn'); if (fb) fb.addEventListener('click', openFriends);
-  const gb = $('garage-btn'); if (gb) gb.addEventListener('click', openGarage);
   const rbtn = $('ready-btn'); if (rbtn) rbtn.addEventListener('click', () => { iAmReady = !iAmReady; net.send({ type: 'ready', on: iAmReady }); renderRoomLobby({ players: window.__lastLobby || [], cap: 6 }); });
   const gc = $('garage-close'); if (gc) gc.addEventListener('click', () => { const d = $('garage-dlg'); if (d) d.hidden = true; });
   const fc = $('friends-close'); if (fc) fc.addEventListener('click', () => { const d = $('friends-dlg'); if (d) d.hidden = true; });
@@ -2770,7 +3248,7 @@ function switchLobbyTab(t) {
     if (b) b.classList.toggle('active', other === t);
     if (p) p.classList.toggle('hidden', other !== t);
   });
-  if (t === 'rank') loadCompetitiveHub();
+  if (t === 'rank') { ensureCompetitiveWired(); loadCompetitiveHub(); }
 }
 
 function initLobbyTabs() {
@@ -2780,6 +3258,18 @@ function initLobbyTabs() {
   });
 }
 initLobbyTabs();
+
+// v107: only the early CALL belongs here. The hub state (compActiveTab, compScope,
+// compSelectedMap) and ensureCompetitiveWired() itself are declared at FILE scope,
+// next to loadCompetitiveHub(). Declaring them in here - inside wireLobbyV2() - made
+// them function-local, and because wireCompetitiveHub() / loadCompetitiveHub() are
+// file-scope functions, their closures resolve compActiveTab against the GLOBAL
+// scope, where a function-local var does not exist:
+//     Uncaught ReferenceError: compActiveTab is not defined   (all four hub tabs)
+// with every board left hidden behind the empty placeholder. Calling it here is
+// still worth it - the tabs go live the moment the lobby is wired - and the flag on
+// globalThis makes it idempotent, so the file-scope call and this one cannot clash.
+  ensureCompetitiveWired();
 
 function showRatingTab() {
   switchLobbyTab('rank');
@@ -2892,38 +3382,85 @@ function cbCol(slot) {
 }
 function applyMyColor() {
   if (carVisuals[mySlot] && carVisuals[mySlot].paint) carVisuals[mySlot].paint.color.setHex(prefs.color);
+  const id = ((typeof CarModels !== 'undefined') && CarModels.idForHex(prefs.color)) || shellForHex(prefs.color);  // v117/v118
+  // v133: prefetch ALL 8 car models (same GLB url, single download) so new models show instantly, no old/new flicker
+  if (typeof CarModels !== 'undefined') {
+    try{ ['fury','storm','volt','viper','blaze','phantom','ghost','reaper'].forEach((cid)=>{ try{ CarModels.prefetch(cid); }catch(e){} }); }catch(e){}
+  }
+  if (id && mySlot && carVisuals[mySlot] && (CarModels.hasModel(id) || carVisuals[mySlot].shellId !== id || carVisuals[mySlot].isGlb)) {
+    CarModels.prefetch(id);
+    upgradeCarVisual(mySlot, id, carVisuals[mySlot].bodyIdx | 0, prefs.color);
+  }
 }
 
 // ---- live 3D car thumbnails for the car-select cards ----
 let _prev = null;
+let _prevFailed = false;   // v96: remember the failure instead of re-throwing it forever
 function carPreviewRenderer() {
+  // v132 low-network: skip 3D previews on LOW quality — use colour swatches (instant, no second WebGL context)
+  try{ const raw=localStorage.getItem('sr_prefs'); if(raw){ const j=JSON.parse(raw); if(j&&j.quality==='low') return null; } }catch(e){}
   if (_prev) return _prev;
-  const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  if (_prevFailed) return null;
+  // A second WebGL context is a luxury, not a requirement. Browsers refuse one
+  // when the GPU is blocklisted, hardware acceleration is off, the per-page
+  // context limit is hit, or a context was lost. Returning null lets the car
+  // picker fall back to colour swatches instead of taking the lobby down.
+  let r;
+  try {
+    r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  } catch (e) {
+    _prevFailed = true;
+    console.warn('[cars] 3D preview unavailable - using colour swatches', e && e.message);
+    return null;
+  }
   r.setSize(180, 110);
   const sc = new THREE.Scene();
   sc.add(new THREE.HemisphereLight(0xffffff, 0x334, 1.1));
   const dl = new THREE.DirectionalLight(0xffffff, 1.4); dl.position.set(3, 4, 5); sc.add(dl);
   const cam = new THREE.PerspectiveCamera(38, 180 / 110, 0.1, 100);
   cam.position.set(5.2, 2.4, 6.0); cam.lookAt(0, 0.5, 0);
-  const car = createCar(0xffffff, 1, 0xffd400);
+  const car = createCar(0xffffff, 1, 0xffd400, 'ghost');
   sc.add(car.group);
-  _prev = { r, sc, cam, car };
+  _prev = { r, sc, cam, car, curId: 'ghost' };
   return _prev;
+}
+// v112: render any body shell in the shared preview context (garage thumbs).
+function renderCarPreview(hex, id) {
+  const P = carPreviewRenderer();
+  if (!P) return '';
+  id = (typeof id === 'string' && id) ? id : shellForHex(hex);
+  if (P.curId !== id) {
+    P.sc.remove(P.car.group);
+    disposeCarVisual(P.car);
+    P.car = createCar(0xffffff, 1, 0xffd400, id);
+    P.sc.add(P.car.group);
+    P.curId = id;
+  }
+  try {
+    P.car.paint.color.setHex(hex);
+    P.r.render(P.sc, P.cam);
+    return P.r.domElement.toDataURL();
+  } catch (e) { return ''; }
 }
 function buildCarCards() {
   const wrap = $('car-cards');
   if (!wrap) return;
   wrap.innerHTML = '';
-  const P = carPreviewRenderer();
+  const P = carPreviewRenderer();   // null when a preview context is unavailable
   CAR_COLORS.forEach((hex, i) => {
-    P.car.paint.color.setHex(hex);
-    P.r.render(P.sc, P.cam);
-    const url = P.r.domElement.toDataURL();
+    let url = '';
+    if (P) {
+      // A context lost mid-session throws here; the picker must still be built,
+      // so one bad frame degrades to a swatch rather than emptying the list.
+      url = renderCarPreview(hex, shellForHex(hex));   // v118: every card shows its own silhouette
+    }
     const nm = CAR_NAMES[i] || { e: '🏎️', n: 'RACER' };
     const b = document.createElement('button');
     b.className = 'car-card' + (hex === prefs.color ? ' active' : '');
     b.dataset.color = hex;
-    b.innerHTML = `<img src="${url}" alt="car"/><div class="mc-name">${nm.n}</div>`;
+    b.innerHTML = url
+      ? `<img src="${url}" alt="car"/><div class="mc-name">${nm.n}</div>`
+      : `<div class="mc-swatch" style="height:62px;border-radius:10px;background:${hex};box-shadow:0 0 18px ${hex}66;"></div><div class="mc-name">${nm.e || '🏎️'} ${nm.n}</div>`;
     b.addEventListener('click', () => {
       prefs.color = hex; savePrefs();
       wrap.querySelectorAll('.car-card').forEach((x) => x.classList.remove('active'));
@@ -2954,17 +3491,22 @@ function interpState(slot) {
   const target = performance.now() - interpDelay;
   let ai = -1;
   for (let i = snaps.length - 1; i >= 0; i--) { if (snaps[i].t <= target) { ai = i; break; } }
-  const carOf = (snap) => snap.cars[slot - 1];
-  if (ai < 0) return carOf(snaps[0].snap);
+  const carOf = (snap) => (snap && Array.isArray(snap.cars) ? snap.cars[slot - 1] : undefined);
+  const first = carOf(snaps[0].snap);
+  if (ai < 0) return first || null;
   const a = snaps[ai]; const b = snaps[ai + 1];
-  const ca = carOf(a.snap);
+  // v91 BUGFIX: the buffer may still hold snapshots from the room we just left
+  // (or the lobby slot 0, which owns no car). Interpolating a missing car threw
+  // "Cannot read properties of undefined (reading 'x')" and killed the loop.
+  const ca = carOf(a.snap) || first;
+  if (!ca) return null;
   if (!b) {
     // no newer snapshot yet (network gap): dead-reckon with the car's own
     // velocity for up to 130 ms instead of freezing (freeze = visible shake)
     const extra = clamp((target - a.t) / 1000, 0, 0.13);
     return { ...ca, s: slot, x: ca.x + Math.sin(ca.h) * ca.v * extra, z: ca.z + Math.cos(ca.h) * ca.v * extra };
   }
-  const cb = carOf(b.snap);
+  const cb = carOf(b.snap) || ca; // newer snapshot lacks the slot: hold position
   const alpha = clamp((target - a.t) / Math.max(1, b.t - a.t), 0, 1);
   return {
     s: slot, x: lerp(ca.x, cb.x, alpha), z: lerp(ca.z, cb.z, alpha), h: lerpAngle(ca.h, cb.h, alpha),
@@ -3099,7 +3641,9 @@ function showResults(order) {
       `<span class="rbest">best lap ${c.best != null ? fmtTime(c.best) : '--:--.--'}</span>`;
     rows.appendChild(div);
   });
-  $('results-title').textContent = winner ? `🏁 ${escapeHtml(winner.name || ('PLAYER ' + winner.slot))} WINS!` : '🏁 RACE RESULTS';
+  // v140: textContent escapes by itself - escapeHtml() here printed the raw entity
+  // ("O&#39;Brien") for any name containing & < > or an apostrophe
+  $('results-title').textContent = winner ? `🏁 ${winner.name || ('PLAYER ' + winner.slot)} WINS!` : '🏁 RACE RESULTS';
   // Podium celebration & fanfare
   const myRes = order.find((c) => (c.slot || c.s) === mySlot);
   if (myRes) {
@@ -3155,7 +3699,6 @@ function showResults(order) {
         (row.rd ? '<div class="c-rd ' + (row.rd > 0 ? 'up' : 'dn') + '">' + (row.rd > 0 ? '+' : '') + row.rd + ' RATING</div>' : '<div class="c-rd mu">RATED · vs humans only</div>') +
         (row.levelUp ? '<div class="c-lvl">⬆ LEVEL ' + row.levelNew + '</div>' : '') +
         (row.pr ? '<div class="c-pr">🎉 PERSONAL RECORD</div>' : '') +
-        (row.coins ? '<div class="c-xp" style="color:#ffd479">🪙 +' + row.coins + ' COINS</div>' : '') +
         (row.dailyXp ? '<div class="c-pr">📅 DAILY +150 XP</div>' : '') +
         (row.chDone ? '<div class="c-pr">⚔️ CHALLENGE COMPLETE +100</div>' : '') +
         (row.ach && row.ach.length ? '<div class="c-pr">' + row.ach.map((a) => a.icon + ' ' + a.name + ' +' + a.xp).join(' · ') + '</div>' : '') +
@@ -3202,7 +3745,7 @@ function showResults(order) {
       rivCard.hidden = false;
       const rTag = $('res-rival-tag'); if (rTag) rTag.textContent = '🎉 RIVAL OVERTAKEN!';
       const rGap = $('res-rival-gap'); if (rGap) rGap.textContent = `+#${row.rankDelta || 1} RANKS`;
-      const rTxt = $('res-rival-text'); if (rTxt) rTxt.textContent = `You overtook ${escapeHtml(row.overtakenRival.rivalName)} (#${row.overtakenRival.previousRivalRank}) on the global ladder!`;
+      const rTxt = $('res-rival-text'); if (rTxt) rTxt.textContent = `You overtook ${row.overtakenRival.rivalName} (#${row.overtakenRival.previousRivalRank}) on the global ladder!`;
     } else if (row && row.rankAfter) {
       rivCard.hidden = false;
       const rTag = $('res-rival-tag'); if (rTag) rTag.textContent = '⚔️ CURRENT STANDING';
@@ -3289,12 +3832,12 @@ function showResults(order) {
       const rTag = $('res-revenge-tag'); if (rTag) rTag.textContent = '🎉 REVENGE VICTORY!';
       const rBadge = $('res-revenge-badge'); if (rBadge) rBadge.textContent = `+${row.revengeAwarded.xpBonus} XP · +${row.revengeAwarded.coinsBonus} 🪙`;
       const rTxt = $('res-revenge-text'); if (rTxt) rTxt.textContent = 'You defeated your rival and claimed the +50% Revenge Bounty!';
-    } else if (row && row.pos > 1 && order.length > 1 && !latest.bot) {
+    } else if (row && row.pos > 1 && order.length > 1 && (!latest || !latest.bot)) {
       revResCard.hidden = false;
       const rTag = $('res-revenge-tag'); if (rTag) rTag.textContent = '⚔️ REVENGE OPPORTUNITY';
       const rBadge = $('res-revenge-badge'); if (rBadge) rBadge.textContent = '+50% BOUNTY';
       const rivalName = (order[0] && order[0].name) ? order[0].name : 'your rival';
-      const rTxt = $('res-revenge-text'); if (rTxt) rTxt.textContent = `Defeated by ${escapeHtml(rivalName)}. Instant rematch to claim Revenge Bounty!`;
+      const rTxt = $('res-revenge-text'); if (rTxt) rTxt.textContent = `Defeated by ${rivalName}. Instant rematch to claim Revenge Bounty!`;
     } else {
       revResCard.hidden = true;
     }
@@ -3392,28 +3935,48 @@ function showResults(order) {
   $('results').classList.remove('hidden'); { const gb = $('ghost-share-btn'); if (gb) gb.hidden = false; const pb = $('photo-btn'); if (pb) pb.hidden = false; const bb = $('beat-btn'); if (bb) bb.hidden = false; }
 }
 
+// v140 PERFORMANCE FIX — the lobby was rebuilt on EVERY snapshot.
+// ingestSnapshot() runs at 30 Hz and called updateLobby() every time, so the
+// leaderboard's innerHTML was regenerated 30x per second, two querySelectorAll
+// sweeps ran 30x per second, and every label was rewritten 30x per second. That is
+// ~150 DOM nodes created and destroyed every second plus a full re-layout of the
+// lobby panel - the visible lobby lag, and it starved the render loop on phones.
+// The lobby's real content changes at human speed, so it is now driven by a
+// signature: the DOM is only touched when something actually changed.
+let _lobbySig = null, _lobbyTouchShown = false;
 function updateLobby(snap) {
   if (SPEC_ROOM) { const ov = $('overlay'); if (ov && latest && latest.state !== 'waiting') ov.classList.add('hidden'); }
-  $('room-code').textContent = snap.code;
+  const isTouchDev = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
+  const ctrl = snap.controllers || {};
+  const sig = [snap.code, snap.mode, snap.map, ctrl[1] ? 1 : 0, ctrl[2] ? 1 : 0, snap.bot ? 1 : 0].join('|');
+  renderLeaderboard(snap);                  // has its own signature guard (1 Hz board)
+  if (sig === _lobbySig) return;            // nothing else the lobby shows has changed
+  const first = _lobbySig === null;
+  const modeChanged = first || _lobbySig.split('|')[1] !== String(snap.mode);
+  const mapChanged = first || _lobbySig.split('|')[2] !== String(snap.map);
+  _lobbySig = sig;
+
+  const charCode = snap.code;
+  if (first || $('room-code').textContent !== charCode) $('room-code').textContent = charCode;
   const gameLink = location.origin + '/?room=' + snap.code;
   const phoneLink = location.origin + '/controller?room=' + snap.code + (mySlot ? '&slot=' + mySlot : '');
-  $('game-link').textContent = gameLink;
-  $('ctrl-url').textContent = phoneLink;
+  if ($('game-link').textContent !== gameLink) $('game-link').textContent = gameLink;
+  if ($('ctrl-url').textContent !== phoneLink) $('ctrl-url').textContent = phoneLink;
   drawQR(phoneLink);
-  document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === snap.mode));
-  document.querySelectorAll('.map-card').forEach((b) => b.classList.toggle('active', parseInt(b.dataset.map, 10) === snap.map));
+  if (modeChanged) document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === snap.mode));
+  if (mapChanged) document.querySelectorAll('.map-card').forEach((b) => b.classList.toggle('active', parseInt(b.dataset.map, 10) === snap.map));
   if (snap.map != null) selectedMap = snap.map;
   const parts = [];
-  if (snap.controllers[1]) parts.push('📱 P1 joystick');
-  if (snap.controllers[2]) parts.push('📱 P2 joystick');
+  if (ctrl[1]) parts.push('📱 P1 joystick');
+  if (ctrl[2]) parts.push('📱 P2 joystick');
   if (snap.bot) parts.push('🏎️ Pro Rival Driver');
-  $('lobby-status').textContent = parts.length ? 'Connected: ' + parts.join(' · ') : 'Waiting for joysticks (or drive with keyboard)…';
-  const isTouchDev = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
+  const status = parts.length ? 'Connected: ' + parts.join(' · ') : 'Waiting for joysticks (or drive with keyboard)…';
+  if ($('lobby-status').textContent !== status) $('lobby-status').textContent = status;
   const mobBar = $('mob-choice-bar');
-  if (mobBar && isTouchDev && !wantedRoom && !SPEC_ROOM) {
+  if (mobBar && isTouchDev && !wantedRoom && !SPEC_ROOM && !_lobbyTouchShown) {
+    _lobbyTouchShown = true;
     mobBar.style.display = 'flex';
   }
-  renderLeaderboard(snap);
   if (!lobbyWired) { lobbyWired = true; wireLobbyV2(); }
 }
 let lobbyWired = false;
@@ -3439,7 +4002,15 @@ function renderLeaderboard(snap) {
   if (!el) return;
   if (snap.lb) lastLb = snap.lb;
   const rows = lastLb || [];
-  if (!rows.length) { el.innerHTML = '<div class="lb-empty">No times yet on this circuit — set the first!</div>'; return; }
+  if (!rows.length) {
+    if (el.__lbSig !== 'empty') { el.__lbSig = 'empty'; el.innerHTML = '<div class="lb-empty">No times yet on this circuit — set the first!</div>'; }
+    return;
+  }
+  // v140: this used to rebuild 30x/second from the snapshot rate. Only repaint when
+  // the board itself changed (it arrives at 1 Hz from the server).
+  const sig = rows.map((r) => r.pid + ':' + r.t + ':' + r.name).join(',');
+  if (el.__lbSig === sig) return;
+  el.__lbSig = sig;
   el.innerHTML = rows.map((r, i) => {
     const me = r.pid && r.pid === prefs.pid;
     return `<div class="lb-row${me ? ' me' : ''}"><span class="lb-pos">${i + 1}</span><span class="lb-name">${escapeHtml(r.name)}${me ? ' ★' : ''}</span><span class="lb-time">${fmtTime(r.t)}</span></div>`;
@@ -3513,15 +4084,16 @@ async function fetchAndRenderRetention() {
   if (retentionPollBusy) return;
   retentionPollBusy = true;
   const base = httpBase();
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'racer');
   try {
-    const [rivRes, misRes, strRes, seaRes, nahRes, revRes] = await Promise.all([
+    const [rivRes, misRes, strRes, seaRes, nahRes, revRes, revInRes] = await Promise.all([
       fetch(`${base}/api/player/rivals?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
       fetch(`${base}/api/player/missions?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
       fetch(`${base}/api/player/streak?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
       fetch(`${base}/api/season?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
       fetch(`${base}/api/player/next-action?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null),
-      fetch(`${base}/api/player/revenge?uid=${encodeURIComponent(uid)}`).then(r => r.json()).catch(() => null)
+      fetch(`${base}/api/player/revenge?${revengeQuery(uid)}`).then(r => r.json()).catch(() => null), // v93 all identities
+      fetch(`${base}/api/player/challenges?${revengeQuery(uid)}`).then(r => r.json()).catch(() => null) // v111 incoming revenge requests
     ]);
 
     // 0. Next Best Action hero
@@ -3551,20 +4123,104 @@ async function fetchAndRenderRetention() {
     const revBanner = $('revenge-banner');
     if (revBanner && revRes && revRes.ok && revRes.targets && revRes.targets.length) {
       const topRev = revRes.targets[0];
+      const revMap = revengeMapOf(topRev); // v93: map ?? mapId, clamped to a real track
+      const revTrack = topRev.mapName || (CORE.MAPS[revMap] || {}).name || 'Circuit';
       const rMsg = $('rev-msg');
-      if (rMsg) rMsg.textContent = `Settle the score against ${escapeHtml(topRev.targetName || 'Rival')} on ${((CORE.MAPS[topRev.map] || {}).name || 'Circuit')} (+50% XP & Coins)!`;
+      if (rMsg) {
+        rMsg.textContent = (typeof tI18n === 'function' ? tI18n('revengeBannerText', { rival: topRev.targetName || 'Rival', track: revTrack }) : null)
+          || ('Settle the score against ' + (topRev.targetName || 'Rival') + ' on ' + revTrack + ' (+50% XP)!'); // v116: coins retired
+      }
       const rBtn = $('rev-accept-btn');
       if (rBtn) {
-        rBtn.onclick = () => {
-          selectedMap = topRev.map || 0;
-          net.send({ type: 'map', map: selectedMap });
-          revBanner.style.display = 'none';
-          const sb = $('start-btn'); if (sb) sb.click();
+        // v111: REVENGE IS A REQUEST, NOT A SOLO RACE. Clicking sends a challenge
+        // to the racer who won; the race exists only once THEY accept, and the
+        // server then seats both of you in one room. No bots, no instant start.
+        rBtn.onclick = async () => {
+          rBtn.disabled = true;
+          const ids = (typeof crewIdentity === 'function') ? crewIdentity() : {};
+          const r = await fetch(base + '/api/player/revenge/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.assign({
+              targetUid: topRev.targetUid,
+              targetName: topRev.targetName || 'RIVAL',
+              fromName: ids.name || uid || 'A RACER',
+              map: revMap,
+              laps: prefs.laps || 3
+            }, ids))
+          }).then((x) => x.json()).catch(() => null);
+          if (r && r.ok) {
+            rBtn.textContent = '⏳ REQUEST SENT — WAITING FOR ' + String(topRev.targetName || 'RIVAL').toUpperCase();
+            toast('⚔️ Revenge challenge sent to ' + (topRev.targetName || 'your rival') + ' — the race starts when they accept.');
+            track('revenge_request', revMap, { target: topRev.targetUid });
+          } else {
+            rBtn.disabled = false;
+            toast('Could not reach the server — try again.');
+          }
         };
       }
       revBanner.style.display = '';
     } else if (revBanner) {
       revBanner.style.display = 'none';
+    }
+
+    // 0.6 v111 INCOMING revenge requests - you are the one who WON last time.
+    // The loser sent this; the race must not exist until you accept it.
+    const revInBanner = $('revenge-incoming-banner');
+    if (revInBanner) {
+      const rows = (revInRes && revInRes.ok && Array.isArray(revInRes.rows)) ? revInRes.rows : [];
+      const live = rows.find((r) => r.status === 'pending') || rows.find((r) => r.status === 'accepted');
+      if (live) {
+        const M = revengeMapOf(live);
+        const trkName = (CORE.MAPS[M] || {}).name || 'Circuit';
+        const who = live.from_name || 'A RIVAL';
+        const mEl = $('rev-in-msg');
+        if (mEl) {
+          mEl.textContent = live.status === 'pending'
+            ? '⚔️ ' + who + ' lost to you and wants an instant rematch on ' + trkName + '. Accept and the race starts head-to-head - no bots.'
+            : '⏳ You accepted ' + who + '\u2019s rematch - the race starts by itself the moment you are both online.';
+        }
+        const acc = $('rev-in-accept');
+        const dec = $('rev-in-decline');
+        const mine = (typeof crewIdentity === 'function') ? crewIdentity() : {};
+        if (acc) {
+          acc.style.display = live.status === 'pending' ? '' : 'none';
+          acc.disabled = false;
+          acc.onclick = async () => {
+            acc.disabled = true;
+            const r = await fetch(base + '/api/player/revenge/accept', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(Object.assign({ id: live.id }, mine))
+            }).then((x) => x.json()).catch(() => null);
+            if (r && r.started) {
+              revInBanner.style.display = 'none';
+              toast('⚔️ REVENGE RACE STARTING vs ' + String(who).toUpperCase() + ' — GOOD LUCK!');
+            } else if (r && r.ok) {
+              toast(who + ' is offline right now — the race starts automatically when you are both online.');
+              fetchAndRenderRetention();
+            } else {
+              acc.disabled = false;
+              toast('Could not accept — try again.');
+            }
+          };
+        }
+        if (dec) {
+          dec.style.display = live.status === 'pending' ? '' : 'none';
+          dec.onclick = async () => {
+            await fetch(base + '/api/player/revenge/decline', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(Object.assign({ id: live.id }, mine))
+            }).catch(() => null);
+            revInBanner.style.display = 'none';
+            toast('Revenge request declined.');
+          };
+        }
+        revInBanner.style.display = '';
+      } else {
+        revInBanner.style.display = 'none';
+      }
     }
 
     // 1. Rivals card
@@ -3646,7 +4302,7 @@ async function openBadgesShowcase() {
   if (!body) return;
   dlg.hidden = false;
   body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:20px;">' + (tI18n('loadingCircuit') || 'Loading badges…') + '</div>';
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'racer');
   try {
     const res = await fetch(`${httpBase()}/api/player/badges?uid=${encodeURIComponent(uid)}`).then(r => r.json());
     if (res && res.ok && res.badges) {
@@ -3676,7 +4332,7 @@ async function openBadgesShowcase() {
 }
 
 window.equipMilestoneBadge = async function(badgeId) {
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'racer');
   try {
     const res = await fetch(`${httpBase()}/api/player/badge/equip`, {
       method: 'POST',
@@ -3698,7 +4354,7 @@ async function openBountiesModal() {
   if (!body) return;
   dlg.hidden = false;
   body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:20px;">' + (tI18n('loadingCircuit') || 'Loading bounties…') + '</div>';
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'racer');
   try {
     const res = await fetch(`${httpBase()}/api/competitions/weekly/bounties?uid=${encodeURIComponent(uid)}`).then(r => r.json());
     if (res && res.ok && res.bounties) {
@@ -3729,7 +4385,7 @@ async function openBountiesModal() {
 }
 
 window.claimWeeklyBountyReward = async function(bountyId) {
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'racer');
   try {
     const res = await fetch(`${httpBase()}/api/competitions/weekly/bounties/claim`, {
       method: 'POST',
@@ -3746,6 +4402,59 @@ window.claimWeeklyBountyReward = async function(bountyId) {
   }
 };
 
+// v107: "the club I created is gone" has exactly one cause on a host that cannot
+// store clubs: the server keeps them in RAM and the Supabase write fails on
+// purpose-silently, so the lobby keeps working and nobody is told. The racer finds
+// out only when the club has vanished after a redeploy. /health already publishes
+// the verdict (v96 boot diagnostics) - surface it inside the Clubs dialog, where
+// the clubs live, with the one-line fix, instead of leaving it in a deploy log.
+function crewPersistWhy(v) {
+  if (v === 'not_configured') return 'this server has no Supabase credentials set';
+  if (v === 'table_missing') return 'the club tables (crews, crew_members, crew_milestone_claims) do not exist in the database';
+  if (v === 'anon_key') return 'the server is using the anon key, so row-level security rejects every club write';
+  if (v === 'key_rejected') return 'Supabase rejected the server key';
+  if (v === 'unreachable') return 'Supabase did not answer the server';
+  if (v === 'server_error') return 'Supabase returned an error to the server';
+  if (v === 'no_server') return 'no game server answered this page, so nothing can be stored at all (SERVER_URL is empty or that backend is down)';
+  return 'the server could not verify club storage';
+}
+
+function crewPersistBannerHtml(v) {
+  return '<div style="border:1px solid #ff9f43; background:rgba(255,159,67,.12); border-radius:10px; padding:10px 12px; margin:0 0 12px; font:600 12px system-ui,sans-serif; color:#ffd9a8; line-height:1.5;">' +
+    '⚠ CLUBS ARE TEMPORARY ON THIS HOST — ' + escapeHtml(crewPersistWhy(v)) + '. ' +
+    'Every club, roster and weekly total is held in server memory and is wiped by the next deploy or restart. ' +
+    'Fix once: run <b>supabase-migration-v98.sql</b> in the Supabase SQL Editor - one file, it converges every older shape - then create the club again. ' +
+    '<span style="opacity:.75;">(server verdict: ' + escapeHtml(String(v)) + ')</span></div>';
+}
+
+async function checkCrewPersistence() {
+  try {
+    const j = await fetchServerHealth();
+    // 'no_server' when nothing answered at all: that is the loudest case, and the
+    // one a static deploy produces, so it must not be filed under 'unknown'.
+    return (j && j.persistence && j.persistence.verdict) || (j ? 'unknown' : 'no_server');
+  } catch (e) {
+    return 'no_server';
+  }
+}
+
+// The banner is a sibling of #crew-body, not part of it: every tab re-renders that
+// div with innerHTML, which would throw the warning away.
+function ensureCrewPersistBanner(body) {
+  if (window.__crewPersistChecked || !body || !body.parentElement) return;
+  window.__crewPersistChecked = true;
+  checkCrewPersistence().then((v) => {
+    window.__crewPersistChecked = false; // re-check on the next open
+    if (!v || v === 'ok' || v === 'unknown') return;
+    if ($('crew-persist-warn')) return;
+    const el = document.createElement('div');
+    el.id = 'crew-persist-warn';
+    el.className = 'crew-persist-warn';
+    el.innerHTML = crewPersistBannerHtml(v);
+    body.parentElement.insertBefore(el, body);
+  }).catch(() => {});
+}
+
 // v83 Racing Syndicate Crews Modal Controller
 async function openCrewModal(tab = 'my') {
   const dlg = $('crew-dlg');
@@ -3753,6 +4462,7 @@ async function openCrewModal(tab = 'my') {
   const body = $('crew-body');
   if (!body) return;
   dlg.hidden = false;
+  ensureCrewPersistBanner(body); // v107
 
   ['my', 'join', 'create', 'board'].forEach(t => {
     const btn = $(`ctab-${t}`);
@@ -3760,11 +4470,11 @@ async function openCrewModal(tab = 'my') {
   });
 
   body.innerHTML = '<div style="color:#8b93a8; text-align:center; padding:30px;">' + (tI18n('loadingCircuit') || 'Loading Syndicate…') + '</div>';
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const ci = crewIdentity(); // v90: resolve the club from every identity we own
 
   if (tab === 'my') {
     try {
-      const res = await fetch(`${httpBase()}/api/player/crew?uid=${encodeURIComponent(uid)}`).then(r => r.json());
+      const res = await fetch(`${httpBase()}/api/player/crew?${crewQuery(ci)}`).then(r => r.json());
       if (res && res.ok && res.hasCrew && res.crew) {
         const c = res.crew;
         body.innerHTML = `
@@ -3782,11 +4492,14 @@ async function openCrewModal(tab = 'my') {
               <div class="chc-stat-col"><span>${tI18n('grandPrixPts') || 'GRAND PRIX PTS'}</span><b>${c.weeklyPoints}</b></div>
               <div class="chc-stat-col"><span>${tI18n('totalMileage') || 'TOTAL MILEAGE'}</span><b>${c.totalKm} km</b></div>
             </div>
+            ${c.resetsIn ? `<div style="margin-top:7px; padding-top:6px; border-top:1px solid rgba(255,255,255,.09); text-align:center; font:700 9px Orbitron; letter-spacing:.7px; color:#7fd7ff;">⏳ WEEKLY TOTALS RESET IN ${escapeHtml(String(c.resetsIn))} · TOTAL MILEAGE NEVER DOES</div>` : ''}
           </div>
 
           <div class="crew-milestone-track">
             <div class="cmt-header">
               <span>${tI18n('weeklyMilestones', { tier: c.currentTier }) || `WEEKLY SYNDICATE MILESTONES (TIER ${c.currentTier}/5)`}</span>
+              <!-- v96: each tier is collectable once per week, so a claim made
+                   last Monday does not grey this list out for ever. -->
               <span>${tI18n('pctToNext', { pct: c.progressPct }) || `${c.progressPct}% TO NEXT`}</span>
             </div>
             <div class="cmt-bar-wrap"><div class="cmt-bar-fill" style="width:${c.progressPct}%;"></div></div>
@@ -3808,7 +4521,7 @@ async function openCrewModal(tab = 'my') {
               <tbody>
                 ${c.members.map(m => `
                   <tr>
-                    <td><b>${escapeHtml(m.name)}</b> ${m.uid === uid ? '<span style="color:#00e5ff;">(YOU)</span>' : ''}</td>
+                    <td><b>${escapeHtml(m.name)}</b> ${crewRowIsMe(m, ci) ? '<span style="color:#00e5ff;">(YOU)</span>' : ''}</td>
                     <td><span style="color:${m.role === 'leader' ? '#ffd479' : '#8b93a8'}; font-weight:700;">${m.role.toUpperCase()}</span></td>
                     <td class="clb-km">${(m.weeklyMeters / 1000).toFixed(1)} km</td>
                     <td style="color:#ffd479; font-weight:700;">+${m.weeklyPoints || 0}</td>
@@ -3896,7 +4609,7 @@ async function openCrewModal(tab = 'my') {
       const res = await fetch(`${httpBase()}/api/crews/leaderboard`).then(r => r.json());
       const crews = (res && res.crews) || [];
       body.innerHTML = `
-        <div style="margin-bottom:10px; font:700 12px Orbitron; color:#ffd479;">🏆 WEEKLY CLUB CHAMPIONSHIP STANDINGS</div>
+        <div style="margin-bottom:10px; font:700 12px Orbitron; color:#ffd479;">🏆 WEEKLY CLUB CHAMPIONSHIP STANDINGS${res.resetsIn ? ` <span style="font:700 9px Orbitron; color:#7fd7ff;">· ⏳ RESETS IN ${escapeHtml(String(res.resetsIn))}</span>` : ''}</div>
         <table class="crew-lb-table">
           <thead><tr><th>RANK</th><th>SYNDICATE</th><th>RACERS</th><th>WEEKLY DISTANCE</th><th>POINTS</th></tr></thead>
           <tbody>
@@ -3922,12 +4635,12 @@ async function openCrewModal(tab = 'my') {
 }
 
 window.claimCrewMilestoneReward = async function(tier) {
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const ci = crewIdentity(); // v90 club sync
   try {
     const res = await fetch(`${httpBase()}/api/player/crew/claim-milestone`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid, tier })
+      body: JSON.stringify(Object.assign({}, ci, { name: prefs.name || 'RACER', tier }))
     }).then(r => r.json());
     if (res && res.ok) {
       toast(`🎉 Tier ${tier} Milestone Claimed! +${res.xpAwarded} XP · +${res.coinsAwarded} Coins!`);
@@ -3942,13 +4655,13 @@ window.claimCrewMilestoneReward = async function(tier) {
 };
 
 window.joinCrewAction = async function(crewId) {
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const ci = crewIdentity(); // v90 club sync
   const name = prefs.name || 'RACER';
   try {
     const res = await fetch(`${httpBase()}/api/player/crew/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid, name, crewId })
+      body: JSON.stringify(Object.assign({}, ci, { name, crewId }))
     }).then(r => r.json());
     if (res && res.ok) {
       toast(`🏁 Joined [${res.tag}] ${res.name}!`);
@@ -3963,7 +4676,7 @@ window.joinCrewAction = async function(crewId) {
 
 window.handleCreateCrewSubmit = async function(e) {
   e.preventDefault();
-  const uid = (window.SRAccount && typeof window.SRAccount.name === 'function' && window.SRAccount.name()) ? window.SRAccount.name() : (prefs.pid || prefs.name || 'guest');
+  const ci = crewIdentity(); // v90 club sync
   const name = prefs.name || 'RACER';
   const crewName = $('cf-name').value.trim();
   const tag = $('cf-tag').value.trim().toUpperCase();
@@ -3975,7 +4688,7 @@ window.handleCreateCrewSubmit = async function(e) {
     const res = await fetch(`${httpBase()}/api/player/crew/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid, name, crewName, tag, motto, badge, color })
+      body: JSON.stringify(Object.assign({}, ci, { name, crewName, tag, motto, badge, color }))
     }).then(r => r.json());
     if (res && res.ok) {
       toast(`🏁 Club [${res.crew.tag}] ${res.crew.name} Created!`);
@@ -4249,9 +4962,11 @@ function renderProfile() {
   const br = $('beat-rival');
   if (br) br.onclick = () => {
     if (p.rival && p.rival.map != null) {
-      net.send({ type: 'map', map: p.rival.map });
-      selectedMap = p.rival.map;
-      toast('⚔️ Rival\'s track loaded — START when ready!');
+      // v93: was a bare { type: 'map' } that the relay dropped when the racer was
+      // still in the lobby pool, so the toast claimed a track that never loaded.
+      const rm = acceptMapChoice(p.rival.map);
+      const trackName = (CORE.MAPS[rm] || {}).name || 'Circuit';
+      toast((typeof tI18n === 'function' ? tI18n('rivalTrackLoaded', { track: trackName }) : null) || ('⚔️ Rival\'s track loaded (' + trackName + ') — START when ready!'));
     }
   };
   if (typeof document !== 'undefined' && document.querySelectorAll) fillMapMeta();
@@ -4480,13 +5195,20 @@ function renderCup(rows) {
   fetch(httpBase() + '/ghost?id=' + encodeURIComponent(id))
     .then((r) => (r.ok ? r.json() : null))
     .then((g) => {
-      if (g && Array.isArray(g.data) && g.data.length > 9) {
-        remoteGhost = { map: g.map, data: g.data };
+      // v94 AUDIT-F2: filter the frames exactly like replay.js does. A ghost is
+      // somebody else's upload, and one junk frame (null, a string, NaN) used to
+      // throw inside the snapshot handler - freezing the victim's live race.
+      const gmap = parseInt(g && g.map, 10);
+      const frames = (g && Array.isArray(g.data) ? g.data : [])
+        .filter((s) => Array.isArray(s) && s.length >= 3 && s.every((v) => typeof v === 'number' && isFinite(v)))
+        .slice(0, 4000);
+      if (g && gmap >= 0 && gmap < 5 && frames.length > 9) {
+        remoteGhost = { map: gmap, data: frames };
         // v51 fix: a ghost link must also switch the room to the ghost's map,
         // otherwise the friend races the wrong circuit and never sees the ghost.
-        const pick = () => { if (net.isOpen()) net.send({ type: 'map', map: g.map }); };
+        const pick = () => { if (net.isOpen()) net.send({ type: 'map', map: gmap }); };
         pick(); setTimeout(pick, 1500);
-        const mn = (CORE.MAPS[g.map] || {}).name || '';
+        const mn = (CORE.MAPS[gmap] || {}).name || '';
         toast('👻 Racing ' + (g.name || 'a friend') + "'s ghost on " + mn + '!');
       }
     })
@@ -4571,7 +5293,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v88';
+const BUILD = 'v140';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -4581,7 +5303,8 @@ const BUILD = 'v88';
       // A build-tag difference alone just means some newer features are absent
       // on one side; the race itself is safe, so don't nag with a banner.
       const geomMismatch = v && v.geom && CORE.GEOM_ID && v.geom !== CORE.GEOM_ID;
-      // v77 BUG-011: cosmetic-only deploys — reload idle tabs on BUILD mismatch (once per build)
+      // v135: reload on BUILD mismatch — once per build, only when idle/waiting to avoid mid-race reload loop
+      // SW v135 busts old caches so old cars (procedural) no longer served
       if (!geomMismatch && v && v.build && v.build !== BUILD && !sessionStorage.getItem('sr_br_' + v.build) && (!latest || latest.state === 'waiting')) {
         sessionStorage.setItem('sr_br_' + v.build, '1');
         const u = new URL(location.href);
@@ -4611,6 +5334,11 @@ const net = new RoomLink({
   onWelcome(msg) {
     if (msg.role === 'lobby' || msg.type === 'lobby_welcome' || !msg.code || msg.slot === 0) {
       mySlot = 0; roomCode = '·····';
+      clearRoomHop();      // v91: the exit completed (or we are parked in the pool)
+      syncRoomButtons();
+      if (msg.role === 'lobby' || msg.type === 'lobby_welcome') acceptingStates = false; // no room -> no snapshots
+      resetSnapshotBuffer();
+      const rc0 = $('room-code'); if (rc0) rc0.textContent = '·····'; // don't show the old room's code
       const sb = $('slot-badge'); if (sb) sb.style.display = 'none';
       setNetBanner(true);
       applyMyColor();
@@ -4620,6 +5348,10 @@ const net = new RoomLink({
       return;
     }
     mySlot = msg.slot; roomCode = msg.code;
+    clearRoomHop();      // v91: create/join hop confirmed by the relay
+    syncRoomButtons();
+    acceptingStates = true;
+    resetSnapshotBuffer(); // drop the previous room's snapshots before the new room's
     const sb = $('slot-badge');
     if (sb) {
       sb.textContent = `YOU ARE PLAYER ${mySlot}`;
@@ -4638,7 +5370,19 @@ const net = new RoomLink({
   },
   onMessage(msg) {
     switch (msg.type) {
-      case 'state': ingestSnapshot(msg); break;
+      // v111 live revenge: the rival just asked for a rematch, or accepted yours
+      case 'revenge_request':
+        toast('⚔️ ' + String(msg.from_name || 'A RIVAL') + ' sent you a revenge challenge!');
+        fetchAndRenderRetention();
+        break;
+      case 'revenge_accepted':
+        toast('✅ Your rival accepted — the race starts when you are both online.');
+        break;
+      case 'revenge_start':
+        keys.clear(); // never carry a held key into a head-to-head
+        toast('⚔️ REVENGE RACE vs ' + String(msg.rival || 'RIVAL').toUpperCase() + ' — GOOD LUCK!');
+        break;
+      case 'state': if (acceptingStates) ingestSnapshot(msg); break; // v91: ignore the old room's stream mid-hop
       case 'lobby': {
         window.__lastLobby = msg.players || [];
         if (typeof renderRoomLobby === 'function') renderRoomLobby(msg);
@@ -4652,10 +5396,6 @@ const net = new RoomLink({
       case 'joined': if (msg.role === 'spec' && !SPEC_ROOM) { mySlot = 0; document.body.classList.add('spec'); toast('👁️ Race in progress — spectating. Drive the next race!'); } break;
       case 'settle': pendingSettle = msg.rows || []; break;
       case 'settle-warn': toast('⚠ Reward sync delayed — server retrying safely.'); break;
-      case 'equipped': myEq = msg.eq || myEq; if (typeof sendMeta === 'function') sendMeta(); if (!$('garage-dlg').hidden) openGarage(); toast('🏎️ Loadout equipped'); break;
-      case 'bought': toast('🛍️ Purchased! (' + msg.coins + ' coins left)'); if (!$('garage-dlg').hidden) openGarage(); break;
-      case 'buy-err': toast('⚠ ' + (msg.msg || 'purchase failed')); break;
-      case 'equip-err': toast('⚠ Locked — keep racing to unlock!'); break;
       case 'controller-joined': setConnected(msg.slot, true); toast(`📱 Player ${msg.slot} joystick connected`); break;
       case 'controller-left': setConnected(msg.slot, false); toast(`Player ${msg.slot} joystick disconnected`); break;
       case 'horn': playHorn(); break;
@@ -4682,7 +5422,32 @@ const net = new RoomLink({
         const cu = $('ctrl-url'); if (cu) cu.textContent = 'Create a room to connect phone controller';
         break;
       }
-      case 'error': if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!'); break;
+      case 'error':
+        if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!');
+        else if (msg.code === 'map-host-only') {
+          // v93: only the host picks the track in a 3+ racer room. Repaint from the
+          // authoritative map so the wizard never promises a circuit we are not on.
+          const rm = validMapId(msg.map);
+          if (rm != null) { selectedMap = rm; paintMapCards(rm); }
+          toast((typeof tI18n === 'function' ? tI18n('mapHostOnly') : null) || '🔒 Only the host can change the track in a 3+ racer room');
+        }
+        else if (msg.code === 'map-in-race') {
+          const rm2 = validMapId(msg.map);
+          if (rm2 != null) { selectedMap = rm2; paintMapCards(rm2); }
+          toast((typeof tI18n === 'function' ? tI18n('mapInRace') : null) || '🏁 The track changes after this race — finish first');
+        }
+        else if (msg.code === 'join-failed') {
+          // v91: the relay refused the hop, so we are still seated where we were
+          clearRoomHop();
+          const why = msg.reason === 'full'
+            ? ((typeof tI18n === 'function' ? tI18n('joinRoomFull', { code: msg.room }) : null) || ('⚠ Room ' + (msg.room || '') + ' is full (6 max)'))
+            : (msg.reason === 'already-in-room'
+              ? ((typeof tI18n === 'function' ? tI18n('joinRoomAlready') : null) || 'You are already in that room')
+              : ((typeof tI18n === 'function' ? tI18n('joinRoomMissing', { code: msg.room }) : null) || ('⚠ Room ' + (msg.room || '') + ' not found — it may have closed')));
+          toast(why);
+          syncRoomButtons();
+        }
+        break;
       case 'disconnected': setNetBanner(false); break;
     }
   },
@@ -4706,8 +5471,14 @@ const ttShare = $('tt-share'); if (ttShare) ttShare.addEventListener('click', ()
   if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Copied!'); }
 });
 function sendHello() {
+  // v121: on configured deploys a racer account is mandatory. Never dial the
+  // relay as a guest - hand the browser back to the gate instead.
+  if (window.SRAccount && SRAccount.available() && !SRAccount.loggedIn()) {
+    location.replace('auth.html?next=' + encodeURIComponent(location.pathname + location.search));
+    return;
+  }
   if (SPEC_ROOM) {
-    net.connect({ type: 'hello', role: 'spec', room: SPEC_ROOM });
+    net.connect(Object.assign({ type: 'hello', role: 'spec', room: SPEC_ROOM }, identityPayload()));
     document.body.classList.add('spec');
     const chip = document.createElement('div'); chip.id = 'spec-chip';
     chip.innerHTML = '👁️ SPECTATING · <button id="spec-leave">LEAVE</button>';
@@ -4720,6 +5491,51 @@ function sendHello() {
   } else {
     net.connect(Object.assign({ type: 'hello', role: 'screen', lobby: true, room: null }, identityPayload()));
   }
+}
+// ---------------------------------------------------------------------------
+// v91 EXIT ROOM — step out of the current room and join or create another one
+// without a page reload (the socket, session and garage loadout stay intact).
+// Relays older than build v90 don't understand `leave` / `join_room`, so every
+// hop arms a fallback that reloads if the server never confirms the move.
+// ---------------------------------------------------------------------------
+let roomHopTimer = null;
+let roomHopPending = false;
+function clearRoomHop() {
+  roomHopPending = false;
+  if (roomHopTimer) { clearTimeout(roomHopTimer); roomHopTimer = null; }
+}
+function armRoomHop(fallbackUrl) {
+  clearRoomHop();
+  roomHopPending = true;
+  roomHopTimer = setTimeout(() => {
+    roomHopTimer = null;
+    if (roomHopPending) { roomHopPending = false; location.href = fallbackUrl; }
+  }, 1600);
+}
+function inARoom() { return !!(roomCode && roomCode !== '·····'); }
+function syncRoomButtons() {
+  const lb = $('leave-room-btn');
+  if (lb) lb.hidden = !inARoom();
+}
+function exitRoom() {
+  const from = roomCode;
+  if (!net.isOpen()) { location.href = '/'; return; }
+  net.send({ type: 'leave' });
+  armRoomHop('/');
+  // v91 BUGFIX: drop the old room's snapshots NOW, otherwise the render loop
+  // interpolates cars our slot no longer owns and throws on ca.x
+  acceptingStates = false;
+  resetSnapshotBuffer();
+  clearAutoRematchTimer(); // v91: no 10s auto-rematch countdown chasing us into the lobby
+  clearCount();
+  const res0 = $('results'); if (res0) res0.classList.add('hidden');
+  // optimistic: the relay answers with lobby_welcome and onWelcome finishes the reset
+  mySlot = 0; roomCode = '·····';
+  syncRoomButtons();
+  const rc1 = $('room-code'); if (rc1) rc1.textContent = '·····';
+  const sb = $('slot-badge'); if (sb) sb.style.display = 'none';
+  toast((typeof tI18n === 'function' ? tI18n('leftRoom') : null) || '🚪 Left the room — create or join another');
+  track('room_exit', selectedMap, { room: from });
 }
 function ensureRoomCreated() {
   if (!roomCode || roomCode === '·····') {
@@ -4769,7 +5585,7 @@ if (qpBtn) qpBtn.addEventListener('click', () => {
   setTimeout(() => { // v59: never leave players stuck searching
     if (qpBtn.disabled && latest && latest.state === 'waiting') {
       toast('No rival found — racing AI 🤖');
-      net.send({ type: 'start' });
+      net.send(startPayload()); // v93 carries the chosen track + identity
       qpBtn.disabled = false; qpBtn.textContent = '⚡ QUICK PLAY — find a rival';
     }
   }, 8000);
@@ -4778,11 +5594,27 @@ if (qpBtn) qpBtn.addEventListener('click', () => {
 function showRoomError(text) {
   $('room-error').textContent = text;
   $('room-error').style.display = '';
-  setTimeout(() => { net.closedByUser = false; net.connect({ type: 'hello', role: 'screen', room: null }); }, 1200);
+  setTimeout(() => { net.closedByUser = false; net.connect(Object.assign({ type: 'hello', role: 'screen', room: null }, identityPayload())); }, 1200);
 }
 
 let builtMapId = 0;
+// v91 BUGFIX: snapshots belong to ONE room. EXIT ROOM / room hops used to keep
+// the previous room's buffer alive, so the render loop kept interpolating cars
+// our slot no longer had. The buffer is now dropped on every room transition,
+// and while parked in the lobby pool incoming 'state' frames are ignored so a
+// straggler from the old room can never repopulate it.
+let acceptingStates = true;
+function resetSnapshotBuffer() {
+  snaps.length = 0;
+  snapGaps.length = 0;
+  interpDelay = INTERP_DELAY;
+  latest = null;
+}
+
 function ingestSnapshot(snap) {
+  // v111: a fresh countdown means a fresh race - drop every held key so no
+  // stale nitro/steering from the previous session drives this one
+  if (snap && snap.state === 'countdown' && (!latest || latest.state !== 'countdown')) keys.clear();
   const now = performance.now();
   if (snaps.length > 0) {
     snapGaps.push(now - snaps[snaps.length - 1].t);
@@ -4861,11 +5693,15 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyC') cycleCamera();
 });
 window.addEventListener('keyup', (e) => {
-  const tag = e.target && e.target.tagName;
-  const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable);
-  if (isInput) return;
+  // v111: a release ALWAYS counts. The old guard skipped keyups that landed
+  // while a dialog input had focus, so a nitro or steering key stayed "held"
+  // forever and drove the next race by itself - the revenge race's stuck
+  // boost and uncontrollable car were a stale key, not a bad car.
   keys.delete(e.code);
 });
+// releasing a key outside the window (alt-tab, click on another app) fires no
+// keyup at all; without this the held key survives into the next race too
+window.addEventListener('blur', () => keys.clear());
 let kbAccum = 0;
 
 // v80 mobile solo on-screen touch controls
@@ -5010,7 +5846,7 @@ function triggerPhotoFinish(margin, winnerName, runnerUpName) {
     const mVal = typeof margin === 'number' ? margin : (parseFloat(margin) || 0);
     if (mEl) mEl.textContent = '+' + mVal.toFixed(3) + 's';
     const tEl = $('pf-title');
-    if (tEl) tEl.textContent = `${escapeHtml(winnerName || 'P1')} VS ${escapeHtml(runnerUpName || 'P2')}`;
+    if (tEl) tEl.textContent = `${winnerName || 'P1'} VS ${runnerUpName || 'P2'}`;
     setTimeout(() => { banner.style.display = 'none'; }, 3200);
   }
 }
@@ -5386,28 +6222,37 @@ function applyCos(v, dc, wh, tr, ne, sp) {
   const key = dc + '|' + wh + '|' + tr + '|' + (ne || 0) + '|' + (sp || 0);
   if (v.cosKey === key) return;
   v.cosKey = key;
-  if (v.neonMesh) { v.body.remove(v.neonMesh); v.neonMesh = null; }
-  if (v.spoiler) { v.body.remove(v.spoiler); v.spoiler = null; }
-  const neHex = (ne && window.SRCos && SRCos.NEONS[ne]) ? SRCos.NEONS[ne].hex : 0;
-  if (neHex) { const nm = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 4.6), new THREE.MeshBasicMaterial({ color: neHex, transparent: true, opacity: 0.5 })); nm.rotation.x = -Math.PI / 2; nm.position.y = 0.12; v.body.add(nm); v.neonMesh = nm; }
-  if (sp) { const sm = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 0.5), new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.5, metalness: 0.6 })); sm.position.set(0, 1.25, -2.1); v.body.add(sm); v.spoiler = sm; }
   if (v.decalGroup) { v.body.remove(v.decalGroup); v.decalGroup = null; }
-  if (dc > 0) {
+  // v127: user reports yellow card still showing in front of car — it is the orange FLAME decal (0xff6a00) on hood.
+  // Hide ALL decals to remove any yellow/orange rectangle that appears as card before car.
+  if (false && dc > 0) {
     const dg = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ color: DECAL_COLORS[dc] || 0xffffff, roughness: 0.35, metalness: 0.2 });
-    if (dc === 1) { for (const sx of [-0.35, 0.35]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.02, 3.2), mat); b.position.set(sx, 1.02, 0.2); dg.add(b); } }
-    else if (dc === 2) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.02, 1.1), new THREE.MeshStandardMaterial({ color: 0xff6a00, emissive: 0xff3300, emissiveIntensity: 0.7 })); b.position.set(0, 1.0, 1.5); dg.add(b); }
-    else { for (let i = 0; i < 6; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.02, 0.18), i % 2 ? mat : new THREE.MeshStandardMaterial({ color: 0xffffff })); b.position.set(-0.5 + (i % 3) * 0.5, 1.36, -2.25); dg.add(b); } }
+    if (dc === 1) { for (const sx of [-0.35, 0.35]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.02, 3.2), mat); b.position.set(sx, v.decalY || 1.02, 0.2); dg.add(b); } }
+    else if (dc === 2) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.02, 1.1), new THREE.MeshStandardMaterial({ color: 0xff6a00, emissive: 0xff3300, emissiveIntensity: 0.7 })); b.position.set(0, (v.decalY || 1.02) - 0.02, 1.5); dg.add(b); }
+    else { for (let i = 0; i < 6; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.02, 0.18), i % 2 ? mat : new THREE.MeshStandardMaterial({ color: 0xffffff })); b.position.set(-0.5 + (i % 3) * 0.5, (v.decalY || 1.02) + 0.34, -2.25); dg.add(b); } }
     v.body.add(dg); v.decalGroup = dg;
   }
   if (v.hubMat) v.hubMat.color.setHex(WHEEL_HUBS[wh] || WHEEL_HUBS[0]);
   if (v.calMat) v.calMat.color.setHex(TRAIL_COLS[tr] || TRAIL_COLS[0]);
 }
 function placeCar(slot, cs, dt) {
-  const v = carVisuals[slot];
   if (!cs) return;
+  let v = carVisuals[slot] || ensureCarVisual(slot, cs.b | 0);
+  if (!v) return;
   if (cs.col != null && v.paint && v.paint.color.getHex() !== cs.col) v.paint.color.setHex(cs.col);
+  const wantId = (typeof CarModels !== 'undefined' && CarModels.idForHex(cs.col)) || shellForHex(cs.col);  // v117/v118
+  // v140: gate on "is this slot already the GLB for this colour", not on the car id -
+  // the procedural shells all report carId 'ghost', which is also the white paint's id.
+  if (wantId && !v.glbPending && !(v.isGlb && v.carId === wantId)) upgradeCarVisual(slot, wantId, cs.b | 0, cs.col);  // v117/v118/v140
   applyCos(v, cs.dc || 0, cs.wh || 0, cs.tr || 0, cs.ne || 0, cs.sp || 0); // v59 cosmetics / v75 neon+spoiler
+  // v138 BUG FIX ("yellow car body is damaged"): the v126 block here hid any GLB mesh
+  // whose material colour matched r>200 && g>170 && b<130. That is exactly the yellow
+  // paint (0xffd400), so the yellow car lost its roof, hood, doors and pillars and
+  // looked wrecked - and because placeCar() runs every frame for every car it also
+  // re-traversed the whole 100-node hierarchy 8x per frame (the remaining stutter).
+  // The license plate is now hidden ONCE at build time in car-models.js, and no
+  // colour heuristic may ever hide a body panel. Do not re-add a traverse here.
   v.group.visible = cs.p === 1;
   if (!v.group.visible) { v.netInit = false; return; }
   // ---- network smoothing: exponentially follow the interpolated snapshot
@@ -5517,12 +6362,22 @@ function placeCar(slot, cs, dt) {
   v.body.rotation.z = lerp(v.body.rotation.z, clamp(roadRoll - cs.sl * 0.052, -0.38, 0.38), Math.min(1, dt * 9.0));
   const sp = clamp(Math.abs(cs.v) / CFG.maxSpeed, 0, 1);
   v.body.position.y = Math.sin(performance.now() * 0.016 + slot * 3) * 0.008 * sp;
-  v.spinAngle += cs.v * dt / 0.35;
+  v.spinAngle += cs.v * dt / (v.wheelR || 0.35);
   for (const w of v.wheels) {
+    // v140: BOTH rigs now roll forward on a positive angle about their own axle.
+    // The GLB used to be negated (-v.spinAngle), which spun every wheel BACKWARDS
+    // while driving forwards; car-models.js rebuilds the GLB rig so its axle is the
+    // model-local +X exactly like the procedural wheels, so one sign serves both.
     w.spin.rotation.x = v.spinAngle;
     if (w.front) {
-      w.pivot.rotation.y = -cs.st * 0.42;
-      w.pivot.rotation.z = -cs.st * 0.12; // Dynamic front wheel camber angle
+      // v140: the GLB pivot is now a clean steering group (its parent frame has Z up),
+      // so this is a yaw about the vertical - it no longer fights the asset's own
+      // baked-in steering angle, which is why the front wheels sat crooked.
+      if (v.isGlb) { w.pivot.rotation.z = -cs.st * 0.42; }
+      else {
+        w.pivot.rotation.y = -cs.st * 0.42;
+        w.pivot.rotation.z = -cs.st * 0.12; // Dynamic front wheel camber angle
+      }
     }
   }
   if (cs.sl > 4.5 && Math.abs(cs.v) > 6) {
@@ -5660,17 +6515,18 @@ function updateHUD(mine, rival) {
   if (nf && nf.__burn !== burn) { nf.__burn = burn; nf.classList.toggle('burn', burn); }
   const order = standingsFrom(latest);
   const myRank = order.findIndex((c) => c.s === mySlot);
+  const LT = raceLapsTotal();
   let raceStr =
-    `<span id="lapchip">LAP ${Math.min(mine.lap + 1, CFG.totalLaps)}<small>/${CFG.totalLaps}</small></span>` +
+    `<span id="lapchip">LAP ${Math.min(mine.lap + 1, LT)}<small>/${LT}</small></span>` +
     (order.length > 1 && myRank >= 0 ? `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">${ordinal(myRank + 1).toUpperCase()}</span>` : '');
   if (latest.mode === 'drift') raceStr += `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">DRIFT ${mine.drift || 0}</span>`;
   hHTML(hEl('raceinfo'), raceStr);
-  const row = (c) => `L${Math.min(c.lap + 1, CFG.totalLaps)}  ${c.ll != null ? fmtTime(c.ll) : '--:--.--'}  <span class="dim">best ${c.best != null ? fmtTime(c.best) : '--:--.--'}</span>`;
+  const row = (c) => `L${Math.min(c.lap + 1, LT)}  ${c.ll != null ? fmtTime(c.ll) : '--:--.--'}  <span class="dim">best ${c.best != null ? fmtTime(c.best) : '--:--.--'}</span>`;
   // v76 live ranking from authoritative snapshot (finished first, then progress)
   const rankCols = ['#ff6b6b', '#64b5f6', '#ffd479', '#7ee78a', '#ff8ae2', '#7ee7ff'];
   const val = (c) => (c.fin ? 1e7 - (c.ft || 0) : (c.pr || 0));
   const ord2 = latest.cars.filter((c) => c.p === 1).slice().sort((a, b) => val(b) - val(a));
-  hHTML(hEl('lap-p1'), ord2.map((c, i) => `<b style="color:${rankCols[i % 6]}">${i + 1}</b> ${c.s === mySlot ? 'YOU' : escapeHtml(c.nm || ('P' + c.s))} <span class="dim">L${Math.min(c.lap + 1, CFG.totalLaps)}</span>`).join('<br>'));
+  hHTML(hEl('lap-p1'), ord2.map((c, i) => `<b style="color:${rankCols[i % 6]}">${i + 1}</b> ${c.s === mySlot ? 'YOU' : escapeHtml(c.nm || ('P' + c.s))} <span class="dim">L${Math.min(c.lap + 1, LT)}</span>`).join('<br>'));
   hStyle(hEl('lap-p2'), 'display', 'none');
   hStyle(hEl('speedlines'), 'opacity', String(prefs.rm ? 0 : clamp((Math.abs(mine.v) - 26) / 34, 0, 0.6)));
   const isTouchDev = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
@@ -5694,7 +6550,7 @@ $('start-btn').addEventListener('click', () => {
   TT.on = mode3 !== 'mp'; TT.practice = mode3 === 'practice'; TT.done = false;
   if (TT.on) { net.send({ type: 'bot', bot: false }); net.send({ type: 'record', record: !TT.practice }); }
   else net.send({ type: 'record', record: true });
-  net.send({ type: 'start' });
+  net.send(startPayload()); // v93 carries the chosen track + identity
   const p = Pget();
   if (p && p.races >= 1) track('second_race', selectedMap);
   track('race', selectedMap);
@@ -5725,8 +6581,13 @@ function openProfile() {
   dlg.hidden = false;
   const body = $('profile-body');
   const acc = window.SRAccount;
-  if (!(acc && acc.available && acc.available() && acc.loggedIn())) {
-    body.innerHTML = '<div class="p-empty">Create a free racer account to build a permanent racing identity: rating, XP, history, records.<br><br><button id="p-signin" class="big-cta">SIGN IN / CREATE ACCOUNT</button></div>';
+  const accountsOn = !!(acc && acc.available && acc.available());
+  if (!(accountsOn && acc.loggedIn())) {
+    // v96: without the account SDK this SIGN IN button was dead - its click
+    // handler is only bound when accounts are configured, so it did nothing.
+    body.innerHTML = accountsOn
+      ? '<div class="p-empty">Create a free racer account to build a permanent racing identity: rating, XP, history, records.<br><br><button id="p-signin" class="big-cta">SIGN IN / CREATE ACCOUNT</button></div>'
+      : '<div class="p-empty">Your clubs, badges, bounties and lap times are saved against your racer name and this device.<br><br>Racer accounts are not enabled on this server, so a cross-device career profile is unavailable.</div>';
     const b = $('p-signin'); if (b) b.addEventListener('click', () => { dlg.hidden = true; const ab = $('account-btn'); if (ab) ab.click(); });
     return;
   }
@@ -5749,7 +6610,7 @@ function openProfile() {
     const tr = window.SRProg ? SRProg.tier(st.rating) : { name: 'BRONZE III', col: '#d09a6a' };
     const season = seas && seas[0]; const mySeason = psea && psea.find((x) => season && x.season_id === season.id);
     const wr = st.races ? Math.round(100 * st.wins / st.races) : 0;
-    const eqCar = (window.SRCos && peq && peq[0]) ? SRCos.findCar(peq[0].car) : null;
+    const eqCar = null; // v115: garage retired - profile shows badges & stats only
     let badgeInfo = null;
     try {
       const bRes = await fetch(`${httpBase()}/api/player/badges?uid=${encodeURIComponent(uid)}`).then(r => r.json());
@@ -5758,7 +6619,7 @@ function openProfile() {
       }
     } catch (e) {}
 
-    let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + (eqCar ? ' <span class="p-car" style="color:' + SRCos.RARITY[eqCar.rarity] + '">🏎️ ' + eqCar.name + '</span>' : '') + (badgeInfo ? ' <span class="p-car" style="color:#ffd479">🎖️ ' + badgeInfo.name + ' (' + badgeInfo.tierName + ')</span>' : '') + '</div>' +
+    let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + (badgeInfo ? ' <span class="p-car" style="color:#ffd479">🎖️ ' + badgeInfo.name + ' (' + badgeInfo.tierName + ')</span>' : '') + '</div>' +
       '<div class="p-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + st.rating + ' <i>peak ' + st.peak_rating + '</i></div>' +
       '<div class="p-level">' + tr.name.split(' ')[0] + ' PROGRESS<div class="p-bar"><i style="width:' + (tr.pct || 0) + '%"></i></div></div>' +
       (tr.next ? '<div class="p-xp" style="text-align:center">Next: ' + tr.next + '</div>' : '') +
@@ -5790,14 +6651,135 @@ function openProfile() {
     if (pbb) pbb.onclick = () => { dlg.hidden = true; openBadgesShowcase(); };
   })();
 }
-let compActiveTab = 'rate'; // 'rate' | 'time' | 'daily' | 'weekly'
-let compScope = 'top';      // 'top' | 'nearby'
-let compSelectedMap = 0;
+// ---------------------------------------------------------------------------
+// v107 COMPETITIVE HUB STATE — MUST LIVE AT FILE SCOPE, NEVER INSIDE A FUNCTION.
+//
+// The v106 build declared these three, and called the wiring, inside
+// wireLobbyV2() - the lazy lobby-wiring function further up the file. But
+// wireCompetitiveHub() and loadCompetitiveHub() are declared at FILE scope, and a
+// closure resolves its free variables where the function was DEFINED, not where it
+// happened to be called from. So the four tab handlers went looking for
+// compActiveTab in the global scope, where a function-local var does not exist:
+//
+//     Uncaught ReferenceError: compActiveTab is not defined    game.js:6335
+//
+// thrown by the FOUNDERS CUP handler itself, while every board stayed hidden and
+// the hub kept showing its empty placeholder - the exact report from production.
+// (A nesting bug is invisible to indentation and to a test that lifts the function
+// into its own sandbox; it is only visible at runtime, which is what
+// test/client-hub-scope.test.js now asserts.)
+//
+// `var` rather than `let` is deliberate: a file-scope var also lands on the global
+// OBJECT, so if a page ever ends up with two evaluations of this file (a stale body
+// out of the service-worker cache, a double include) both share ONE state instead
+// of each holding a private lexical binding. Seeded from window for the same
+// reason, so a second pass keeps the racer's current tab instead of resetting it.
+var compActiveTab = (typeof window.compActiveTab === 'string') ? window.compActiveTab : 'rate'; // 'rate' | 'time' | 'daily' | 'weekly'
+var compScope = (window.compScope === 'nearby') ? 'nearby' : 'top';                              // 'top' | 'nearby'
+var compSelectedMap = (typeof window.compSelectedMap === 'number' && window.compSelectedMap >= 0) ? window.compSelectedMap : 0;
+window.compActiveTab = compActiveTab;
+window.compScope = compScope;
+window.compSelectedMap = compSelectedMap;
+
+// Idempotent, self-healing wiring. Called here at file scope (a deferred script
+// runs after the DOM is parsed, so all four tabs exist), called again early from
+// wireLobbyV2(), and called once more every time the LEADERBOARDS panel is opened
+// - so no single failure point can leave the tabs dead again. The flag lives on
+// globalThis, so two evaluations of this file cannot double-attach every handler.
+function ensureCompetitiveWired() {
+  if (window.__compWired) return;
+  window.__compWired = true;
+  try {
+    wireCompetitiveHub();
+  } catch (e) {
+    window.__compWired = false;
+    console.warn('[hub] competitive wiring failed:', e && e.message);
+  }
+}
+ensureCompetitiveWired();
+
+// v107: one cached /health read per page load, shared by the Clubs dialog and the
+// Competitive Hub. A host with no database answers 'not_configured'; a host whose
+// club tables are missing answers 'table_missing'; a healthy host answers 'ok' and
+// also reports whether player_stats can accept a guest identity at all.
+// v108: /health has to be FOUND, not assumed. A static host answers every unknown
+// path with the SPA's index.html - status 200, HTML body - which is
+// indistinguishable from "the server answered" unless the body is actually parsed.
+// Vercel serves public/ with no Express in it (framework: null, outputDirectory:
+// public, one serverless function for OG cards), so unless SERVER_URL points at a
+// host that runs server.js, every board, club and handshake request lands on that
+// HTML fallback. Try /api/health then /health, require JSON carrying a persistence
+// verdict, and report 'no_server' when nothing answers: an empty board and a club
+// that vanished are otherwise indistinguishable from "nobody has raced yet".
+function fetchServerHealth() {
+  if (!window.__srHealthP) {
+    const base = httpBase();
+    const getJson = (u) => fetch(u)
+      .then((r) => {
+        if (!r || !r.ok) return null;
+        const ct = (r.headers && typeof r.headers.get === 'function' && r.headers.get('content-type')) || '';
+        if (ct && String(ct).indexOf('json') < 0) return null;   // HTML fallback, not the server
+        return r.json().catch(() => null);
+      })
+      .catch(() => null);
+    window.__srHealthP = getJson(`${base}/api/health`)
+      .then((j) => ((j && j.persistence) ? j : getJson(`${base}/health`)))
+      .then((j) => ((j && j.persistence) ? j : null))
+      .catch(() => null);
+  }
+  return window.__srHealthP;
+}
+
+// The four boards go quiet for two reasons that look IDENTICAL from the racer's
+// seat: nobody has set a time yet, or the database cannot store one. The second is
+// silent by design - a 400 from PostgREST is swallowed so the lobby keeps working -
+// which is exactly how "my club and my records disappeared" happens with no error
+// anywhere the racer can see. Say it on screen, once, where the empty board is.
+async function refreshHubPersistNotice() {
+  try {
+    const j = await fetchServerHealth();
+    const p = (j && j.persistence) || {};
+    const V = p.verdict || (j ? 'unknown' : 'no_server');
+    const anchor = $('rate-board') || $('leaderboard');
+    if (!anchor || !anchor.parentElement) return;
+    let el = $('hub-persist-warn');
+    const statsBad = V === 'ok' && p.playerStatsKeyType === 'uuid';
+    const msg = (V === 'no_server')
+      ? 'NO GAME SERVER BEHIND THIS PAGE - ' + crewPersistWhy(V) +
+        '. Boards, clubs and multiplayer all come from server.js: on a static host set SERVER_URL (build env) to the URL that runs it, then redeploy.'
+      : (V !== 'ok' && V !== 'unknown')
+      ? 'BOARDS ARE MEMORY-ONLY ON THIS HOST - ' + crewPersistWhy(V) +
+        '. Ratings, lap records, cups and clubs are wiped by the next deploy or restart. Fix once: run supabase-migration-v98.sql in the Supabase SQL Editor - one file, it converges every older shape.'
+      : (statsBad
+        ? 'BOARDS CANNOT SAVE GUEST RESULTS YET - player_stats.user_id is still uuid, so every racer without a signed-in account is rejected and the boards stay empty. Fix once: run supabase-migration-v98.sql in the Supabase SQL Editor - it relaxes that column to text.'
+        : '');
+    if (!msg) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'hub-persist-warn';
+      el.className = 'hub-persist-warn';
+      el.setAttribute('style', 'border:1px solid #ff9f43; background:rgba(255,159,67,.12); border-radius:10px; padding:8px 10px; margin:8px 0; font:600 11.5px system-ui,sans-serif; color:#ffd9a8; line-height:1.5;');
+      anchor.parentElement.insertBefore(el, anchor);
+    }
+    el.textContent = '⚠ ' + msg;
+  } catch (e) { /* a missing /health must never break the boards */ }
+}
 
 async function loadCompetitiveHub() {
+  // v107: self-correcting state. Whatever set these - a click, a second copy of
+  // this file, or nothing at all - a value outside the known sets falls back to the
+  // default instead of leaving all four boards hidden at once, which is what an
+  // undefined compActiveTab used to look like from the racer's seat.
+  if (compActiveTab !== 'rate' && compActiveTab !== 'time' && compActiveTab !== 'daily' && compActiveTab !== 'weekly') compActiveTab = 'rate';
+  if (compScope !== 'top' && compScope !== 'nearby') compScope = 'top';
+  if (!(compSelectedMap >= 0)) compSelectedMap = 0;
+  window.compActiveTab = compActiveTab;
+  window.compScope = compScope;
+  window.compSelectedMap = compSelectedMap;
+  refreshHubPersistNotice(); // fire-and-forget: never blocks a board render
+
   const base = httpBase();
-  const acc = window.SRAccount;
-  const uid = (acc && acc.loggedIn && acc.loggedIn()) ? acc.uid() : (prefs.pid || prefs.name);
+  const idq = boardIdentityQuery();
 
   const tRate = $('board-tab-rate'), tTime = $('board-tab-time'), tDaily = $('board-tab-daily'), tWeekly = $('board-tab-weekly');
   const rateB = $('rate-board'), timeB = $('leaderboard'), dailyB = $('daily-board-view'), weeklyB = $('weekly-board-view');
@@ -5817,25 +6799,25 @@ async function loadCompetitiveHub() {
   try {
     if (compActiveTab === 'rate') {
       if (rateB) rateB.innerHTML = '<div class="lb-empty">Loading global rankings…</div>';
-      const r = await fetch(`${base}/api/leaderboard?type=rating&scope=${compScope}${uid ? '&uid=' + encodeURIComponent(uid) : ''}`);
+      const r = await fetch(`${base}/api/leaderboard?type=rating&scope=${compScope}${idq ? '&' + idq : ''}`);
       if (!r.ok) throw new Error('fetch error');
       const data = await r.json();
       renderCompetitiveRatingBoard(data, rateB);
     } else if (compActiveTab === 'time') {
       if (timeB) timeB.innerHTML = '<div class="lb-empty">Loading circuit records…</div>';
-      const r = await fetch(`${base}/api/leaderboard?type=time&map=${compSelectedMap}&scope=${compScope}${uid ? '&uid=' + encodeURIComponent(uid) : ''}`);
+      const r = await fetch(`${base}/api/leaderboard?type=time&map=${compSelectedMap}&scope=${compScope}${idq ? '&' + idq : ''}`);
       if (!r.ok) throw new Error('fetch error');
       const data = await r.json();
       renderCompetitiveTimeBoard(data, timeB);
     } else if (compActiveTab === 'daily') {
       if (dailyB) dailyB.innerHTML = '<div class="lb-empty">Loading Daily Cup…</div>';
-      const r = await fetch(`${base}/api/competitions/daily${uid ? '?uid=' + encodeURIComponent(uid) : ''}`);
+      const r = await fetch(`${base}/api/competitions/daily${idq ? '?' + idq : ''}`);
       if (!r.ok) throw new Error('fetch error');
       const data = await r.json();
       renderCompetitiveDailyBoard(data, dailyB);
     } else if (compActiveTab === 'weekly') {
       if (weeklyB) weeklyB.innerHTML = '<div class="lb-empty">Loading Founders Cup…</div>';
-      const r = await fetch(`${base}/api/competitions/weekly${uid ? '?uid=' + encodeURIComponent(uid) : ''}`);
+      const r = await fetch(`${base}/api/competitions/weekly${idq ? '?' + idq : ''}`);
       if (!r.ok) throw new Error('fetch error');
       const data = await r.json();
       renderCompetitiveWeeklyBoard(data, weeklyB);
@@ -5849,33 +6831,39 @@ async function loadCompetitiveHub() {
 function renderCompetitiveRatingBoard(data, container) {
   if (!container) return;
   const rows = data.rows || [];
-  if (!rows.length) { container.innerHTML = '<div class="lb-empty">No rated racers yet — win a 1v1 to claim #1!</div>'; return; }
-
+  // v97: the server sends the asker's own row (data.me), because looking for it by
+  // rank inside the visible page found nothing at all once the rank sat outside that
+  // page - and the tier and rating below were then left showing the previous render.
+  const me = data.me || rows.find((r) => r.rank === data.userRank) || null;
   const uBar = $('comp-user-bar');
+  const rEl = $('cub-rank'), tEl = $('cub-tier'), vEl = $('cub-val');
   if (uBar) {
-    if (data.userRank) {
+    if (data.userRank && me) {
       uBar.hidden = false;
-      const rEl = $('cub-rank'); if (rEl) rEl.textContent = '#' + data.userRank;
-      const tEl = $('cub-tier');
-      const uRow = rows.find((r) => r.rank === data.userRank);
-      if (tEl && uRow && uRow.tier) {
-        tEl.textContent = uRow.tier.name;
-        tEl.style.color = uRow.tier.col;
-        tEl.style.borderColor = uRow.tier.col;
+      if (rEl) rEl.textContent = '#' + data.userRank;
+      if (tEl) {
+        if (me.tier) { tEl.textContent = me.tier.name; tEl.style.color = me.tier.col; tEl.style.borderColor = me.tier.col; }
+        else tEl.textContent = '';
       }
-      const vEl = $('cub-val'); if (vEl && uRow) vEl.textContent = uRow.rating + ' ELO';
+      if (vEl) vEl.textContent = (me.rating != null ? me.rating : '—') + ' ELO';
     } else {
+      // nothing honest to show: clear it rather than leave the last racer's numbers up
       uBar.hidden = true;
+      if (rEl) rEl.textContent = '';
+      if (tEl) tEl.textContent = '';
+      if (vEl) vEl.textContent = '';
     }
   }
 
+  if (!rows.length) { container.innerHTML = '<div class="lb-empty">No rated racers yet — win a 1v1 to claim #1!</div>'; return; }
+
   container.innerHTML = rows.map((r) => {
-    const isMe = data.userRank === r.rank;
+    const isMe = !!(me && ((me.uid && r.uid === me.uid) || r.rank === data.userRank));
     const tierName = (r.tier && r.tier.name) || 'BRONZE III';
     const tierCol = (r.tier && r.tier.col) || '#d09a6a';
     return `<div class="lb-row${isMe ? ' me' : ''}">` +
       `<span class="lb-pos">#${r.rank}</span>` +
-      `<span class="lb-name">${escapeHtml(r.name)} <i>Lv${r.level || 1}</i> <span class="tier-badge" style="color:${tierCol};border-color:${tierCol}">${tierName}</span></span>` +
+      `<span class="lb-name">${escapeHtml(r.name)}${isMe ? ' ★' : ''} <i>Lv${r.level || 1}</i> <span class="tier-badge" style="color:${tierCol};border-color:${tierCol}">${tierName}</span></span>` +
       `<span class="lb-val" style="color:${tierCol}">${r.rating}</span>` +
       `<span class="lb-time">${r.winRate || '0%'}</span>` +
       `</div>`;
@@ -5969,14 +6957,18 @@ function wireCompetitiveHub() {
     });
   }
 
-  loadCompetitiveHub();
+  // v97: the hub panel stays hidden until the racer opens the RANK tab, and
+  // switchLobbyTab('rank') loads it at that point - so only fetch here if the panel
+  // is already on screen. Wiring the buttons must not cost a request on every load.
+  const pane = $('pane-rank');
+  if (!pane || !pane.classList.contains('hidden')) loadCompetitiveHub();
 }
 $('rematch-btn').addEventListener('click', () => {
   clearAutoRematchTimer();
   $('results').classList.add('hidden');
   const humanRival = latest && latest.cars && latest.cars.filter((c) => c && c.p === 1 && c.s !== mySlot).length > 0 && !latest.bot;
   if (humanRival) { net.send({ type: 'rematch' }); toast('🔁 Rematch requested — waiting for rival…'); }
-  else net.send({ type: 'start' });
+  else net.send(startPayload()); // v93 carries the chosen track + identity
   track('second_race', selectedMap);
   track('race', selectedMap);
   if (humanRival) track('multiplayer', selectedMap);
@@ -6009,25 +7001,48 @@ document.querySelectorAll('.map-btn').forEach((b) => b.addEventListener('click',
 $('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); track('share', undefined, { channel: 'code' }); });
 const createRoomBtn = $('create-room-btn');
 if (createRoomBtn) {
-  createRoomBtn.addEventListener('click', () => {
+  const _crHandler = () => {
+    if (inARoom()) {
+      const q = (typeof tI18n === 'function' ? tI18n('createAnotherConfirm', { code: roomCode }) : null)
+        || ('Leave room ' + roomCode + ' and create a new one?');
+      if (!confirm(q)) return;
+      net.send(Object.assign({ type: 'create_room', mode: 'race', map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload()));
+      armRoomHop('/');
+      toast((typeof tI18n === 'function' ? tI18n('creatingRoom') : null) || '🏎️ Creating a new room…');
+      return;
+    }
     ensureRoomCreated();
     toast('🏎️ Room created! Share the code to invite friends.');
-  });
+  };
+  createRoomBtn.addEventListener('click', _crHandler);
+  createRoomBtn.addEventListener('pointerdown', (e)=>{ try{ e.preventDefault(); }catch(_){} _crHandler(); }, {passive:false});
 }
 const joinRoomBtn = $('join-room-btn');
 if (joinRoomBtn) {
-  joinRoomBtn.addEventListener('click', () => {
+  const _jrHandler = () => {
     const promptMsg = (typeof tI18n === 'function' ? tI18n('enterRoomCode') : null) || 'Enter 5-letter Room Code to join:';
     const code = prompt(promptMsg);
     if (code && code.trim().length >= 4) {
       const cleanCode = code.trim().toUpperCase();
       const isMobileTouch = ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)) && (window.innerWidth <= 768 || window.innerHeight <= 500 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
-      location.href = '/?room=' + encodeURIComponent(cleanCode) + (isMobileTouch ? '&screen=1' : '');
+      const reloadUrl = '/?room=' + encodeURIComponent(cleanCode) + (isMobileTouch ? '&screen=1' : '');
+      if (net.isOpen()) {
+        net.send(Object.assign({ type: 'join_room', room: cleanCode }, identityPayload()));
+        armRoomHop(reloadUrl);
+        toast((typeof tI18n === 'function' ? tI18n('joiningRoom', { code: cleanCode }) : null) || ('🔑 Joining room ' + cleanCode + '…'));
+      } else {
+        location.href = reloadUrl;
+      }
     }
-  });
+  };
+  joinRoomBtn.addEventListener('click', _jrHandler);
+  joinRoomBtn.addEventListener('pointerdown', (e)=>{ try{ e.preventDefault(); }catch(_){} _jrHandler(); }, {passive:false});
 }
 const exitBtn = $('exit-btn');
 if (exitBtn) exitBtn.addEventListener('click', () => net.send({ type: 'reset' }));
+const leaveRoomBtn = $('leave-room-btn');
+if (leaveRoomBtn) leaveRoomBtn.addEventListener('click', () => exitRoom()); // v91
+syncRoomButtons();
 const camBtn = $('cam-btn');
 if (camBtn) camBtn.addEventListener('click', cycleCamera);
 $('copy-game-link').addEventListener('click', () => { copyText($('game-link').textContent); toast('Game link copied — send it to your friend!'); track('share', selectedMap, { channel: 'link' }); });
@@ -6051,12 +7066,25 @@ if (tgShareBtn) {
     window.open(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`, '_blank');
   });
 }
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+// v140 PRODUCTION FIX — one viewport path for every resize source.
+// The old handler ignored a zero/NaN viewport (a collapsed iframe or a resize storm
+// during a rotation gives innerWidth 0 -> aspect 0/0 = NaN -> an NaN projection
+// matrix, and the whole scene renders as nothing until the next resize), and it
+// never kept the bloom composer's pixel ratio in step with the renderer's, so after
+// adaptRes() changed the renderer the post pass still rendered at the old resolution
+// (wasted GPU on retina, blurry glow after a downscale).
+function resizeViewport() {
+  const w = Math.max(1, window.innerWidth || 0);
+  const h = Math.max(1, window.innerHeight || 0);
+  camera.aspect = w / h;
+  if (!isFinite(camera.aspect) || camera.aspect <= 0) camera.aspect = 16 / 9;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  if (fxComposer) fxComposer.setSize(window.innerWidth, window.innerHeight);
-});
+  renderer.setSize(w, h);
+  const dpr = renderer.getPixelRatio();
+  if (fxComposer) { fxComposer.setPixelRatio(dpr); fxComposer.setSize(w, h); }
+}
+window.addEventListener('resize', resizeViewport);
+window.addEventListener('orientationchange', () => setTimeout(resizeViewport, 250));
 const unlockAudio = () => {
   ensureAudio();
   if (audio && audio.ctx && audio.ctx.state === 'suspended') {
@@ -6077,9 +7105,16 @@ function adaptRes() {
   if (arCooldown > 0) return;
   const dpr = window.devicePixelRatio || 1;
   const cur = renderer.getPixelRatio();
-  if (fps < 48 && cur > 1) { renderer.setPixelRatio(Math.max(1, cur - 0.5)); arCooldown = 3; } // v55: adapt earlier
-  else if (fps >= 48 && fps <= 52 && cur > 1.25) { renderer.setPixelRatio(Math.max(1.25, cur - 0.25)); arCooldown = 6; } // v66 mid-band trim
-  else if (fps > 57 && cur < Math.min(dpr, 2)) { renderer.setPixelRatio(Math.min(Math.min(dpr, 2), cur + 0.5)); arCooldown = 3; }
+  let next = cur;
+  if (fps < 48 && cur > 1) { next = Math.max(1, cur - 0.5); arCooldown = 3; } // v55: adapt earlier
+  else if (fps >= 48 && fps <= 52 && cur > 1.25) { next = Math.max(1.25, cur - 0.25); arCooldown = 6; } // v66 mid-band trim
+  else if (fps > 57 && cur < Math.min(dpr, 2)) { next = Math.min(Math.min(dpr, 2), cur + 0.5); arCooldown = 3; }
+  if (next !== cur) {
+    renderer.setPixelRatio(next);
+    // v140: the post-processing chain has its own pixel ratio - an out-of-step
+    // composer renders the whole frame at the wrong resolution (blurry or wasteful)
+    if (fxComposer) { fxComposer.setPixelRatio(next); fxComposer.setSize(Math.max(1, window.innerWidth), Math.max(1, window.innerHeight)); }
+  }
 }
 // v50 auto smoothness ladder (only when Adaptive resolution is ON):
 // sustained <45 FPS on HIGH -> drop glow, then shadows, for this session.
@@ -6094,9 +7129,32 @@ function autoTune(fpsNow, st) {
 }
 const autoSt = { low: 0, fxOff: false, shOff: false };
 const clock = new THREE.Clock();
+// v132 auto low-quality for very low network (2g, slow-2g, saveData) — keeps game playable
+try{
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if(conn){
+    const slow = (conn.effectiveType && /2g/.test(conn.effectiveType)) || conn.saveData;
+    if(slow && prefs.quality==='high'){ prefs.quality='low'; savePrefs(); }
+  }
+}catch(e){}
 applyQuality(prefs.quality);
+// v140 PRODUCTION FIX — a failing frame must not silently kill the view.
+// requestAnimationFrame is queued first so the loop always survives, but an
+// exception halfway through used to skip the render for that frame with no
+// diagnosis. Repeats are counted (not spammed) and reported once.
+let frameErrCount = 0, frameErrLogged = false;
 function frame() {
   requestAnimationFrame(frame);
+  try { frameBody(); } catch (e) {
+    frameErrCount++;
+    if (!frameErrLogged) {
+      frameErrLogged = true;
+      try { track('err', undefined, 'frame: ' + ((e && e.message) || e)); } catch (err) {}
+      console.error('[frame]', e);
+    }
+  }
+}
+function frameBody() {
   const dt = Math.min(clock.getDelta(), 0.05);
   fpsFrames++; fpsTime += dt;
   if (fpsTime >= 1) {
@@ -6142,6 +7200,27 @@ function frame() {
     track('game_start');
   }
 }
+// v140 PRODUCTION FIX — returning from a backgrounded tab.
+// While hidden, requestAnimationFrame stops and mobile browsers commonly kill the
+// socket without ever firing close: the tab came back rendering a frozen world with
+// the HUD still ticking, and the interpolation buffer held minutes-old timestamps.
+// On return after a real absence we drop the stale buffer and re-dial (the epoch
+// guard in net.js makes that safe), and reset the clock so no giant dt is applied.
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = performance.now(); return; }
+  const away = hiddenAt ? (performance.now() - hiddenAt) : 0;
+  hiddenAt = 0;
+  resizeViewport();
+  clock.getDelta();                    // discard the time spent hidden
+  if (away > 6000 && !window.__SR_NO_WEBGL) {
+    try { resetSnapshotBuffer(); } catch (e) {}
+    // re-dial with the same hello the page booted with (sendHello() decides
+    // screen/spectator/lobby from the URL). The retry delay restarts at 800 ms.
+    try { if (net && !net.isOpen()) { net.delay = 800; sendHello(); } } catch (e) {}
+  }
+});
+
 let bootHidden = false;
 document.addEventListener('click', (e) => {
   const b = e.target && e.target.closest('button, .mob-choice-btn, .ltab, .btab, .ctab, .mf-pill, .map-card, .weather-btn, .car-card');

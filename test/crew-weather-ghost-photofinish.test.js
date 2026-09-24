@@ -297,4 +297,247 @@ describe('V83 Feature Suite: Syndicate Crews, Weather, Ghost Racing Line & Photo
       assert.ok(results[0].crew.contribMeters > 0);
     });
   });
+
+  // =========================================================================
+  // 5. Multi-Member Club Sync (v90 identity aliasing)
+  //
+  // REGRESSION: a single racer is known to the server by several DIFFERENT
+  // strings. The club APIs are called with `SRAccount.name() || prefs.pid`,
+  // race settlement keys on the Supabase uuid returned by verifyUid() and
+  // otherwise falls back to the in-race display name, and the handshake carries
+  // the device pid. Club mileage used to be credited only when those keys
+  // coincided, so a club displayed ONE member's distance and points while every
+  // other member stayed pinned at 0.0 km / 0 pts no matter how much they raced.
+  // =========================================================================
+  describe('5. Multi-Member Club Sync (identity aliasing)', () => {
+    // 3 completed laps x 800 m average lap = 2400 m per racer per race
+    const EXPECTED_METERS = 2400;
+
+    function raceCar(slot, name, lapSec) {
+      return {
+        slot, name, finished: true, lap: 3, lapTimes: [lapSec, lapSec, lapSec],
+        finishTime: lapSec * 3, best: lapSec, collisions: 0, participating: true
+      };
+    }
+
+    function makeEntry(cars, uidBySlot, pidBySlot, raceSeq) {
+      return {
+        room: { code: 'CLUBSYNC' + raceSeq, mode: 'race', mapId: 0, cars, order: cars, laps: 3 },
+        screens: new Set(),
+        controllers: new Map(),
+        raceSeq,
+        uidBySlot: uidBySlot || {},   // verifyUid() results (Supabase uuids)
+        pidBySlot: pidBySlot || {},   // device pids captured from hello/meta
+        dupUid: {},
+        chBySlot: {}
+      };
+    }
+
+    async function foundClub(tag, founder) {
+      const res = await fetch(`${baseUrl}/api/player/crew/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ crewName: 'Sync Test ' + tag, tag, motto: 'sync', badge: '\u{1F3C1}', color: '#12ff34' }, founder))
+      }).then(r => r.json());
+      assert.equal(res.ok, true, 'club creation should succeed');
+      return res.crew.id;
+    }
+
+    async function joinClub(crewId, member) {
+      const res = await fetch(`${baseUrl}/api/player/crew/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ crewId }, member))
+      }).then(r => r.json());
+      assert.equal(res.ok, true, 'club join should succeed');
+      return res;
+    }
+
+    async function clubView(query) {
+      const qs = Object.keys(query).filter(k => query[k]).map(k => `${k}=${encodeURIComponent(query[k])}`).join('&');
+      return fetch(`${baseUrl}/api/player/crew?${qs}`).then(r => r.json());
+    }
+
+    test('credits EVERY member when the club key differs from the settlement key', async () => {
+      // founder is signed in (club row keyed by username), friend is a guest
+      // (club row keyed by device pid) — the two shapes that used to mismatch.
+      const founder = { uid: 'sync_founder_a', name: 'SYNC_FOUNDER_A', pid: 'sb:uuid-sync-a', sbUid: 'uuid-sync-a' };
+      const guest = { uid: 'p_device_guest_a', name: 'RACER-GUESTA', pid: 'p_device_guest_a', sbUid: '' };
+      const crewId = await foundClub('SYNA', founder);
+      await joinClub(crewId, guest);
+
+      // relay WITHOUT Supabase verification: settlement falls back to display names
+      const cars = [raceCar(1, founder.name, 40), raceCar(2, guest.name, 41)];
+      const rows = await serverMod.settleRace(makeEntry(cars, {}, { 1: founder.pid, 2: guest.pid }, 11));
+
+      assert.equal(rows.length, 2);
+      assert.ok(rows.every(r => r.crew), 'both racers must receive a club contribution');
+      assert.ok(rows.every(r => r.crew.contribMeters === EXPECTED_METERS));
+
+      const view = await clubView({ uid: founder.uid });
+      assert.equal(view.crew.members.length, 2, 'roster must not gain duplicate rows');
+      for (const m of view.crew.members) {
+        assert.equal(m.weeklyMeters, EXPECTED_METERS, `member ${m.uid} must be credited 3 laps x 800 m`);
+        assert.ok(m.weeklyPoints > 0, `member ${m.uid} must earn club points`);
+      }
+      assert.equal(view.crew.weeklyMeters, EXPECTED_METERS * 2, 'club pool must be the sum of its members');
+      assert.equal(view.crew.weeklyPoints, view.crew.members.reduce((a, m) => a + m.weeklyPoints, 0));
+    });
+
+    test('credits club members when settlement uses verified Supabase uuids', async () => {
+      const founder = { uid: 'sync_founder_b', name: 'SYNC_FOUNDER_B', pid: 'sb:uuid-sync-b', sbUid: 'uuid-sync-b' };
+      const guest = { uid: 'p_device_guest_b', name: 'RACER-GUESTB', pid: 'p_device_guest_b', sbUid: '' };
+      const crewId = await foundClub('SYNB', founder);
+      await joinClub(crewId, guest);
+
+      // relay WITH Supabase: slot 1 settles under the uuid, not the username
+      const cars = [raceCar(1, founder.name, 40), raceCar(2, guest.name, 41)];
+      const rows = await serverMod.settleRace(makeEntry(cars, { 1: founder.sbUid }, { 1: founder.pid, 2: guest.pid }, 12));
+
+      assert.ok(rows.every(r => r.crew), 'uuid-settled racers must still reach their club');
+      const view = await clubView({ uid: founder.uid, sbUid: founder.sbUid });
+      assert.equal(view.crew.members.length, 2);
+      for (const m of view.crew.members) assert.equal(m.weeklyMeters, EXPECTED_METERS, `member ${m.uid} credited`);
+    });
+
+    test('accumulates repeat races on the same roster rows without duplicating members', async () => {
+      const founder = { uid: 'sync_founder_c', name: 'SYNC_FOUNDER_C', pid: 'sb:uuid-sync-c', sbUid: 'uuid-sync-c' };
+      const guest = { uid: 'p_device_guest_c', name: 'RACER-GUESTC', pid: 'p_device_guest_c', sbUid: '' };
+      const crewId = await foundClub('SYNC', founder);
+      await joinClub(crewId, guest);
+
+      for (let race = 1; race <= 3; race++) {
+        const cars = [raceCar(1, founder.name, 40), raceCar(2, guest.name, 41)];
+        // alternate which identity the server happens to settle under
+        const uidBySlot = race % 2 ? { 1: founder.sbUid } : {};
+        await serverMod.settleRace(makeEntry(cars, uidBySlot, { 1: founder.pid, 2: guest.pid }, 20 + race));
+      }
+
+      const view = await clubView({ uid: founder.uid });
+      assert.equal(view.crew.members.length, 2, 'three races must not create extra roster rows');
+      for (const m of view.crew.members) assert.equal(m.weeklyMeters, EXPECTED_METERS * 3, `member ${m.uid} accumulates every race`);
+      assert.equal(view.crew.weeklyMeters, EXPECTED_METERS * 6);
+      assert.equal(view.crew.totalMeters, EXPECTED_METERS * 6);
+    });
+
+    test('resolves the same club from any of the member identities', async () => {
+      const founder = { uid: 'sync_founder_d', name: 'SYNC_FOUNDER_D', pid: 'sb:uuid-sync-d', sbUid: 'uuid-sync-d' };
+      const guest = { uid: 'p_device_guest_d', name: 'RACER-GUESTD', pid: 'p_device_guest_d', sbUid: '' };
+      const crewId = await foundClub('SYND', founder);
+      await joinClub(crewId, guest);
+
+      const byUid = await clubView({ uid: founder.uid });
+      const byPid = await clubView({ uid: 'guest', pid: founder.pid });
+      const bySbUid = await clubView({ uid: 'guest', sbUid: founder.sbUid });
+      const byName = await clubView({ uid: 'guest', name: founder.name });
+      const guestByPid = await clubView({ uid: guest.uid, pid: guest.pid });
+
+      for (const v of [byUid, byPid, bySbUid, byName, guestByPid]) {
+        assert.equal(v.hasCrew, true, 'every identity must resolve to the club');
+        assert.equal(v.crew.id, crewId);
+        assert.equal(v.crew.tag, 'SYND');
+      }
+      assert.equal(byUid.crew.isLeader, true);
+      assert.equal(guestByPid.crew.isLeader, false);
+    });
+
+    test('keeps milestone claims idempotent across different aliases of one member', async () => {
+      const founder = { uid: 'sync_founder_e', name: 'SYNC_FOUNDER_E', pid: 'sb:uuid-sync-e', sbUid: 'uuid-sync-e' };
+      const crewId = await foundClub('SYNE', founder);
+      serverMod.memCrews.get(crewId).weeklyMeters = 30000; // Tier 1 reached
+
+      const claim = (body) => fetch(`${baseUrl}/api/player/crew/claim-milestone`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ tier: 1 }, body))
+      }).then(r => r.json());
+
+      const first = await claim({ uid: founder.uid });
+      assert.equal(first.ok, true);
+      assert.equal(first.xpAwarded, 150);
+
+      const byPid = await claim({ uid: 'whatever', pid: founder.pid, name: founder.name });
+      assert.equal(byPid.ok, false, 'the same member must not claim twice through another alias');
+      assert.equal(byPid.error, 'already_claimed');
+
+      const bySbUid = await claim({ uid: 'whatever', sbUid: founder.sbUid });
+      assert.equal(bySbUid.ok, false);
+      assert.equal(bySbUid.error, 'already_claimed');
+    });
+
+    // mock socket, same shape test/multiplayer.test.js uses
+    function mockWs() {
+      return {
+        readyState: 1,
+        sent: [],
+        send(d) { this.sent.push(typeof d === 'string' ? JSON.parse(d) : d); },
+        close() { this.readyState = 3; },
+        findSent(t) { return this.sent.filter((m) => m && m.type === t); },
+        lastLobby() { const l = this.findSent('lobby'); return l[l.length - 1] || null; }
+      };
+    }
+
+    test('captures the device pid on join so the first lobby broadcast shows every club tag', async () => {
+      const founder = { uid: 'lobby_founder_f', name: 'LOBBY_FOUNDER_F', pid: 'sb:uuid-lobby-f', sbUid: 'uuid-lobby-f' };
+      const guest = { uid: 'p_lobby_guest_f', name: 'RACER-LOBBYF', pid: 'p_lobby_guest_f', sbUid: '' };
+      const crewId = await foundClub('LOBF', founder);
+      await joinClub(crewId, guest);
+
+      const entry = serverMod.newRoom('race', 0, 2);
+      const wsA = mockWs(), wsB = mockWs();
+      const clientA = { ws: wsA, entry: null, slot: 0, role: null };
+      const clientB = { ws: wsB, entry: null, slot: 0, role: null };
+      serverMod.joinRoom(clientA, entry, 'screen', { pid: founder.pid, name: founder.name });
+      serverMod.joinRoom(clientB, entry, 'screen', { pid: guest.pid, name: guest.name });
+
+      assert.equal(entry.pidBySlot[clientA.slot], founder.pid, 'founder device pid captured from the handshake');
+      assert.equal(entry.pidBySlot[clientB.slot], guest.pid, 'guest device pid captured from the handshake');
+
+      const lobby = wsA.lastLobby();
+      assert.ok(lobby, 'screens must receive a lobby broadcast');
+      assert.equal(lobby.players.length, 2);
+      assert.deepEqual(lobby.players.map((p) => p.crewTag), ['LOBF', 'LOBF'],
+        'both racers must show the syndicate tag, not only the signed-in one');
+    });
+
+    test('refreshes lobby club tags live when a member joins a club mid-session', async () => {
+      const founder = { uid: 'lobby_founder_g', name: 'LOBBY_FOUNDER_G', pid: 'sb:uuid-lobby-g', sbUid: 'uuid-lobby-g' };
+      const guest = { uid: 'p_lobby_guest_g', name: 'RACER-LOBBYG', pid: 'p_lobby_guest_g', sbUid: '' };
+      const crewId = await foundClub('LOBG', founder);
+
+      const entry = serverMod.newRoom('race', 0, 2);
+      const wsA = mockWs(), wsB = mockWs();
+      serverMod.joinRoom({ ws: wsA, entry: null, slot: 0, role: null }, entry, 'screen', { pid: founder.pid, name: founder.name });
+      serverMod.joinRoom({ ws: wsB, entry: null, slot: 0, role: null }, entry, 'screen', { pid: guest.pid, name: guest.name });
+
+      const before = wsA.lastLobby();
+      assert.deepEqual(before.players.map((p) => p.crewTag), ['LOBG', null], 'guest has no club yet');
+
+      await joinClub(crewId, guest); // joins the club while already sitting in the lobby
+
+      const after = wsA.lastLobby();
+      assert.deepEqual(after.players.map((p) => p.crewTag), ['LOBG', 'LOBG'],
+        'the new tag must be pushed without the racer rejoining the room');
+    });
+
+    test('never folds two different clubs together over a shared display name', async () => {
+      const alpha = { uid: 'shared_alpha_uid', name: 'RACER-SHARED', pid: 'p_alpha_device', sbUid: '' };
+      const beta = { uid: 'shared_beta_uid', name: 'RACER-SHARED', pid: 'p_beta_device', sbUid: '' };
+      const crewA = await foundClub('SHRA', alpha);
+      const crewB = await foundClub('SHRB', beta);
+
+      // a strong identity always wins and picks the right club
+      assert.equal(serverMod.findCrewId({ uid: alpha.uid }), crewA);
+      assert.equal(serverMod.findCrewId({ pid: beta.pid }), crewB);
+      assert.equal(serverMod.findCrewId({ uid: alpha.uid, name: alpha.name }), crewA);
+
+      // a display name mapped to two clubs is ambiguous -> refuse to guess
+      assert.equal(serverMod.findCrewId({ name: 'RACER-SHARED' }), null);
+
+      const cars = [raceCar(1, 'RACER-SHARED', 40)];
+      const rows = await serverMod.settleRace(makeEntry(cars, {}, {}, 31));
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].crew, null, 'ambiguous nickname must not credit either club');
+      assert.equal(serverMod.memCrews.get(crewA).weeklyMeters, 0);
+      assert.equal(serverMod.memCrews.get(crewB).weeklyMeters, 0);
+    });
+  });
 });

@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap" media="print" onload="this.media='all'"/>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap"/></noscript>
-  <link rel="stylesheet" href="css/style.css?v=95"/>
+  <link rel="stylesheet" href="css/style.css?v=140"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -91,7 +91,7 @@
     </div>
 
     <div id="toast" role="status" aria-live="polite"></div>
-    <button id="exit-btn" title="Back to lobby" style="display:none" data-i18n="exitBtn">⏏ EXIT</button>
+    <button id="exit-btn" title="Reset to the starting grid" style="display:none" data-i18n="exitBtn">⏏ EXIT</button>
   </div>
 
   <!-- on-screen mobile solo touch controls (active during racing on mobile) -->
@@ -279,13 +279,14 @@
             <button id="copy-code" class="ghost sm" data-i18n="copy">COPY</button>
             <button id="create-room-btn" class="ghost sm" data-i18n="createRoom">➕ CREATE</button>
             <button id="join-room-btn" class="ghost sm" data-i18n="joinRoom">🔑 JOIN</button>
+            <button id="leave-room-btn" class="ghost sm" data-i18n="exitRoom" title="Leave this room and join or create another" hidden>🚪 EXIT ROOM</button>
             <button id="install-btn" class="ghost sm" hidden data-i18n="install">📲 INSTALL</button>
             <button id="lang-btn" class="ghost sm" title="Language">🌐 EN</button>
           </div>
           <div id="lobby-conn" data-i18n="connecting">🟡 connecting…</div>
         </div>
 
-        <!-- challenge invitation banner (authenticated or guest) -->
+        <!-- challenge invitation banner (authenticated) -->
         <div id="challenge-banner" class="challenge-banner" style="display:none">
           <span class="ch-badge" id="ch-badge">🔥 CHALLENGE</span>
           <div class="ch-msg" id="ch-msg"></div>
@@ -293,11 +294,21 @@
           <button id="ch-accept-btn" class="big-cta ch-cta" data-i18n="acceptRace">🏁 ACCEPT &amp; RACE</button>
         </div>
 
-        <!-- v82 Revenge Match banner -->
+        <!-- v82 Revenge Match banner (you LOST: send the request) -->
         <div id="revenge-banner" class="revenge-banner" style="display:none">
           <span class="rev-badge" data-i18n="revengeMatchTitle">⚔️ REVENGE MATCH (+50% BOUNTY)</span>
           <div class="rev-msg" id="rev-msg" data-i18n="settleScore">Settle the score against your rival!</div>
           <button id="rev-accept-btn" class="big-cta rev-cta" data-i18n="acceptRevenge">⚔️ ACCEPT REVENGE</button>
+        </div>
+
+        <!-- v111 Incoming revenge request (you WON: accept or decline) -->
+        <div id="revenge-incoming-banner" class="revenge-banner" style="display:none">
+          <span class="rev-badge">⚔️ REVENGE REQUEST</span>
+          <div class="rev-msg" id="rev-in-msg">A rival wants an instant rematch.</div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button id="rev-in-accept" class="big-cta rev-cta">✅ ACCEPT REMATCH</button>
+            <button id="rev-in-decline" class="res-btn-secondary">DECLINE</button>
+          </div>
         </div>
 
         <!-- v82 Dynamic Prioritized Next Best Action Hero -->
@@ -319,13 +330,12 @@
 
         <p id="lobby-status" data-i18n="waitingForJoysticks">Waiting for joysticks…</p>
         <div id="recent-line" class="recent-line" hidden></div>
-        <div id="account-line" class="account-line" hidden>
-          <span id="account-chip">👤 guest</span><span id="streak-badge" hidden></span>
+        <div id="account-line" class="account-line">
+          <span id="account-chip">👤 racer</span><span id="streak-badge" hidden></span>
           <button id="crew-btn" class="ghost sm" data-i18n="clubs">🏁 CLUBS</button>
           <button id="badges-btn" class="ghost sm" data-i18n="badges">🎖️ BADGES</button>
           <button id="bounties-btn" class="ghost sm" data-i18n="bounties">🏆 BOUNTIES</button>
           <button id="friends-btn" class="ghost sm" hidden data-i18n="friends">👥 FRIENDS</button>
-          <button id="garage-btn" class="ghost sm" data-i18n="garage">🏎️ GARAGE</button>
           <div id="ach-row" class="ach-row"></div>
           <button id="account-btn" class="ghost sm" data-i18n="signin">SIGN IN</button>
           <button id="account-out" class="ghost sm" hidden data-i18n="signout">SIGN OUT</button>
@@ -499,6 +509,23 @@
         <div id="pane-sett" class="lobby-tab-pane hidden">
           <div class="lsec">
             <div class="lsec-title" data-i18n="settings">SETTINGS</div>
+            <!-- v92: steering sensitivity, phone-brightness style slider -->
+            <div class="sens-block" id="sens-block">
+              <div class="sens-head">
+                <span class="sens-title" id="sens-title" data-i18n="sensLabel">🎚️ STEERING SENSITIVITY</span>
+                <output class="sens-val" id="sens-val" for="set-sens">100%</output>
+              </div>
+              <div class="sens-track-row">
+                <span class="sens-end" aria-hidden="true" title="calm">🐢</span>
+                <input id="set-sens" type="range" min="50" max="150" step="5" value="100"
+                       aria-labelledby="sens-title" aria-describedby="sens-hint" aria-valuetext="100%"/>
+                <span class="sens-end" aria-hidden="true" title="quick">🐇</span>
+              </div>
+              <div class="sens-foot">
+                <span class="sens-hint" id="sens-hint" data-i18n="sensHint">Lower = calmer, smoother steering. Higher = quicker wheel. Applies instantly and only to your car.</span>
+                <button id="sens-reset" class="ghost sm" data-i18n="sensReset">↺ RESET</button>
+              </div>
+            </div>
             <div class="btn-row-sm">
               <span class="opt-label" data-i18n="gfx">GFX</span>
               <button class="q-btn" data-q="low" data-i18n="low">LOW</button>
@@ -590,9 +617,6 @@
                 <button class="q-btn" id="bsk-rookie" data-i18n="rookie">ROOKIE</button>
                 <button class="q-btn" id="bsk-pro" data-i18n="pro">PRO</button>
               </div>
-              <div class="toggle-line" id="garage-line">
-                <span class="opt-label" data-i18n="garage">GARAGE</span>
-              </div>
               <div class="cos-row"><span class="opt-label" data-i18n="decal">DECAL</span>
                 <button class="q-btn cos-btn" data-cos="decal" data-v="0" data-i18n="none">NONE</button>
                 <button class="q-btn cos-btn" data-cos="decal" data-v="1" data-i18n="stripes">STRIPES</button>
@@ -618,13 +642,6 @@
     </div>
   </div>
 
-  <div id="garage-dlg" class="dlg" hidden>
-    <div class="dlg-box wide">
-      <h2 data-i18n="myGarage">🏎️ MY GARAGE</h2>
-      <div id="garage-body" class="profile-body"></div>
-      <button id="garage-close" class="big-cta" data-i18n="close">CLOSE</button>
-    </div>
-  </div>
   <div id="badges-dlg" class="dlg" hidden>
     <div class="dlg-box wide">
       <h2 data-i18n="badgesTitle">🎖️ MILESTONE BADGES &amp; SHOWCASE</h2>
@@ -687,15 +704,30 @@
   </div>
 
   <script defer src="js/vendor/three.min.js"></script>
+  <script defer src="js/vendor/GLTFLoader.js?v=140"></script>
+  <script defer src="js/car-models.js?v=140"></script>
   <script defer src="js/vendor/qrcode.js"></script>
-  <script defer src="js/game-core.js?v=95"></script>
-  <script defer src="js/progression.js?v=95"></script>
-  <script defer src="js/cosmetics.js?v=95"></script>
+  <script defer src="js/game-core.js?v=140"></script>
+  <script defer src="js/progression.js?v=140"></script>
   <script src="js/config.js"></script>
-  <script defer src="js/account.js?v=95"></script>
-  <script defer src="js/i18n.js?v=95"></script>
-  <script defer src="js/net.js?v=95"></script>
-  <script defer src="js/game.js?v=95"></script>
+  <script>
+  // v119 ACCOUNT GATE: when this deploy has Supabase keys configured, the game
+  // is only reachable through auth.html (sign up / sign in). No guest play.
+  // Phone controller and replay stay open - they join by room code.
+  (function () {
+    try {
+      if (!(String(window.SB_U || '').trim() && String(window.SB_A || '').trim())) return;
+      if (/auth\.html$/.test(location.pathname)) return;
+      var s = null;
+      try { s = JSON.parse(localStorage.getItem('sr_sb_session') || 'null'); } catch (e) {}
+      if (!s || !s.access_token) location.replace('auth.html?next=' + encodeURIComponent(location.pathname + location.search));
+    } catch (e) {}
+  })();
+  </script>
+  <script defer src="js/account.js?v=140"></script>
+  <script defer src="js/i18n.js?v=140"></script>
+  <script defer src="js/net.js?v=140"></script>
+  <script defer src="js/game.js?v=140"></script>
   <script>
   // PWA (v36): register service worker + show INSTALL button when the browser allows it
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {

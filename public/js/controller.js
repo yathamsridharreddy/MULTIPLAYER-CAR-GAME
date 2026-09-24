@@ -182,8 +182,27 @@ setInterval(() => {
   net.send({ type: 'input', steer: dz(state.steer), throttle: dz(state.throttle), brake: dz(state.brake), handbrake: state.hb, nitro: state.nitro });
 }, 33);
 
+// v140 PRODUCTION FIX — a phone that slept is not necessarily still connected.
+// This used to only zero the stick on hide. On most phones the socket is a zombie
+// after a screen lock (no close event), so the player came back to a controller that
+// looked connected but sent every input into the void - the car simply did not move.
+// Now a real absence forces a fresh dial (RoomLink's generation guard makes that safe)
+// and the liveness watchdog in net.js covers the case where the sleep was short.
+let ctrlHiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { state.steer = state.throttle = state.brake = 0; state.hb = state.nitro = false; net.send({ type: 'input', steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false }); }
+  if (document.hidden) {
+    ctrlHiddenAt = performance.now();
+    state.steer = state.throttle = state.brake = 0; state.hb = state.nitro = false;
+    try { net.send({ type: 'input', steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false }); } catch (e) {}
+    return;
+  }
+  const away = ctrlHiddenAt ? (performance.now() - ctrlHiddenAt) : 0;
+  ctrlHiddenAt = 0;
+  if (away > 3000 && state.slot != null && !state.full) {
+    setStatus('Reconnecting…', 'wait');
+    net.delay = 400;
+    net.connect({ type: 'hello', role: 'controller', room: (wantedRoom || '').toUpperCase().trim(), pid: ctrlPid(), slot: state.slot });
+  }
 });
 
 $('btn-full').addEventListener('click', async () => {

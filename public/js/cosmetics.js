@@ -19,13 +19,17 @@
   const RARITY = { starter: '#9fb0c4', rare: '#39d5ff', epic: '#b26aFF', legendary: '#ffd479' };
 
   // unlock: {t:'free'} | {t:'level',v} | {t:'wins',v} | {t:'league',v} | {t:'ach',v} | {t:'coins',v}
+  // v112: every garage car now owns a DISTINCT HD body shell (see BODIES and
+  // createCar in game.js). The body is pure cosmetics - physics stay with the
+  // free class choice - and it syncs like any other cosmetic (cos.b).
+  const BODIES = ['gt', 'hawk', 'strider', 'proto', 'formula', 'hyper'];
   const CARS = [
-    { id: 'street_runner', name: 'MONZA CORSA GT', rarity: 'starter',   color: 0xe10600, sp: 0, unlock: { t: 'free' },            bars: [6, 5, 5] },
-    { id: 'neon_fang',     name: 'NIGHTHAWK R-SPEC', rarity: 'rare',      color: 0x39d5ff, sp: 0, unlock: { t: 'level', v: 5 },     bars: [7, 6, 6] },
-    { id: 'desert_fox',    name: 'DUNE STRIDER 4X', rarity: 'rare',      color: 0xd09a6a, sp: 0, unlock: { t: 'wins', v: 10 },     bars: [6, 7, 6] },
-    { id: 'night_fury',    name: 'SHADOW GT PROTO', rarity: 'epic',      color: 0x7b2ff7, sp: 1, unlock: { t: 'league', v: 1200 }, bars: [8, 7, 7] },
-    { id: 'volt_gt',       name: 'VOLT FORMULA E',  rarity: 'epic',      color: 0x00a651, sp: 1, unlock: { t: 'level', v: 12 },    bars: [7, 8, 7] },
-    { id: 'apex_x',        name: 'VALKYRIE HYPER-R', rarity: 'legendary', color: 0xffd400, sp: 1, unlock: { t: 'wins', v: 25 },     bars: [9, 8, 8] }
+    { id: 'street_runner', name: 'MONZA CORSA GT', rarity: 'starter',   color: 0xe10600, sp: 0, body: 'gt',      unlock: { t: 'free' },            bars: [6, 5, 5] },
+    { id: 'neon_fang',     name: 'NIGHTHAWK R-SPEC', rarity: 'rare',      color: 0x39d5ff, sp: 0, body: 'hawk',    unlock: { t: 'level', v: 5 },     bars: [7, 6, 6] },
+    { id: 'desert_fox',    name: 'DUNE STRIDER 4X', rarity: 'rare',      color: 0xd09a6a, sp: 0, body: 'strider', unlock: { t: 'wins', v: 10 },     bars: [6, 7, 6] },
+    { id: 'night_fury',    name: 'SHADOW GT PROTO', rarity: 'epic',      color: 0x7b2ff7, sp: 1, body: 'proto',   unlock: { t: 'league', v: 1200 }, bars: [8, 7, 7] },
+    { id: 'volt_gt',       name: 'VOLT FORMULA E',  rarity: 'epic',      color: 0x00a651, sp: 1, body: 'formula', unlock: { t: 'level', v: 12 },    bars: [7, 8, 7] },
+    { id: 'apex_x',        name: 'VALKYRIE HYPER-R', rarity: 'legendary', color: 0xffd400, sp: 1, body: 'hyper',   unlock: { t: 'wins', v: 25 },     bars: [9, 8, 8] }
   ];
 
   const PAINTS = [
@@ -89,6 +93,8 @@
   const isCoinItem = (u) => !!(u && u.t === 'coins');
 
   function findCar(id) { return CARS.find((c) => c.id === id) || CARS[0]; }
+  // v112: wire index of a car's body shell; unknown ids fall back to the starter body.
+  function bodyIndexOf(id) { const i = BODIES.indexOf((findCar(id) || {}).body); return i < 0 ? 0 : i; }
 
-  return { COINS, RARITY, CARS, PAINTS, WHEELS, TRAILS, DECALS, NEONS, unlockText, itemUnlocked, isCoinItem, findCar };
+  return { COINS, RARITY, CARS, PAINTS, WHEELS, TRAILS, DECALS, NEONS, BODIES, unlockText, itemUnlocked, isCoinItem, findCar, bodyIndexOf };
 });
