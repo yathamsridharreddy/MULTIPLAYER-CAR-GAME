@@ -102,11 +102,11 @@ test('game.js wires the swap without touching physics or the protocol', () => {
   assert.ok(g.includes("CarModels.idForHex(cs.col)) || shellForHex(cs.col);"), 'placeCar hook');
   assert.ok(g.includes('function ensureCarShell('), 'id-keyed shell rebuild exists');
   assert.ok(g.includes('if (!old.isGlb && old.shellId === id) return;'), 'shell swap is id-keyed');
-  assert.ok(g.includes('w.spin.rotation.x = v.spinAngle;'), 'v140: one forward spin sign for both rigs');
+  assert.ok(g.includes('w.spin.rotation.x = v.spinAngle;'), 'v141: one forward spin sign for both rigs');
   assert.ok(g.includes('w.pivot.rotation.z = -cs.st * 0.42;'), 'glb steering axis');
   assert.ok(g.includes('function upgradeCarVisual('), 'upgrade helper');
   assert.ok(g.includes('function disposeCarVisual('), 'dispose helper');
-  assert.ok(/const BUILD = 'v140';/.test(g), 'build marker');
+  assert.ok(/const BUILD = 'v141';/.test(g), 'build marker');
   // physics core untouched by the pipeline
   const core = read('shared/game-core.js');
   assert.ok(!core.includes('CarModels') && !core.includes('GLTF'), 'game-core stays model-agnostic');
@@ -143,13 +143,13 @@ test('v118: eight distinct silhouettes, one per selectable car id', () => {
 
 test('service worker does not precache car models (runtime cache only)', () => {
   const sw = read('public/sw.js');
-  assert.ok(sw.includes("sridhar-rush-v140"), 'cache name bumped');
+  assert.ok(sw.includes("sridhar-rush-v141"), 'cache name bumped');
   const precache = sw.slice(0, sw.indexOf('self.addEventListener'));
   assert.ok(!precache.includes('assets/cars'), 'models must not be in the precache list');
 });
 
 /* ---------------------------------------------------------------------------
-   v140 regression: "yellow car body is damaged".
+   v141 regression: "yellow car body is damaged".
 
    Root cause: two "yellow card" heuristics hid EVERY mesh whose material colour
    matched r>200 && g>170 && b<130. The yellow car's paint IS 0xffd400, so its own
@@ -162,7 +162,7 @@ function stripComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 }
 
-test('v140: no colour heuristic may ever cull a car mesh (yellow car must stay whole)', () => {
+test('v141: no colour heuristic may ever cull a car mesh (yellow car must stay whole)', () => {
   const g = stripComments(read('public/js/game.js'));
   const cm = stripComments(read('public/js/car-models.js'));
 
@@ -179,7 +179,7 @@ test('v140: no colour heuristic may ever cull a car mesh (yellow car must stay w
   assert.ok(!/>>\s*16/.test(g.slice(pcStart, pcEnd)), 'placeCar must not extract colour channels');
 });
 
-test('v140: placeCar never traverses/hides meshes per frame (yellow fix + stutter fix)', () => {
+test('v141: placeCar never traverses/hides meshes per frame (yellow fix + stutter fix)', () => {
   const g = read('public/js/game.js');
   const start = g.indexOf('function placeCar(slot, cs, dt) {');
   const end = g.indexOf('// ---- network smoothing', start);
@@ -189,7 +189,7 @@ test('v140: placeCar never traverses/hides meshes per frame (yellow fix + stutte
   assert.ok(!body.includes('.visible=false'), 'placeCar must not hide meshes');
 });
 
-test('v140: mesh culling happens once per build, by name, and protects paint', () => {
+test('v141: mesh culling happens once per build, by name, and protects paint', () => {
   const raw = read('public/js/car-models.js');
   const cm = stripComments(raw);
   assert.ok(cm.includes('const INTERIOR_WORDS ='), 'interior word list present');
@@ -212,7 +212,7 @@ test('v140: mesh culling happens once per build, by name, and protects paint', (
 /* The cull rule is now the single source of truth for what a car looks like, so it
    is executed here against the REAL glTF graph: what survives is exactly what the
    player sees, and no body panel may be in the hidden set. */
-test('v140: cull rule against the real glTF keeps every outer body panel', () => {
+test('v141: cull rule against the real glTF keeps every outer body panel', () => {
   const gltfPath = path.join(ROOT, 'public/assets/cars/ghost/CarConcept.gltf');
   const j = JSON.parse(fs.readFileSync(gltfPath, 'utf8'));
   const matName = (i) => (j.materials[i] && j.materials[i].name) || '';
@@ -253,7 +253,7 @@ test('v140: cull rule against the real glTF keeps every outer body panel', () =>
 });
 
 /* ---------------------------------------------------------------------------
-   v140 regression: "the game is not going correctly with cars".
+   v141 regression: "the game is not going correctly with cars".
 
    The player's complaint was the wheels. Two independent defects, both measured
    against the real asset rather than guessed:
@@ -275,7 +275,7 @@ function wheelNodes() {
   return j.nodes.filter((n) => /^Wheel(Front|Rear)(L|R)$/.test(n.name || ''));
 }
 
-test('v140: the asset really does ship its front wheels pre-turned', () => {
+test('v141: the asset really does ship its front wheels pre-turned', () => {
   const wheels = wheelNodes();
   assert.strictEqual(wheels.length, 4, 'four wheel nodes');
   const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
@@ -293,7 +293,7 @@ test('v140: the asset really does ship its front wheels pre-turned', () => {
   assert.ok(Math.abs(off.WheelRearR) < 0.01, 'WheelRearR is straight, got ' + off.WheelRearR.toFixed(3));
 });
 
-test('v140: the rest group removes the baked steer, so the axle ends exactly lateral', () => {
+test('v141: the rest group removes the baked steer, so the axle ends exactly lateral', () => {
   const wheels = wheelNodes();
   const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
   const Z = new THREE.Vector3(0, 0, 1);
@@ -311,7 +311,7 @@ test('v140: the rest group removes the baked steer, so the axle ends exactly lat
   }
 });
 
-test('v140: the OLD steering write really did leave the front wheels crooked (documents the bug)', () => {
+test('v141: the OLD steering write really did leave the front wheels crooked (documents the bug)', () => {
   const wheels = wheelNodes().filter((n) => /Front/.test(n.name));
   const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
   for (const n of wheels) {
@@ -326,7 +326,7 @@ test('v140: the OLD steering write really did leave the front wheels crooked (do
   }
 });
 
-test('v140: the rig is pivot -> steer -> rest -> spin, calipers outside the spin group', () => {
+test('v141: the rig is pivot -> steer -> rest -> spin, calipers outside the spin group', () => {
   const cm = stripComments(read('public/js/car-models.js'));
   assert.ok(cm.includes('const steerG = new THREE.Group();'), 'steer group');
   assert.ok(cm.includes('const restG = new THREE.Group(); restG.quaternion.copy(rest);'), 'rest group holds the authored pose');
@@ -337,7 +337,7 @@ test('v140: the rig is pivot -> steer -> rest -> spin, calipers outside the spin
   assert.ok(cm.includes('wheels.push({ pivot: steerG, spin: spinG'), 'the game drives the clean groups');
 });
 
-test('v140: wheels roll FORWARD with a positive angle on both rigs', () => {
+test('v141: wheels roll FORWARD with a positive angle on both rigs', () => {
   const g = stripComments(read('public/js/game.js'));
   assert.ok(/w\.spin\.rotation\.x = v\.spinAngle;/.test(g), 'single, forward sign for both rigs');
   assert.ok(!/rotation\.x = v\.isGlb \? -v\.spinAngle/.test(g), 'the backwards GLB sign must be gone');
@@ -345,7 +345,7 @@ test('v140: wheels roll FORWARD with a positive angle on both rigs', () => {
   assert.ok(read('public/js/car-models.js').includes('setFromObject(wheels[0].pivot)'), 'wheelR measured from the built wheel');
 });
 
-test('v140: the glass is opaque and standard (no transmission shader, no see-through cabin)', () => {
+test('v141: the glass is opaque and standard (no transmission shader, no see-through cabin)', () => {
   const cm = read('public/js/car-models.js');
   assert.ok(/gm\.transmission = 0;/.test(cm), 'transmission off on the car glass');
   assert.ok(!cm.includes('trahsmission'), 'sanity');
@@ -354,7 +354,7 @@ test('v140: the glass is opaque and standard (no transmission shader, no see-thr
   assert.ok(JSON.stringify(j.extensionsUsed).includes('KHR_materials_transmission'), 'asset really does ship a transmissive windscreen');
 });
 
-test('v140: only the big panels cast shadows, and the wipers are gone', () => {
+test('v141: only the big panels cast shadows, and the wipers are gone', () => {
   const j = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/assets/cars/ghost/CarConcept.gltf'), 'utf8'));
   const cm = read('public/js/car-models.js');
   const m = cm.match(/o\.castShadow = !\/([^\/]+)\/\.test\(\(\(o\.name \|\| ''\) \+ ' ' \+ matNames\)\.toLowerCase\(\)\);/);
@@ -392,7 +392,7 @@ test('v140: only the big panels cast shadows, and the wipers are gone', () => {
 });
 
 /* ---------------------------------------------------------------------------
-   v140 integration: run the REAL build() over a faithful reconstruction of the
+   v141 integration: run the REAL build() over a faithful reconstruction of the
    asset (real node names, real hierarchy, real transforms, real material names
    and types) and inspect the rig it produces. This is the closest thing to
    "load the car in a browser" that can run without a DOM: it catches anything
@@ -443,7 +443,7 @@ function acquireFake(THREE, scene) {
   return sandbox.window.CarModels.acquire('ghost', 0xffd400, 1);
 }
 
-test('v140: build() survives the real graph and produces a drivable rig', async () => {
+test('v141: build() survives the real graph and produces a drivable rig', async () => {
   const { scene } = buildFakeScene(THREE);
   const wrap = await acquireFake(THREE, scene);
   assert.ok(wrap && wrap.isGlb, 'a GLB wrapper is produced (no throw, no fallback)');
@@ -458,7 +458,7 @@ test('v140: build() survives the real graph and produces a drivable rig', async 
   }
 });
 
-test('v140: rim rolls, caliper does not, and the front pivot steers about the vertical', async () => {
+test('v141: rim rolls, caliper does not, and the front pivot steers about the vertical', async () => {
   const { scene } = buildFakeScene(THREE);
   const wrap = await acquireFake(THREE, scene);
   const front = wrap.wheels.find((w) => w.front && /L$/.test(w.pivot.parent.name));
@@ -481,7 +481,7 @@ test('v140: rim rolls, caliper does not, and the front pivot steers about the ve
   assert.ok(Math.abs(axleAfter.z) < 0.4, 'steering stays within the lock');
 });
 
-test('v140: build() output keeps every paint panel visible and costs far less geometry', async () => {
+test('v141: build() output keeps every paint panel visible and costs far less geometry', async () => {
   const { scene } = buildFakeScene(THREE);
   const wrap = await acquireFake(THREE, scene);
   const hidden = [], shown = [];
@@ -506,7 +506,7 @@ test('v140: build() output keeps every paint panel visible and costs far less ge
 });
 
 /* ---------------------------------------------------------------------------
-   v140: the WHITE car never became the real model.
+   v141: the WHITE car never became the real model.
 
    Every procedural shell is built with carId 'ghost' (v136), and the white paint
    0xffffff also maps to the id 'ghost'. Both upgrade gates skipped the work when
@@ -514,7 +514,7 @@ test('v140: build() output keeps every paint panel visible and costs far less ge
    stayed the low-poly shell for the whole race while every other car loaded the
    GLB. The gates now ask whether the slot already shows this GLB.
    -------------------------------------------------------------------------- */
-test('v140: a white car (id "ghost") is not mistaken for an already-upgraded shell', () => {
+test('v141: a white car (id "ghost") is not mistaken for an already-upgraded shell', () => {
   const g = stripComments(read('public/js/game.js'));
   assert.ok(!/if \(!old \|\| old\.glbPending \|\| old\.carId === id\) return;/.test(g),
     'the id-only early return must be gone from upgradeCarVisual');

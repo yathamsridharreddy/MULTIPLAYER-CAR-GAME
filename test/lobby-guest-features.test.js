@@ -267,7 +267,12 @@ function carSandbox(rendererThrows) {
       WebGLRenderer: function () {
         ctorCalls++;
         if (rendererThrows) throw new Error('Error creating WebGL context');
-        return { setSize() {}, render() {}, domElement: { toDataURL: () => 'data:image/png;base64,AAA' } };
+        return {
+          setSize() {}, setPixelRatio() {}, render() {}, dispose() {}, forceContextLoss() {},
+          // a real 180x110 PNG data URL is several KB; the source treats a
+          // squashed one as a dead context, so the fixture must be realistic
+          domElement: { toDataURL: () => 'data:image/png;base64,' + 'iVBORw0KGgo'.repeat(400) }
+        };
       },
       Scene: function () { this.add = () => {}; },
       HemisphereLight: function () {},
@@ -280,8 +285,9 @@ function carSandbox(rendererThrows) {
   };
   vm.createContext(sb);
   vm.runInContext(
-    'let _prev = null; let _prevFailed = false;\n' +
-    ['carPreviewRenderer', 'renderCarPreview', 'buildCarCards'].map(extract).join('\n') +
+    'let _prev = null; let _prevFailed = false; let _prevCache = new Map();\n' +
+    ['hexCss', 'carSwatch', 'qualityIsLow', 'disposeCarPreview',
+      'carPreviewRenderer', 'renderCarPreview', 'buildCarCards'].map(extract).join('\n') +
     '\n;globalThis.__api = { carPreviewRenderer, buildCarCards };',
     sb
   );
@@ -296,7 +302,8 @@ describe('A failing 3D car preview cannot take the lobby down', () => {
     assert.equal(sb.__cards.length, 3, 'all three cars are offered');
     for (const c of sb.__cards) {
       assert.ok(!c.innerHTML.includes('<img'), 'no preview image without a context');
-      assert.match(c.innerHTML, /mc-swatch/, 'a colour swatch instead');
+      assert.match(c.innerHTML, /car-swatch/, 'a painted car silhouette instead');
+      assert.match(c.innerHTML, /<svg[^>]*viewBox="0 0 120 64"/, 'and it is a real car, not an empty box');
       assert.match(c.innerHTML, /REDLINE|AKINA|MIDNIGHT/, 'and the car is still named');
     }
     assert.ok(sb.__cards.some((c) => /active/.test(c.className)), 'the saved choice is still marked');
@@ -316,8 +323,8 @@ describe('A failing 3D car preview cannot take the lobby down', () => {
     sb.__api.buildCarCards();
     assert.equal(sb.__cards.length, 3);
     for (const c of sb.__cards) {
-      assert.match(c.innerHTML, /<img src="data:image\/png/, 'the swatch is only a fallback');
-      assert.ok(!c.innerHTML.includes('mc-swatch'));
+      assert.match(c.innerHTML, /<img class="car-thumb" src="data:image\/png/, 'the silhouette is only a fallback');
+      assert.ok(!c.innerHTML.includes('car-swatch'));
     }
   });
 
@@ -334,7 +341,8 @@ describe('A failing 3D car preview cannot take the lobby down', () => {
     vm.runInContext('_prev = null; _prevFailed = false;', sb);
     assert.doesNotThrow(() => sb.__api.buildCarCards());
     assert.equal(sb.__cards.length, 3, 'every card survives a lost context');
-    assert.ok(sb.__cards.every((c) => /mc-swatch/.test(c.innerHTML)));
+    assert.ok(sb.__cards.every((c) => /car-swatch/.test(c.innerHTML)),
+      'every card still shows a car after the context dies');
   });
 
   it('the guest wiring runs before anything that creates a WebGL context', () => {

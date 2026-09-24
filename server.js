@@ -3997,7 +3997,7 @@ wss.on('connection', (ws) => {
   clientsByWs.set(ws, client);
 
   ws.on('message', (raw) => {
-    client.isAlive = true;             // v140: any traffic proves the peer is there
+    client.isAlive = true;             // v141: any traffic proves the peer is there
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
     Promise.resolve(handleMessage(client, msg)).catch(() => {});
@@ -4013,7 +4013,7 @@ wss.on('connection', (ws) => {
   ws.on('error', drop);
 });
 
-// v140 PRODUCTION FIX — WebSocket heartbeat.
+// v141 PRODUCTION FIX — WebSocket heartbeat.
 // There was none, so a socket that died without a FIN (phone asleep, wifi->cellular
 // handover, a proxy idle-timeout) stayed "connected" forever: the room kept a
 // frozen ghost car in the standings, the slot was never freed, and the client -
@@ -4641,7 +4641,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v140', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v141', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {

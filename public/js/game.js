@@ -72,7 +72,7 @@ if (!prefs.name) { prefs.name = 'RACER-' + prefs.pid.slice(1, 5).toUpperCase(); 
 // ---------------------------------------------------------------------------
 // Renderer / scene
 // ---------------------------------------------------------------------------
-// v140 PRODUCTION FIX — the renderer is created defensively.
+// v141 PRODUCTION FIX — the renderer is created defensively.
 // `new THREE.WebGLRenderer()` THROWS when the browser cannot give a WebGL context
 // (iOS Lockdown Mode, a GPU blocklist, "out of memory" after a heavy session, an
 // exhausted context pool). It used to sit unguarded at module scope, so a throw here
@@ -111,7 +111,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 $('stage').appendChild(renderer.domElement);
 
-// v140 PRODUCTION FIX — WebGL context loss.
+// v141 PRODUCTION FIX — WebGL context loss.
 // Mobile browsers drop the GPU context when the tab is backgrounded, on memory
 // pressure, or when the GPU process restarts. three.js r128 does NOT restore it on
 // its own: the canvas froze or went black while the game kept running - the single
@@ -137,10 +137,13 @@ renderer.domElement.addEventListener('webglcontextrestored', () => {
       });
     });
     renderer.shadowMap.needsUpdate = true;
+    // the preview context died with the same GPU event - allow it to be rebuilt
+    try { disposeCarPreview(); _prevFailed = false; } catch (e) {}
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     resizeViewport();
     glLost = false;
+    try { buildCarCards(); } catch (e) {}
     toast('✅ Graphics restored');
   } catch (e) { glLost = false; }
 }, false);
@@ -1993,7 +1996,7 @@ function disposeCarVisual(v) {
 function upgradeCarVisual(slot, id, b, colHex) {
   const old = carVisuals[slot];
   if (!old || old.glbPending) return;
-  // v140 FIX: this used to bail out whenever `old.carId === id`, and EVERY procedural
+  // v141 FIX: this used to bail out whenever `old.carId === id`, and EVERY procedural
   // shell carries carId 'ghost' (v136 made them all the ghost silhouette). 'ghost' is
   // also the id the WHITE paint (0xffffff) maps to, so a white car - one of the eight
   // colours in the paint picker - was stuck on the low-poly shell forever: it never
@@ -2621,17 +2624,23 @@ function applyQuality(q) {
     renderer.setPixelRatio(1);
     sunLight.castShadow = false;
     try{ sunLight.shadow.mapSize.set(512,512); sunLight.shadow.map=null; }catch(e){}
-    try{ if(window._prev){ _prev=null; _prevFailed=true; } }catch(e){}
+    // v141: this used to test window._prev, which is always undefined (a top-level
+    // `let` is not a window property), so the second GL context was never released.
+    // LOW quality keeps the thumbnails but hands the GPU back as soon as they exist
+    // (buildCarCards ends with disposeCarPreview(true)).
+    try { disposeCarPreview(true); } catch (e) {}
   } else if (q === 'med') {
     renderer.setPixelRatio(Math.min(dpr, 1.1));
     sunLight.castShadow = false;
     try{ sunLight.shadow.mapSize.set(512,512); sunLight.shadow.map=null; }catch(e){}
+    _prevFailed = false;   // v141: (re)allow thumbnails in this quality
   } else {
     renderer.setPixelRatio(Math.min(dpr, 1.35));
     sunLight.castShadow = true;
     try{ sunLight.shadow.mapSize.set(512,512); sunLight.shadow.map=null; }catch(e){}
+    _prevFailed = false;
   }
-  // v140: the bloom chain carries its own pixel ratio - if it is left behind the
+  // v141: the bloom chain carries its own pixel ratio - if it is left behind the
   // whole frame is composited at the wrong resolution (blurry glow, or wasted GPU)
   try { resizeViewport(); } catch (e) {}
 }
@@ -2667,7 +2676,7 @@ function initFX() {
   } catch (e) { fxComposer = null; fxFailed = true; }
 }
 function renderMain() {
-  if (glLost) return;                 // v140: drawing into a lost context throws/spams
+  if (glLost) return;                 // v141: drawing into a lost context throws/spams
   if (fxActive() && !fxFailed) {
     if (fxComposer) { fxComposer.render(); return; }
     // plain render until the pass is ready - and ask for it exactly once per asset
@@ -3394,11 +3403,69 @@ function applyMyColor() {
 }
 
 // ---- live 3D car thumbnails for the car-select cards ----
+// v141 BUG ("cars pictures not visible"): the cards were rendering an EMPTY box.
+// The fallback swatch was written as style="background:0xe10600", and a template
+// literal turns that Number into the DECIMAL string "14747136" - not a CSS <color>,
+// so the browser dropped the declaration and the block was transparent. Any session
+// that took the fallback path (LOW quality skips the 3D preview) therefore showed
+// eight empty cards with nothing but the colour dot and the name.
+//
+// The fallback is now a real car silhouette in the chosen paint colour, and the
+// preview path is cached, recoverable and actually releases its GL context.
 let _prev = null;
 let _prevFailed = false;   // v96: remember the failure instead of re-throwing it forever
+const _prevCache = new Map();   // "id|hex" -> data URL (rendering 8 canvases per open was wasted work)
+
+// Number -> a CSS colour. Never interpolate a raw hex Number into CSS again.
+function hexCss(hex) {
+  const n = (typeof hex === 'number' && isFinite(hex)) ? (hex & 0xffffff) : 0xffffff;
+  return '#' + n.toString(16).padStart(6, '0');
+}
+// The always-available car picture: a vector car painted in the car's colour.
+// Used whenever a 3D thumbnail cannot be produced (LOW quality, no second WebGL
+// context, GPU blocked) so a card NEVER renders empty.
+function carSwatch(hex) {
+  const c = hexCss(hex);
+  // Geometry is inset so every part stays INSIDE the body outline: the previous
+  // glass rectangles started at y=19 while the roofline at that x is ~y=24, so two
+  // pale panes poked out above the roof. The canopy is now a single trapezoid that
+  // follows the cabin, with a dark B-pillar band splitting it into windscreen and
+  // rear window (a band in shadow reads as a pillar on any paint colour).
+  return '<svg class="car-swatch" viewBox="0 0 120 64" width="100%" aria-hidden="true">' +
+    '<ellipse cx="60" cy="55" rx="45" ry="4.5" fill="rgba(0,0,0,0.45)"/>' +
+    '<path d="M10 46 L110 46 Q114 39 108 37 L86 33 L70 19 Q66 15 60 15 L48 15 Q42 15 38 19 L22 33 L12 34 Q6 39 10 46 Z" ' +
+    'fill="' + c + '" stroke="rgba(255,255,255,0.22)" stroke-width="1.2" stroke-linejoin="round"/>' +
+    '<path d="M44 20.5 L61 20.5 L71 31 L35 31 Z" fill="rgba(255,255,255,0.17)"/>' +
+    '<rect x="58.2" y="20.5" width="2.6" height="10.5" fill="rgba(0,0,0,0.38)"/>' +
+    '<circle cx="31" cy="47" r="8.8" fill="#0b0d12" stroke="#3a4150" stroke-width="1.8"/>' +
+    '<circle cx="89" cy="47" r="8.8" fill="#0b0d12" stroke="#3a4150" stroke-width="1.8"/>' +
+    '<circle cx="31" cy="47" r="3.2" fill="#7c8595"/>' +
+    '<circle cx="89" cy="47" r="3.2" fill="#7c8595"/>' +
+    '</svg>';
+}
+// Free the second GL context (LOW quality) AND wipe the cache, so it can be rebuilt
+// if the player goes back to a higher quality later in the session.
+function disposeCarPreview(keepCache) {
+  if (_prev) {
+    try { _prev.r.dispose(); } catch (e) {}
+    try { if (_prev.r.forceContextLoss) _prev.r.forceContextLoss(); } catch (e) {}
+    _prev = null;
+  }
+  // keepCache: the rendered data URLs stay usable without a GL context, which is
+  // what lets LOW quality show real thumbnails and still release the GPU
+  if (!keepCache) _prevCache.clear();
+}
+function qualityIsLow() {
+  try { const raw = localStorage.getItem('sr_prefs'); if (raw) { const j = JSON.parse(raw); return !!(j && j.quality === 'low'); } } catch (e) {}
+  return false;
+}
 function carPreviewRenderer() {
-  // v132 low-network: skip 3D previews on LOW quality — use colour swatches (instant, no second WebGL context)
-  try{ const raw=localStorage.getItem('sr_prefs'); if(raw){ const j=JSON.parse(raw); if(j&&j.quality==='low') return null; } }catch(e){}
+  // v141: LOW quality used to refuse the thumbnail outright (v132 kept a second
+  // WebGL context off low-end devices), which is what made the cards fall back - and
+  // the fallback was the broken swatch. Now LOW still gets the REAL car picture, but
+  // on a one-shot basis: render the thumbnails once, then hand the context straight
+  // back (disposeCarPreview(true) keeps the data URLs). No standing GPU cost, and no
+  // empty cards.
   if (_prev) return _prev;
   if (_prevFailed) return null;
   // A second WebGL context is a luxury, not a requirement. Browsers refuse one
@@ -3421,7 +3488,9 @@ function carPreviewRenderer() {
   cam.position.set(5.2, 2.4, 6.0); cam.lookAt(0, 0.5, 0);
   const car = createCar(0xffffff, 1, 0xffd400, 'ghost');
   sc.add(car.group);
-  _prev = { r, sc, cam, car, curId: 'ghost' };
+  const oneShot = qualityIsLow();
+  r.setPixelRatio(1);                 // 180x110 thumbnails: 2x is pure waste
+  _prev = { r, sc, cam, car, curId: 'ghost', oneShot };
   return _prev;
 }
 // v112: render any body shell in the shared preview context (garage thumbs).
@@ -3429,6 +3498,9 @@ function renderCarPreview(hex, id) {
   const P = carPreviewRenderer();
   if (!P) return '';
   id = (typeof id === 'string' && id) ? id : shellForHex(hex);
+  const cacheKey = id + '|' + (hex & 0xffffff);
+  const hit = _prevCache.get(cacheKey);
+  if (hit) return hit;                       // already drawn this car in this colour
   if (P.curId !== id) {
     P.sc.remove(P.car.group);
     disposeCarVisual(P.car);
@@ -3439,8 +3511,16 @@ function renderCarPreview(hex, id) {
   try {
     P.car.paint.color.setHex(hex);
     P.r.render(P.sc, P.cam);
-    return P.r.domElement.toDataURL();
-  } catch (e) { return ''; }
+    const url = P.r.domElement.toDataURL();
+    // a blank/garbage data URL means the context is gone - do not cache it, and do
+    // not keep drawing into a dead context for the remaining seven cards
+    if (url && url.length > 64) { _prevCache.set(cacheKey, url); return url; }
+    _prevFailed = true;
+    return '';
+  } catch (e) {
+    _prevFailed = true;
+    return '';
+  }
 }
 function buildCarCards() {
   const wrap = $('car-cards');
@@ -3457,10 +3537,10 @@ function buildCarCards() {
     const nm = CAR_NAMES[i] || { e: '🏎️', n: 'RACER' };
     const b = document.createElement('button');
     b.className = 'car-card' + (hex === prefs.color ? ' active' : '');
-    b.dataset.color = hex;
+    b.dataset.color = hexCss(hex);   // v141: a `color` attribute should hold a colour, not "14747136"
     b.innerHTML = url
-      ? `<img src="${url}" alt="car"/><div class="mc-name">${nm.n}</div>`
-      : `<div class="mc-swatch" style="height:62px;border-radius:10px;background:${hex};box-shadow:0 0 18px ${hex}66;"></div><div class="mc-name">${nm.e || '🏎️'} ${nm.n}</div>`;
+      ? `<img class="car-thumb" src="${url}" alt="${nm.n}"/><div class="mc-name">${nm.n}</div>`
+      : `${carSwatch(hex)}<div class="mc-name">${nm.e || '🏎️'} ${nm.n}</div>`;
     b.addEventListener('click', () => {
       prefs.color = hex; savePrefs();
       wrap.querySelectorAll('.car-card').forEach((x) => x.classList.remove('active'));
@@ -3469,6 +3549,8 @@ function buildCarCards() {
     });
     wrap.appendChild(b);
   });
+  // every card now holds a cached picture, so a one-shot context has done its job
+  if (P && P.oneShot) disposeCarPreview(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -3641,7 +3723,7 @@ function showResults(order) {
       `<span class="rbest">best lap ${c.best != null ? fmtTime(c.best) : '--:--.--'}</span>`;
     rows.appendChild(div);
   });
-  // v140: textContent escapes by itself - escapeHtml() here printed the raw entity
+  // v141: textContent escapes by itself - escapeHtml() here printed the raw entity
   // ("O&#39;Brien") for any name containing & < > or an apostrophe
   $('results-title').textContent = winner ? `🏁 ${winner.name || ('PLAYER ' + winner.slot)} WINS!` : '🏁 RACE RESULTS';
   // Podium celebration & fanfare
@@ -3935,7 +4017,7 @@ function showResults(order) {
   $('results').classList.remove('hidden'); { const gb = $('ghost-share-btn'); if (gb) gb.hidden = false; const pb = $('photo-btn'); if (pb) pb.hidden = false; const bb = $('beat-btn'); if (bb) bb.hidden = false; }
 }
 
-// v140 PERFORMANCE FIX — the lobby was rebuilt on EVERY snapshot.
+// v141 PERFORMANCE FIX — the lobby was rebuilt on EVERY snapshot.
 // ingestSnapshot() runs at 30 Hz and called updateLobby() every time, so the
 // leaderboard's innerHTML was regenerated 30x per second, two querySelectorAll
 // sweeps ran 30x per second, and every label was rewritten 30x per second. That is
@@ -4006,7 +4088,7 @@ function renderLeaderboard(snap) {
     if (el.__lbSig !== 'empty') { el.__lbSig = 'empty'; el.innerHTML = '<div class="lb-empty">No times yet on this circuit — set the first!</div>'; }
     return;
   }
-  // v140: this used to rebuild 30x/second from the snapshot rate. Only repaint when
+  // v141: this used to rebuild 30x/second from the snapshot rate. Only repaint when
   // the board itself changed (it arrives at 1 Hz from the server).
   const sig = rows.map((r) => r.pid + ':' + r.t + ':' + r.name).join(',');
   if (el.__lbSig === sig) return;
@@ -5293,7 +5375,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v140';
+const BUILD = 'v141';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -6242,9 +6324,9 @@ function placeCar(slot, cs, dt) {
   if (!v) return;
   if (cs.col != null && v.paint && v.paint.color.getHex() !== cs.col) v.paint.color.setHex(cs.col);
   const wantId = (typeof CarModels !== 'undefined' && CarModels.idForHex(cs.col)) || shellForHex(cs.col);  // v117/v118
-  // v140: gate on "is this slot already the GLB for this colour", not on the car id -
+  // v141: gate on "is this slot already the GLB for this colour", not on the car id -
   // the procedural shells all report carId 'ghost', which is also the white paint's id.
-  if (wantId && !v.glbPending && !(v.isGlb && v.carId === wantId)) upgradeCarVisual(slot, wantId, cs.b | 0, cs.col);  // v117/v118/v140
+  if (wantId && !v.glbPending && !(v.isGlb && v.carId === wantId)) upgradeCarVisual(slot, wantId, cs.b | 0, cs.col);  // v117/v118/v141
   applyCos(v, cs.dc || 0, cs.wh || 0, cs.tr || 0, cs.ne || 0, cs.sp || 0); // v59 cosmetics / v75 neon+spoiler
   // v138 BUG FIX ("yellow car body is damaged"): the v126 block here hid any GLB mesh
   // whose material colour matched r>200 && g>170 && b<130. That is exactly the yellow
@@ -6364,13 +6446,13 @@ function placeCar(slot, cs, dt) {
   v.body.position.y = Math.sin(performance.now() * 0.016 + slot * 3) * 0.008 * sp;
   v.spinAngle += cs.v * dt / (v.wheelR || 0.35);
   for (const w of v.wheels) {
-    // v140: BOTH rigs now roll forward on a positive angle about their own axle.
+    // v141: BOTH rigs now roll forward on a positive angle about their own axle.
     // The GLB used to be negated (-v.spinAngle), which spun every wheel BACKWARDS
     // while driving forwards; car-models.js rebuilds the GLB rig so its axle is the
     // model-local +X exactly like the procedural wheels, so one sign serves both.
     w.spin.rotation.x = v.spinAngle;
     if (w.front) {
-      // v140: the GLB pivot is now a clean steering group (its parent frame has Z up),
+      // v141: the GLB pivot is now a clean steering group (its parent frame has Z up),
       // so this is a yaw about the vertical - it no longer fights the asset's own
       // baked-in steering angle, which is why the front wheels sat crooked.
       if (v.isGlb) { w.pivot.rotation.z = -cs.st * 0.42; }
@@ -7066,7 +7148,7 @@ if (tgShareBtn) {
     window.open(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`, '_blank');
   });
 }
-// v140 PRODUCTION FIX — one viewport path for every resize source.
+// v141 PRODUCTION FIX — one viewport path for every resize source.
 // The old handler ignored a zero/NaN viewport (a collapsed iframe or a resize storm
 // during a rotation gives innerWidth 0 -> aspect 0/0 = NaN -> an NaN projection
 // matrix, and the whole scene renders as nothing until the next resize), and it
@@ -7111,7 +7193,7 @@ function adaptRes() {
   else if (fps > 57 && cur < Math.min(dpr, 2)) { next = Math.min(Math.min(dpr, 2), cur + 0.5); arCooldown = 3; }
   if (next !== cur) {
     renderer.setPixelRatio(next);
-    // v140: the post-processing chain has its own pixel ratio - an out-of-step
+    // v141: the post-processing chain has its own pixel ratio - an out-of-step
     // composer renders the whole frame at the wrong resolution (blurry or wasteful)
     if (fxComposer) { fxComposer.setPixelRatio(next); fxComposer.setSize(Math.max(1, window.innerWidth), Math.max(1, window.innerHeight)); }
   }
@@ -7138,7 +7220,7 @@ try{
   }
 }catch(e){}
 applyQuality(prefs.quality);
-// v140 PRODUCTION FIX — a failing frame must not silently kill the view.
+// v141 PRODUCTION FIX — a failing frame must not silently kill the view.
 // requestAnimationFrame is queued first so the loop always survives, but an
 // exception halfway through used to skip the render for that frame with no
 // diagnosis. Repeats are counted (not spammed) and reported once.
@@ -7200,7 +7282,7 @@ function frameBody() {
     track('game_start');
   }
 }
-// v140 PRODUCTION FIX — returning from a backgrounded tab.
+// v141 PRODUCTION FIX — returning from a backgrounded tab.
 // While hidden, requestAnimationFrame stops and mobile browsers commonly kill the
 // socket without ever firing close: the tab came back rendering a frozen world with
 // the HUD still ticking, and the interpolation buffer held minutes-old timestamps.

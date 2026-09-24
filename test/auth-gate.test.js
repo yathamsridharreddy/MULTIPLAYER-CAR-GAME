@@ -131,9 +131,9 @@ test('auth.html is a light standalone gate styled by the shared stylesheet', () 
 test('service worker precaches the gate but never the injected config', () => {
   const sw = read('public/sw.js');
   assert.ok(sw.includes("'/auth.html'"), 'gate precached');
-  assert.ok(sw.includes('/js/auth.js?v=140'), 'gate controller precached');
+  assert.ok(sw.includes('/js/auth.js?v=141'), 'gate controller precached');
   assert.ok(sw.includes("NOCACHE = ['/js/config.js'"), 'config stays live');
-  assert.ok(sw.includes("sridhar-rush-v140"), 'cache bumped');
+  assert.ok(sw.includes("sridhar-rush-v141"), 'cache bumped');
 });
 
 test('v121: the server refuses guest handshakes; controllers stay open', () => {
@@ -165,5 +165,5 @@ test('the game itself stays auth-agnostic', () => {
   assert.ok(g.includes('auth.html'), 'game.js bounces unauthenticated to the gate (v121)');
   assert.ok(g.includes('SRAccount.available()'), 'uses account API, not raw localStorage gate');
   assert.ok(!g.includes("localStorage.getItem('sr_sb_session')"), 'game.js does not duplicate the index gate');
-  assert.ok(/const BUILD = 'v140';/.test(g), 'build marker');
+  assert.ok(/const BUILD = 'v141';/.test(g), 'build marker');
 });
