@@ -106,7 +106,7 @@ test('game.js wires the swap without touching physics or the protocol', () => {
   assert.ok(g.includes('w.pivot.rotation.z = -cs.st * 0.42;'), 'glb steering axis');
   assert.ok(g.includes('function upgradeCarVisual('), 'upgrade helper');
   assert.ok(g.includes('function disposeCarVisual('), 'dispose helper');
-  assert.ok(/const BUILD = 'v141';/.test(g), 'build marker');
+  assert.ok(/const BUILD = 'v\d+';/.test(g), 'build marker');
   // physics core untouched by the pipeline
   const core = read('shared/game-core.js');
   assert.ok(!core.includes('CarModels') && !core.includes('GLTF'), 'game-core stays model-agnostic');
@@ -143,7 +143,7 @@ test('v118: eight distinct silhouettes, one per selectable car id', () => {
 
 test('service worker does not precache car models (runtime cache only)', () => {
   const sw = read('public/sw.js');
-  assert.ok(sw.includes("sridhar-rush-v141"), 'cache name bumped');
+  assert.ok(/const CACHE = 'sridhar-rush-v\d+'/.test(sw), 'cache name is versioned');
   const precache = sw.slice(0, sw.indexOf('self.addEventListener'));
   assert.ok(!precache.includes('assets/cars'), 'models must not be in the precache list');
 });

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>SRIDHAR RUSH — v142 icon system</title>
+<link rel="stylesheet" href="../../../public/css/style.css"/>
+<style>
+  body { background:#0a0d14; color:#e8eefc; font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif; margin:0; padding:26px 22px 60px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:14px; letter-spacing:.14em; text-transform:uppercase; color:#7fe3ff; margin:34px 0 12px; border-bottom:1px solid rgba(255,255,255,.09); padding-bottom:8px; }
+  p.sub { color:#8b97ad; margin:0 0 8px; font-size:13px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(104px,1fr)); gap:12px; max-width:1180px; }
+  .cell { background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:12px 6px 8px; text-align:center; }
+  .cell img { width:56px; height:56px; display:block; margin:0 auto 8px; }
+  .cell span { font:600 10.5px/1.2 system-ui; color:#93a4bd; letter-spacing:.02em; word-break:break-all; }
+  .tint { display:flex; gap:26px; flex-wrap:wrap; align-items:flex-end; margin-bottom:6px; }
+  .tint figure { margin:0; text-align:center; }
+  .tint .ico { font-size:46px; }
+  .tint figcaption { font:600 10.5px system-ui; color:#93a4bd; margin-top:6px; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin:12px 0; }
+  .box { background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:14px 16px; }
+  .real { background:#0d1220; }
+  .note { max-width:900px; margin-top:26px; border-left:3px solid rgba(0,240,255,.5); padding:10px 14px; background:rgba(0,240,255,.05); border-radius:0 10px 10px 0; color:#a9b6cc; font-size:13px; }
+  .arrow { font-size:34px; color:#7fe3ff; }
+</style>
+</head>
+<body>
+<h1>v142 — icon system, running in the real stylesheet</h1>
+<p class="sub">Every icon below is loaded from <code>public/img/</code> and painted by <code>public/css/style.css</code>. This page adds no icon styling of its own.</p>
+
+<h2>Colour icons — hero spots (24 icons)</h2>
+<p class="sub">Full gradient art with the neon glow. Used for the controls and any place that should look like a game, not a form.</p>
+<div class="grid" id="colour"></div>
+
+<h2>Mono icons — one tint, full depth</h2>
+<p class="sub">The same geometry, painted as a CSS mask. A single <code>color:</code> tints each one, and because the alpha ramp comes from the original luminance, all the internal depth survives.</p>
+<div class="tint">
+  <figure><span class="ico ico-xl" data-i="trophy" style="color:#ffd75e"></span><figcaption>gold</figcaption></figure>
+  <figure><span class="ico ico-xl" data-i="nitro" style="color:#ff5a3c"></span><figcaption>red</figcaption></figure>
+  <figure><span class="ico ico-xl" data-i="warning" style="color:#ffd75e"></span><figcaption>amber</figcaption></figure>
+  <figure><span class="ico ico-xl" data-i="crown" style="color:#ffd75e"></span><figcaption>gold</figcaption></figure>
+  <figure><span class="ico ico-xl" data-i="gamepad" style="color:#7fe3ff"></span><figcaption>cyan</figcaption></figure>
+  <figure><span class="ico ico-xl" data-i="race-flag" style="color:#ffffff"></span><figcaption>white</figcaption></figure>
+  <figure><span class="ico ico-xl" data-i="steering-wheel" style="color:#5fd0ff"></span><figcaption>cyan</figcaption></figure>
+  <figure><span class="ico ico-xl" data-i="ghost" style="color:#a9b6cc"></span><figcaption>grey</figcaption></figure>
+</div>
+
+<h2>Weather — the picker and the HUD chip</h2>
+<div class="row box">
+  <button class="weather-btn active" data-weather="dry"><span class="ico weather-ico" data-i="weather-sun" aria-hidden="true"></span><span>DRY ASPHALT</span></button>
+  <button class="weather-btn" data-weather="wet"><span class="ico weather-ico" data-i="weather-rain" aria-hidden="true"></span><span>WET RAIN</span></button>
+  <button class="weather-btn" data-weather="night"><span class="ico weather-ico" data-i="weather-night" aria-hidden="true"></span><span>MIDNIGHT NEON</span></button>
+  <button class="weather-btn" data-weather="blizzard"><span class="ico weather-ico" data-i="weather-snow" aria-hidden="true"></span><span>ALPINE BLIZZARD</span></button>
+</div>
+<div class="row">
+  <span class="weather-chip"><span class="ico" data-i="weather-sun" aria-hidden="true"></span><span class="chip-txt">DRY ASPHALT</span></span>
+  <span class="weather-chip wet"><span class="ico" data-i="weather-rain" aria-hidden="true"></span><span class="chip-txt">WET (0.92x GRIP)</span></span>
+  <span class="weather-chip night"><span class="ico" data-i="weather-night" aria-hidden="true"></span><span class="chip-txt">MIDNIGHT NEON</span></span>
+  <span class="weather-chip blizzard"><span class="ico" data-i="weather-snow" aria-hidden="true"></span><span class="chip-txt">BLIZZARD (0.88x GRIP)</span></span>
+</div>
+
+<h2>Where they landed — real UI elements</h2>
+<div class="row box real" style="position:static">
+  <span class="pb-label"><span class="ico" data-i="gamepad" aria-hidden="true"></span><span>PRACTICE</span></span>
+  <button id="restart-btn" class="ghost sm" style="position:static"><span class="ico" data-i="refresh" aria-hidden="true"></span><span>RESTART</span></button>
+  <button id="cam-btn" class="hud-cam-btn" style="position:static"><span class="ico" data-i="camera" aria-hidden="true"></span><span>CAM</span></button>
+</div>
+<div id="net-banner" style="position:static; display:inline-flex" class=""><span class="ico" data-i="warning" aria-hidden="true"></span><span>Connection to server lost — retrying…</span></div>
+
+<h2>Mobile controls — at real size (68px buttons)</h2>
+<div class="row">
+  <button class="tc-btn" style="position:static"><img class="ico-img ico-img-lg" src="../../../img/ico/arrow-left.svg" alt=""/></button>
+  <button class="tc-btn" style="position:static"><img class="ico-img ico-img-lg" src="../../../img/ico/arrow-right.svg" alt=""/></button>
+  <button class="tc-btn tc-nitro" style="position:static"><img class="ico-img ico-img-lg" src="../../../img/ico/nitro.svg" alt=""/></button>
+  <button class="tc-btn tc-brake" style="position:static"><img class="ico-img ico-img-lg" src="../../../img/ico/arrow-down.svg" alt=""/></button>
+  <button class="tc-btn tc-gas" style="position:static"><img class="ico-img ico-img-lg" src="../../../img/ico/arrow-up.svg" alt=""/></button>
+</div>
+<p class="sub">The same five buttons, shown active (what you see while touching them):</p>
+<div class="row">
+  <button class="tc-btn" style="position:static; background:var(--cyber-cyan); border-color:var(--cyber-cyan)"><img class="ico-img ico-img-lg" src="../../../img/ico/arrow-left.svg" alt="" style="filter:brightness(0.15)"/></button>
+  <button class="tc-btn tc-nitro" style="position:static; background:var(--apex-crimson); color:#fff; border-color:var(--apex-crimson)"><img class="ico-img ico-img-lg" src="../../../img/ico/nitro.svg" alt=""/></button>
+  <button class="tc-btn tc-gas" style="position:static; background:var(--cyber-cyan); border-color:var(--cyber-cyan)"><img class="ico-img ico-img-lg" src="../../../img/ico/arrow-up.svg" alt="" style="filter:brightness(0.15)"/></button>
+</div>
+
+<h2>Size check — 16 / 24 / 32 / 48 / 64px</h2>
+<p class="sub">Icons must stay legible at the smallest size they are used, which is what a badly-proportioned icon fails.</p>
+<div class="grid">
+  <div class="cell" style="text-align:left"><div style="display:flex; gap:8px; align-items:center"><span class="ico" data-i="race-flag" style="font-size:16px"></span><span class="ico" data-i="race-flag" style="font-size:24px"></span><span class="ico" data-i="race-flag" style="font-size:32px"></span><span class="ico" data-i="race-flag" style="font-size:48px"></span><span class="ico" data-i="race-flag" style="font-size:64px"></span></div><span>race-flag</span></div>
+  <div class="cell" style="text-align:left"><div style="display:flex; gap:8px; align-items:center"><span class="ico" data-i="trophy" style="font-size:16px"></span><span class="ico" data-i="trophy" style="font-size:24px"></span><span class="ico" data-i="trophy" style="font-size:32px"></span><span class="ico" data-i="trophy" style="font-size:48px"></span><span class="ico" data-i="trophy" style="font-size:64px"></span></div><span>trophy</span></div>
+  <div class="cell" style="text-align:left"><div style="display:flex; gap:8px; align-items:center"><span class="ico" data-i="racing-car" style="font-size:16px"></span><span class="ico" data-i="racing-car" style="font-size:24px"></span><span class="ico" data-i="racing-car" style="font-size:32px"></span><span class="ico" data-i="racing-car" style="font-size:48px"></span><span class="ico" data-i="racing-car" style="font-size:64px"></span></div><span>racing-car</span></div>
+  <div class="cell" style="text-align:left"><div style="display:flex; gap:8px; align-items:center"><span class="ico" data-i="nitro" style="font-size:16px"></span><span class="ico" data-i="nitro" style="font-size:24px"></span><span class="ico" data-i="nitro" style="font-size:32px"></span><span class="ico" data-i="nitro" style="font-size:48px"></span><span class="ico" data-i="nitro" style="font-size:64px"></span></div><span>nitro</span></div>
+</div>
+
+<div class="note">
+  <b>What changed here:</b> these icons replace emoji, which are font glyphs — so the old UI was drawn by whatever emoji font the visitor's device had (Apple / Segoe / Noto) and showed as an empty ☐ box on devices missing the codepoint. These are real SVG files, so they look identical everywhere and are coloured by the stylesheet instead of by the OS.
+</div>
+
+<script>
+  const names = ['nitro','race-flag','trophy','racing-car','helmet','stopwatch','ghost','target','swords','crown',
+    'camera','steering-wheel','gamepad','arrow-up','arrow-down','arrow-left','arrow-right','brake','speedometer',
+    'refresh','warning','fullscreen','vibrate','flag-start','weather-sun','weather-rain','weather-snow','weather-night'];
+  document.getElementById('colour').innerHTML = names.map((n) =>
+    `<div class="cell"><img src="../../../img/ico/${n}.svg" alt=""/><span>${n}</span></div>`).join('');
+</script>
+</body>
+</html>

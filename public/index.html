@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap" media="print" onload="this.media='all'"/>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap"/></noscript>
-  <link rel="stylesheet" href="css/style.css?v=141"/>
+  <link rel="stylesheet" href="css/style.css?v=142"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -66,8 +66,8 @@
     <div id="raceinfo"></div>
 
     <div id="hud-badges">
-      <span id="hud-weather" class="weather-chip">☀️ DRY</span>
-      <button id="cam-btn" class="hud-cam-btn" title="Change Camera View (Press C)" data-i18n="camBtn">🎥 CAM</button>
+      <span id="hud-weather" class="weather-chip"><span class="ico" data-i="weather-sun" aria-hidden="true"></span><span class="chip-txt">DRY</span></span>
+      <button id="cam-btn" class="hud-cam-btn" title="Change Camera View (Press C)"><span class="ico" data-i="camera" aria-hidden="true"></span><span data-i18n="camBtn">CAM</span></button>
       <span id="ping-badge" class="ping">… ms</span>
       <span id="fps-meter" style="display:none">60 FPS</span>
     </div>
@@ -97,13 +97,13 @@
   <!-- on-screen mobile solo touch controls (active during racing on mobile) -->
   <div id="touch-controls" style="display:none">
     <div class="tc-group tc-left">
-      <button id="tc-left" class="tc-btn" aria-label="Steer left">◀</button>
-      <button id="tc-right" class="tc-btn" aria-label="Steer right">▶</button>
+      <button id="tc-left" class="tc-btn" aria-label="Steer left"><img class="ico-img ico-img-lg" src="img/ico/arrow-left.svg" alt=""/></button>
+      <button id="tc-right" class="tc-btn" aria-label="Steer right"><img class="ico-img ico-img-lg" src="img/ico/arrow-right.svg" alt=""/></button>
     </div>
     <div class="tc-group tc-right">
-      <button id="tc-nitro" class="tc-btn tc-nitro" aria-label="Nitro">🔥</button>
-      <button id="tc-brake" class="tc-btn tc-brake" aria-label="Brake / Reverse">▼</button>
-      <button id="tc-gas" class="tc-btn tc-gas" aria-label="Accelerate">▲</button>
+      <button id="tc-nitro" class="tc-btn tc-nitro" aria-label="Nitro"><img class="ico-img ico-img-lg" src="img/ico/nitro.svg" alt=""/></button>
+      <button id="tc-brake" class="tc-btn tc-brake" aria-label="Brake / Reverse"><img class="ico-img ico-img-lg" src="img/ico/arrow-down.svg" alt=""/></button>
+      <button id="tc-gas" class="tc-btn tc-gas" aria-label="Accelerate"><img class="ico-img ico-img-lg" src="img/ico/arrow-up.svg" alt=""/></button>
     </div>
   </div>
 
@@ -117,12 +117,12 @@
 
   <div id="confetti"></div>
 
-  <div id="net-banner" class="hidden" data-i18n="netBanner">⚠ Connection to server lost — retrying…</div>
+  <div id="net-banner" class="hidden"><span class="ico" data-i="warning" aria-hidden="true"></span><span data-i18n="netBanner">Connection to server lost — retrying…</span></div>
 
   <!-- race results -->
   <div id="practice-bar" hidden>
-    <span class="pb-label" data-i18n="practiceLabel">🎮 PRACTICE</span>
-    <button id="restart-btn" class="ghost sm" data-i18n="restart">🔄 RESTART</button>
+    <span class="pb-label"><span class="ico" data-i="gamepad" aria-hidden="true"></span><span data-i18n="practiceLabel">PRACTICE</span></span>
+    <button id="restart-btn" class="ghost sm"><span class="ico" data-i="refresh" aria-hidden="true"></span><span data-i18n="restart">RESTART</span></button>
     <button id="practice-exit" class="ghost sm" data-i18n="exit">🚪 EXIT</button>
   </div>
   <div id="tt-overlay" class="dlg hidden">
@@ -512,7 +512,7 @@
             <!-- v92: steering sensitivity, phone-brightness style slider -->
             <div class="sens-block" id="sens-block">
               <div class="sens-head">
-                <span class="sens-title" id="sens-title" data-i18n="sensLabel">🎚️ STEERING SENSITIVITY</span>
+                <span class="sens-title" id="sens-title"><span class="ico" data-i="steering-wheel" aria-hidden="true"></span> <span data-i18n="sensLabel">STEERING SENSITIVITY</span></span>
                 <output class="sens-val" id="sens-val" for="set-sens">100%</output>
               </div>
               <div class="sens-track-row">
@@ -583,10 +583,10 @@
         <div class="wiz-sec" id="wiz-weather">
           <div class="lsec-title" data-i18n="weatherTitle">DYNAMIC WEATHER &amp; SURFACE CONDITIONS</div>
           <div class="weather-row" id="weather-cards">
-            <button class="weather-btn active" data-weather="dry"><span data-i18n="wDry">☀️ DRY ASPHALT</span><span data-i18n="wDrySub">1.00x Grip · Optimal Track Pace</span></button>
-            <button class="weather-btn" data-weather="wet"><span data-i18n="wWet">🌧️ WET RAIN</span><span data-i18n="wWetSub">0.92x Grip · Water Spray &amp; Puddles</span></button>
-            <button class="weather-btn" data-weather="night"><span data-i18n="wNight">🌃 MIDNIGHT NEON</span><span data-i18n="wNightSub">1.00x Grip · Glowing Cyber Luminescence</span></button>
-            <button class="weather-btn" data-weather="blizzard"><span data-i18n="wBlizzard">❄️ ALPINE BLIZZARD</span><span data-i18n="wBlizzardSub">0.88x Grip · Icy Snow Swirls</span></button>
+            <button class="weather-btn active" data-weather="dry"><span class="ico weather-ico" data-i="weather-sun" aria-hidden="true"></span><span data-i18n="wDry">DRY ASPHALT</span><span data-i18n="wDrySub">1.00x Grip · Optimal Track Pace</span></button>
+            <button class="weather-btn" data-weather="wet"><span class="ico weather-ico" data-i="weather-rain" aria-hidden="true"></span><span data-i18n="wWet">WET RAIN</span><span data-i18n="wWetSub">0.92x Grip · Water Spray &amp; Puddles</span></button>
+            <button class="weather-btn" data-weather="night"><span class="ico weather-ico" data-i="weather-night" aria-hidden="true"></span><span data-i18n="wNight">MIDNIGHT NEON</span><span data-i18n="wNightSub">1.00x Grip · Glowing Cyber Luminescence</span></button>
+            <button class="weather-btn" data-weather="blizzard"><span class="ico weather-ico" data-i="weather-snow" aria-hidden="true"></span><span data-i18n="wBlizzard">ALPINE BLIZZARD</span><span data-i18n="wBlizzardSub">0.88x Grip · Icy Snow Swirls</span></button>
           </div>
         </div>
 
@@ -704,11 +704,11 @@
   </div>
 
   <script defer src="js/vendor/three.min.js"></script>
-  <script defer src="js/vendor/GLTFLoader.js?v=141"></script>
-  <script defer src="js/car-models.js?v=141"></script>
+  <script defer src="js/vendor/GLTFLoader.js?v=142"></script>
+  <script defer src="js/car-models.js?v=142"></script>
   <script defer src="js/vendor/qrcode.js"></script>
-  <script defer src="js/game-core.js?v=141"></script>
-  <script defer src="js/progression.js?v=141"></script>
+  <script defer src="js/game-core.js?v=142"></script>
+  <script defer src="js/progression.js?v=142"></script>
   <script src="js/config.js"></script>
   <script>
   // v119 ACCOUNT GATE: when this deploy has Supabase keys configured, the game
@@ -724,10 +724,10 @@
     } catch (e) {}
   })();
   </script>
-  <script defer src="js/account.js?v=141"></script>
-  <script defer src="js/i18n.js?v=141"></script>
-  <script defer src="js/net.js?v=141"></script>
-  <script defer src="js/game.js?v=141"></script>
+  <script defer src="js/account.js?v=142"></script>
+  <script defer src="js/i18n.js?v=142"></script>
+  <script defer src="js/net.js?v=142"></script>
+  <script defer src="js/game.js?v=142"></script>
   <script>
   // PWA (v36): register service worker + show INSTALL button when the browser allows it
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {

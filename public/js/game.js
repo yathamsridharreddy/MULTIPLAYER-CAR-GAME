@@ -1652,25 +1652,38 @@ function applyRoadWeather() {
   }
   m.needsUpdate = true;
 }
+// v142 — icon + label chips. applyI18n() writes textContent (which erases child
+// elements), so any element that carries an icon must never be an i18n target:
+// the icon is a sibling of the translated span, and this helper keeps both.
+function setChip(el, ico, text) {
+  if (!el) return;
+  el.textContent = '';
+  const ic = document.createElement('span');
+  ic.className = 'ico';
+  ic.setAttribute('data-i', ico);
+  ic.setAttribute('aria-hidden', 'true');
+  const tx = document.createElement('span');
+  tx.className = 'chip-txt';
+  tx.textContent = text;
+  el.appendChild(ic);
+  el.appendChild(tx);
+}
 function applyWeather(weatherId) {
   currentWeather = weatherId || 'dry';
   applyRoadWeather();
   const cond = (CORE.WEATHER_CONDITIONS && CORE.WEATHER_CONDITIONS[currentWeather]) || {
-    name: 'Dry Asphalt', gripMod: 1.0, icon: '☀️'
+    name: 'Dry Asphalt', gripMod: 1.0, icon: 'weather-sun'
   };
 
   const wChip = $('hud-weather');
   if (wChip) {
     wChip.className = 'weather-chip ' + currentWeather;
-    if (currentWeather === 'wet') {
-      wChip.textContent = '🌧️ WET (0.92x GRIP)';
-    } else if (currentWeather === 'blizzard') {
-      wChip.textContent = '❄️ BLIZZARD (0.88x GRIP)';
-    } else if (currentWeather === 'night') {
-      wChip.textContent = '🌃 MIDNIGHT NEON';
-    } else {
-      wChip.textContent = '☀️ DRY ASPHALT';
-    }
+    // v142: icon + label. textContent would erase the icon, so build both parts.
+    let wIco = 'weather-sun', wTxt = 'DRY ASPHALT';
+    if (currentWeather === 'wet') { wIco = 'weather-rain'; wTxt = 'WET (0.92x GRIP)'; }
+    else if (currentWeather === 'blizzard') { wIco = 'weather-snow'; wTxt = 'BLIZZARD (0.88x GRIP)'; }
+    else if (currentWeather === 'night') { wIco = 'weather-night'; wTxt = 'MIDNIGHT NEON'; }
+    setChip(wChip, wIco, wTxt);
   }
 
   const wBtns = document.querySelectorAll('.weather-btn');
@@ -5375,7 +5388,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v141';
+const BUILD = 'v142';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
