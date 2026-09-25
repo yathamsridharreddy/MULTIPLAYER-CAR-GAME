@@ -5,3 +5,8 @@ leaderboard.json
 
 # icon-forge preview renders (regenerate with tools/icon-forge/make_icons.py)
 tools/icon-forge/preview/*.png
+
+# logo-forge generated kit + review plates
+# (regenerate with tools/logo-forge/build_logo.py and tools/logo-forge/present.py)
+tools/logo-forge/out/
+__pycache__/

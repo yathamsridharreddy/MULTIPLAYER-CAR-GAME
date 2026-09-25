@@ -417,6 +417,26 @@ h1 span {
   filter: drop-shadow(0 0 16px var(--cyber-cyan-glow));
 }
 
+/* v143 — the lobby header is the drawn lockup rather than styled text.
+   The <h1> stays the heading element (semantics and screen readers keep the
+   title); only its contents became an image, so the tracking/shadow that
+   applied to the old text is neutralised here. */
+.lobby-logo {
+  font-size: 0;
+  letter-spacing: 0;
+  line-height: 0;
+  text-shadow: none;
+  margin-bottom: 6px;
+}
+
+.lobby-logo img {
+  display: block;
+  width: min(340px, 82%);
+  height: auto;
+  margin: 0 auto;
+  filter: drop-shadow(0 2px 12px rgba(0, 0, 0, 0.55));
+}
+
 .tagline {
   font: 600 13px var(--font-tech);
   letter-spacing: 1.5px;
