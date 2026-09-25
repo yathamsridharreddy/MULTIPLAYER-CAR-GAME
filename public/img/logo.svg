@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 136 136" width="136" height="136" role="img" aria-label="SRIDHAR RUSH">
-<defs><linearGradient id="g0" x1="68" y1="0" x2="68" y2="136" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff4a3a"/><stop offset="0.5" stop-color="#e01010"/><stop offset="1" stop-color="#8e060a"/></linearGradient><linearGradient id="g1" x1="68" y1="0" x2="68" y2="136" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff4a3a"/><stop offset="0.5" stop-color="#e01010"/><stop offset="1" stop-color="#8e060a"/></linearGradient><linearGradient id="g2" x1="68" y1="0" x2="68" y2="136" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff"/><stop offset="0.48" stop-color="#eef3fa"/><stop offset="1" stop-color="#aebccf"/></linearGradient></defs>
-<path d="M55.69 19 63.38 9 76.38 9 103.39 126 80.39 126Z" fill="url(#g0)"/>
-<path d="M76.38 9 108.38 9 120.69 19 133.62 75 91.62 75Z M81 29 103 29 109 55 87 55Z M91.62 75 114.62 75 145.39 126 132.39 126 116.74 116.63Z" fill="url(#g1)" fill-rule="evenodd"/>
-<path d="M-7.31 19 0.38 9 34.38 9 46.69 19 50.61 36 -3.39 36Z M-3.39 36 23.61 36 27.77 54 0.77 54Z M0.77 54 54.77 54 61 81 7 81Z M34 81 61 81 65.16 99 38.16 99Z M11.16 99 65.16 99 69.08 116 61.39 126 27.39 126 15.08 116Z" fill="url(#g2)" stroke="#0d121b" stroke-width="5" stroke-linejoin="miter"/>
-</svg>
