@@ -53,10 +53,25 @@ create policy "ghost read" on public.ghosts
 -- Clients may READ public info; ONLY the game server (service role) writes.
 -- ----------------------------------------------------------------------------
 create table if not exists public.profiles (
-  id         uuid primary key references auth.users(id) on delete cascade,
-  username   text not null unique check (username ~ '^[A-Za-z0-9_]{3,16}$'),
-  created_at timestamptz not null default now()
+  id           uuid primary key references auth.users(id) on delete cascade,
+  username     text not null unique check (username ~ '^[A-Za-z0-9_]{3,16}$'),
+  -- v144: the driver name the player chose. Not unique - two racers may share a
+  -- display name - and free of the handle's charset rules. The account's name of
+  -- record, so it follows them to every device at sign-in.
+  display_name text check (display_name is null
+                           or (char_length(display_name) between 1 and 16
+                               and display_name !~ '[[:cntrl:]]')),
+  created_at   timestamptz not null default now()
 );
+-- runs on a database created before v144 (create table if not exists is a no-op there)
+alter table public.profiles add column if not exists display_name text;
+alter table public.profiles
+  drop constraint if exists profiles_display_name_chk;
+alter table public.profiles
+  add constraint profiles_display_name_chk
+  check (display_name is null
+         or (char_length(display_name) between 1 and 16
+             and display_name !~ '[[:cntrl:]]'));
 alter table public.profiles enable row level security;
 create policy "profiles read"   on public.profiles for select using (true);
 create policy "profiles own i"  on public.profiles for insert with check (auth.uid() = id);

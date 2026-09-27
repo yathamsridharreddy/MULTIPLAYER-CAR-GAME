@@ -159,9 +159,10 @@ alter table public.ghosts enable row level security;
 -- Clients may READ public info; ONLY the game server (service role) writes.
 -- ----------------------------------------------------------------------------
 create table if not exists public.profiles (
-  id         uuid primary key references auth.users(id) on delete cascade,
-  username   text not null unique check (username ~ '^[A-Za-z0-9_]{3,16}$'),
-  created_at timestamptz not null default now()
+  id           uuid primary key references auth.users(id) on delete cascade,
+  username     text not null unique check (username ~ '^[A-Za-z0-9_]{3,16}$'),
+  display_name text check (display_name is null or (char_length(display_name) between 1 and 16 and display_name !~ '[[:cntrl:]]')),   -- v144
+  created_at   timestamptz not null default now()
 );
 alter table public.profiles enable row level security;
 
@@ -550,6 +551,10 @@ begin
     ($$profiles$$, $$id$$, $$alter table public.profiles add column if not exists id uuid references auth.users(id) on delete cascade$$, $$alter table public.profiles add column if not exists id uuid references auth.users(id) on delete cascade$$),
     ($$profiles$$, $$username$$, $$alter table public.profiles add column if not exists username text not null check (username ~ '^[A-Za-z0-9_]{3,16}$')$$, $$alter table public.profiles add column if not exists username text check (username ~ '^[A-Za-z0-9_]{3,16}$')$$),
     ($$profiles$$, $$created_at$$, $$alter table public.profiles add column if not exists created_at timestamptz not null default now()$$, $$alter table public.profiles add column if not exists created_at timestamptz default now()$$),
+    -- v144: the driver name the player chose, kept on the account so it follows
+    -- them to every device. Optional (null = the username handle is the name), and
+    -- never unique - two racers may share a display name.
+    ($$profiles$$, $$display_name$$, $$alter table public.profiles add column if not exists display_name text check (display_name is null or (char_length(display_name) between 1 and 16 and display_name !~ '[[:cntrl:]]'))$$, $$alter table public.profiles add column if not exists display_name text$$),
     ($$player_stats$$, $$user_id$$, $$alter table public.player_stats add column if not exists user_id text$$, $$alter table public.player_stats add column if not exists user_id text$$),
     ($$player_stats$$, $$races$$, $$alter table public.player_stats add column if not exists races int not null default 0$$, $$alter table public.player_stats add column if not exists races int default 0$$),
     ($$player_stats$$, $$wins$$, $$alter table public.player_stats add column if not exists wins int not null default 0$$, $$alter table public.player_stats add column if not exists wins int default 0$$),

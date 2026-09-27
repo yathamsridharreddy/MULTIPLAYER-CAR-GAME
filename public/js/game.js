@@ -2759,6 +2759,80 @@ function startMusic() {
 function stopMusic() { if (musicNodes) { clearInterval(musicNodes.timer); try { musicNodes.g.disconnect(); } catch (e) {} musicNodes = null; } }
 
 
+// v144: ONE binding for the driver-name field, at boot.
+// It used to be bound inside wireLobbyV2(), which only runs from updateLobby() -
+// i.e. after the first server snapshot. Until a state frame arrived (and for
+// ever, on a connection that never delivered one) the field was inert.
+function bindDriverNameField() {
+  const el = $('inp-name');
+  if (!el || el._srNameBound) return el;
+  el._srNameBound = true;
+  if (!el.value) el.value = prefs.name || '';
+  el.addEventListener('input', () => {
+    prefs.name = el.value.trim(); savePrefs(); sendMeta();
+    persistDriverName();   // v144: keep the account's name in step, debounced
+  });
+  return el;
+}
+
+// v144: put the racer's identity on screen BEFORE any snapshot, and adopt the
+// account's name. index.html ships a static "👤 racer"; that placeholder is what
+// a signed-in racer was reading, which made the lobby look like someone else's
+// account. The name is on the ACCOUNT, so it is known at page load.
+function paintIdentity() {
+  try {
+    const acc = window.SRAccount;
+    const signedIn = !!(acc && acc.loggedIn && acc.loggedIn());
+    const paintChip = () => {
+      const chip = $('account-chip');
+      if (chip) chip.textContent = '👤 ' + ((signedIn && acc.name && acc.name()) || prefs.name || 'racer');
+    };
+    paintChip();
+    bindDriverNameField();
+    const el = $('inp-name');
+    if (el && !el.value) el.value = prefs.name || '';
+    if (!signedIn || !(acc && acc.session)) return;
+    acc.session().then((s) => {
+      if (!s || !s.name || s.name === prefs.name) return;
+      prefs.name = s.name;
+      savePrefs();
+      const f = $('inp-name');
+      if (f && document.activeElement !== f) f.value = s.name;
+      const chip = $('account-chip');
+      if (chip) chip.textContent = '👤 ' + s.name;
+      sendMeta();
+    }).catch(() => {});
+  } catch (e) { console.warn('[lobby] identity paint failed', e); }
+}
+
+// v144: the driver name is stored on the ACCOUNT, not just in this browser.
+// One debounced writer is shared by every place a name can be edited, so a
+// rename can never be saved in one path and forgotten in another.
+let _nameSaveTimer = 0;
+function persistDriverName() {
+  const acc = window.SRAccount;
+  if (!(acc && acc.available && acc.available() && acc.loggedIn && acc.loggedIn())) return;
+  clearTimeout(_nameSaveTimer);
+  _nameSaveTimer = setTimeout(async () => {
+    const r = await acc.saveName(prefs.name);
+    if (!r || r.ok) { if (r && r.ok && !r.local) toast('Driver name saved to your account'); return; }
+    if (r.error === 'TAKEN') toast('That driver name is taken - pick another');
+    else if (r.error === 'BADNAME') toast(r.msg || 'Use 3+ letters, numbers or _ in the driver name');
+    else if (r.error !== 'NOAUTH') toast('Could not save the driver name: ' + r.error);
+  }, 900);
+}
+// keep the visible field in step with the name the account reported
+function syncNameInput() {
+  const el = $('inp-name');
+  if (el && document.activeElement !== el) el.value = prefs.name || '';
+}
+
+// v144: identity first, snapshot later.
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paintIdentity);
+  else paintIdentity();
+}
+
 function wireLobbyV2() {
   // -------------------------------------------------------------------------
   // v96: GUEST FEATURES ARE WIRED FIRST, each in its own try/catch.
@@ -2788,6 +2862,7 @@ function wireLobbyV2() {
     });
   } catch (e) { console.warn('[lobby] club wiring failed', e); }
 
+
   try {
     // ---- optional racer account (Supabase, v37) — purely additive ----------
     (function () {
@@ -2810,39 +2885,83 @@ function wireLobbyV2() {
         if (chip) chip.textContent = '👤 ' + (s ? (s.name || prefs.name || (s.email || 'racer').split('@')[0]) : (prefs.name || 'racer'));
         sendMeta();
       }
-      acc.session().then((s) => { if (s && !acc.name()) acc.setName(prefs.name || (s.email ? s.email.split('@')[0] : '')); paint(s); }).catch(() => {});
+      // v144: the account's name is the racer's name, so the lobby is correct on
+      // the FIRST paint on any device. Before this, a device that had never seen
+      // the account showed its local placeholder ("RACER1234") until the racer
+      // pressed CREATE - which made it look like the wrong account was signed in.
+      acc.session().then(async (s) => {
+        if (!s) { paint(s); return; }
+        if (s.name && s.name !== prefs.name) { prefs.name = s.name; savePrefs(); syncNameInput(); }
+        if (!s.name) { await acc.saveName(prefs.name || (s.email ? s.email.split('@')[0] : '')); }
+        paint(await acc.session());
+      }).catch(() => {});
       // Guarded: a throw here aborts the rest of the lobby wiring, and the account
       // dialog markup is optional.
-      if (btn) btn.addEventListener('click', () => { if (dlg) dlg.hidden = false; const e = $('acc-err'); if (e) e.textContent = ''; });
+      if (btn) btn.addEventListener('click', () => {
+        if (dlg) dlg.hidden = false;
+        const e = $('acc-err'); if (e) e.textContent = '';
+        // v144: show the name this account actually carries, so nobody has to
+        // guess which name is active before editing it.
+        const nEl = $('acc-name');
+        if (nEl && !nEl.value) nEl.value = acc.name() || prefs.name || '';
+      });
+      // Renaming right here works while signed in (same debounced account write
+      // as the DRIVER IDENTITY field on the main page).
+      const nameField = $('acc-name');
+      if (nameField) nameField.addEventListener('input', () => {
+        if (!(acc.loggedIn && acc.loggedIn())) return;
+        prefs.name = nameField.value.trim(); savePrefs(); syncNameInput(); persistDriverName();
+      });
       const accClose = $('acc-close'); if (accClose) accClose.addEventListener('click', () => { if (dlg) dlg.hidden = true; });
       if (out) out.addEventListener('click', () => { acc.logout(); location.replace('auth.html'); });  // v122: sign out returns to the gate
-      function doIt(fn) {
+      // v144: a name typed into this dialog is a REQUEST, and signing in is not.
+      // SIGN IN loads the account's own name; only CREATE writes one.
+      function doIt(fn, isLogin) {
         const err = $('acc-err'); err.textContent = '…';
         const em = $('acc-email').value.trim(), pw = $('acc-pass').value;
         const nm = ($('acc-name').value.trim() || prefs.name).slice(0, 14);
         fn(em, pw, nm).then(async (r) => {
           if (r.error === 'CHECK_EMAIL') { err.textContent = r.msg; return; }
           if (r.error) { err.textContent = r.error === 'NETWORK' ? 'Network error — try again.' : r.error; return; }
-          if (!acc.name()) acc.setName(nm);
-          // v73: bind a unique username to the account (server-validated by DB)
-          const un = (nm || '').replace(/[^A-Za-z0-9_]/g, '_').slice(0, 16) || ('RACER_' + Math.floor(Math.random() * 9999));
+          if (isLogin) {
+            // The account already owns a name: adopt it and write NOTHING. Before
+            // this, signing in from a second device upserted the profile with
+            // whatever that device had locally, renaming the account.
+            const n = await acc.adoptName();
+            if (!n) { await acc.saveName(nm); }         // account with no profile row yet
+            if (acc.name()) { prefs.name = acc.name(); savePrefs(); syncNameInput(); }
+            if (dlg) dlg.hidden = true;
+            paint(await acc.session());
+            toast('Welcome back, ' + (acc.name() || prefs.name));
+            return;
+          }
+          // CREATE: bind a unique handle and store the driver name on the account
+          const un = handleName(nm);
           const pr = await acc.ensureProfile(un);
-          if (pr && pr.error === 'TAKEN') toast('⚠ Username taken — using a variant. Change it in your profile soon.');
+          if (pr && pr.error === 'TAKEN') toast('Username taken - using a variant. Change it in your profile soon.');
+          if (pr && pr.error === 'BADNAME') { err.textContent = 'Driver name: 3+ letters, numbers or _.'; return; }
+          const sv = await acc.saveName(nm);
+          if (sv && sv.error === 'TAKEN') toast('That driver name is taken - try another');
+          prefs.name = acc.name() || nm;
+          savePrefs(); syncNameInput();
           if (dlg) dlg.hidden = true;
           paint(await acc.session());
-          toast('Welcome, ' + un + '! 🏁');
+          toast('Welcome, ' + prefs.name);
         });
       }
-      const su = $('acc-signup'); if (su) su.addEventListener('click', () => doIt((e, p, n) => acc.signup(e, p, n)));
-      const li = $('acc-login'); if (li) li.addEventListener('click', () => doIt((e, p) => acc.login(e, p)));
+      function handleName(n) {
+        return String(n || '').replace(/[^A-Za-z0-9_]/g, '_').slice(0, 16) || ('RACER_' + Math.floor(Math.random() * 9999));
+      }
+      const su = $('acc-signup'); if (su) su.addEventListener('click', () => doIt((e, p, n) => acc.signup(e, p, n), false));
+      const li = $('acc-login'); if (li) li.addEventListener('click', () => doIt((e, p) => acc.login(e, p), true));
     })();
   } catch (e) { console.warn('[lobby] account row wiring failed', e); }
 
   const nameEl = $('inp-name');
   if (nameEl) {
-    nameEl.value = prefs.name;
+    if (!nameEl.value) nameEl.value = prefs.name;
     nameEl.placeholder = identityPayload().name;
-    nameEl.addEventListener('input', () => { prefs.name = nameEl.value.trim(); savePrefs(); sendMeta(); });
+    bindDriverNameField();   // v144: idempotent - the field is live from page load
   }
   buildCarCards();
   // two-page lobby navigation
@@ -5388,7 +5507,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v142';
+const BUILD = 'v144';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -6690,7 +6809,7 @@ function openProfile() {
   (async () => {
     const uid = acc.uid(), tok = acc.token();
     const [prof, stats, recs, hist, achs, seas, psea, peq] = await Promise.all([
-      sbGet('/rest/v1/profiles?id=eq.' + uid + '&select=username'),
+      sbGet('/rest/v1/profiles?id=eq.' + uid + '&select=username,display_name'),
       sbGet('/rest/v1/player_stats?user_id=eq.' + uid),
       sbGet('/rest/v1/player_map_records?user_id=eq.' + uid + '&order=races.desc'),
       sbGet('/rest/v1/race_history?user_id=eq.' + uid + '&order=created_at.desc&limit=8', tok),
@@ -6700,6 +6819,7 @@ function openProfile() {
       sbGet('/rest/v1/player_equipped?user_id=eq.' + uid + '&select=car,neon,title'),
     ]);
     const p = (prof && prof[0]) || { username: acc.name() || 'RACER' };
+    const pName = String(p.display_name || p.username || acc.name() || 'RACER');   // v144
     const st = (stats && stats[0]) || { races: 0, wins: 0, podiums: 0, xp: 0, rating: 1000, peak_rating: 1000, streak: 0 };
     const lv = window.SRProg ? SRProg.levelFromXp(st.xp) : { level: 1, pct: 0, cur: 0, span: 100 };
     const tr = window.SRProg ? SRProg.tier(st.rating) : { name: 'BRONZE III', col: '#d09a6a' };
@@ -6714,7 +6834,7 @@ function openProfile() {
       }
     } catch (e) {}
 
-    let html = '<div class="p-head"><div class="p-name">' + escapeHtml(p.username) + (badgeInfo ? ' <span class="p-car" style="color:#ffd479">🎖️ ' + badgeInfo.name + ' (' + badgeInfo.tierName + ')</span>' : '') + '</div>' +
+    let html = '<div class="p-head"><div class="p-name">' + escapeHtml(pName) + (badgeInfo ? ' <span class="p-car" style="color:#ffd479">🎖️ ' + badgeInfo.name + ' (' + badgeInfo.tierName + ')</span>' : '') + '</div>' +
       '<div class="p-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + st.rating + ' <i>peak ' + st.peak_rating + '</i></div>' +
       '<div class="p-level">' + tr.name.split(' ')[0] + ' PROGRESS<div class="p-bar"><i style="width:' + (tr.pct || 0) + '%"></i></div></div>' +
       (tr.next ? '<div class="p-xp" style="text-align:center">Next: ' + tr.next + '</div>' : '') +

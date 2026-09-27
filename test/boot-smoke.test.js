@@ -176,7 +176,20 @@ function boot(opts) {
     close() { return Promise.resolve(); }
     decodeAudioData() { return Promise.resolve({}); }
   };
-  window.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ build: 'v140', tickmap: 0 }), text: () => Promise.resolve('') });
+  const calls = [];
+  const plain = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ build: 'v140', tickmap: 0 }), text: () => Promise.resolve('') });
+  window.fetch = (u, o) => {
+    const url = String(u), opt = o || {};
+    calls.push({ url, method: opt.method || 'GET', body: opt.body, headers: opt.headers });
+    if (!opts.accounts) return plain();
+    if (url.includes('/rest/v1/profiles')) {
+      if (opt.method === 'PATCH') {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([Object.assign({ username: 'Sridhar' }, JSON.parse(opt.body))]) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([{ username: 'Sridhar', display_name: opts.name || 'Sridhar R' }]) });
+    }
+    return plain();
+  };
   window.navigator.vibrate = () => true;
   window.navigator.share = undefined;
   window.matchMedia = window.matchMedia || (() => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }));
@@ -214,6 +227,14 @@ function boot(opts) {
   window.URL.createObjectURL = window.URL.createObjectURL || (() => 'blob:stub');
   window.URL.revokeObjectURL = window.URL.revokeObjectURL || (() => {});
   window.localStorage.clear();
+  // v144: simulate a device that has signed in but has never seen this racer's
+  // name before (the exact state the "RACER1234" bug appeared in).
+  if (opts.session) {
+    window.localStorage.setItem('sr_sb_session', JSON.stringify({
+      access_token: 'AT', refresh_token: 'RT',
+      expires_at: Math.floor(Date.now() / 1000) + 3600, uid: 'u1', email: 'a@b.co'
+    }));
+  }
 
   // ---- run the real scripts, in the real order ----------------------------
   const run = (rel) => {
@@ -233,15 +254,20 @@ function boot(opts) {
   } else {
     expose('THREE.WebGLRenderer = window.__FAKE_RENDERER;');
   }
-  for (const s of SCRIPTS) run(s);
+  for (const s of SCRIPTS) {
+    run(s);
+    // config.js ships empty Supabase keys; this makes the account client live so
+    // the name-on-account path can be exercised for real.
+    if (s === 'js/config.js' && opts.accounts) expose("window.SB_U='https://sb.test';window.SB_A='anon';");
+  }
   if (opts.breakWebGL) {
     let threw = false;
     try { run('js/game.js'); } catch (e) { threw = true; errors.push(e.message); }
-    return { dom, window, errors, sockets, threw, renderer: null };
+    return { dom, window, errors, sockets, calls, threw, renderer: null };
   }
   run('js/game.js');
   const renderer = window.__srRenderer || null;
-  return { dom, window, errors, sockets, threw: false, renderer };
+  return { dom, window, errors, sockets, calls, threw: false, renderer };
 }
 
 // expose the renderer the client built (game.js does not export it - read it back
@@ -252,6 +278,50 @@ function drawnCanvas(window) {
 }
 
 const SKIP = JSDOM ? false : 'jsdom not installed (npm install --include=dev)';
+const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test('v144: a signed-in racer sees their ACCOUNT name before any snapshot', { skip: SKIP }, async (t) => {
+  // The reported bug, twice over: sign in on a device that has never seen this
+  // racer and the lobby showed index.html's static "racer" placeholder, because
+  // the identity was only painted from updateLobby() - i.e. once the server sent
+  // a state frame. No socket traffic is driven in this test on purpose: the name
+  // is on the account, so it must be on screen at page load.
+  const { window, errors, dom } = boot({ accounts: true, session: true, name: 'Sridhar R' });
+  t.after(() => dom.window.close());
+  await settle(400);
+  const chip = window.document.getElementById('account-chip');
+  assert.ok(chip, 'the account chip exists');
+  assert.ok(chip.textContent.includes('Sridhar R'),
+    'the lobby shows the account name, got: ' + JSON.stringify(chip.textContent));
+  assert.ok(!/RACER-?\d/.test(chip.textContent), 'no local placeholder is left on screen');
+  const inp = window.document.getElementById('inp-name');
+  assert.strictEqual(inp.value, 'Sridhar R', 'the DRIVER IDENTITY field is filled from the account');
+  assert.deepStrictEqual(errors, [], 'boot errors: ' + errors.join(' | '));
+});
+
+test('v144: editing the driver name writes it to the account', { skip: SKIP }, async (t) => {
+  const { window, errors, calls, dom } = boot({ accounts: true, session: true, name: 'Sridhar R' });
+  t.after(() => dom.window.close());
+  await settle(400);
+  const inp = window.document.getElementById('inp-name');
+  inp.value = 'Night Rider';
+  inp.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await settle(1400);                       // the write is debounced, not per keystroke
+  const patch = calls.find((c) => c.method === 'PATCH' && c.url.includes('/rest/v1/profiles'));
+  assert.ok(patch, 'a profile PATCH was sent');
+  assert.strictEqual(JSON.parse(patch.body).display_name, 'Night Rider', 'the new name is stored on the account');
+  assert.ok(String(patch.headers.Authorization).includes('Bearer AT'), 'authenticated as the racer');
+  assert.ok(window.localStorage.getItem('sr_sb_name') === 'Night Rider', 'and mirrored locally');
+  assert.deepStrictEqual(errors, [], 'errors: ' + errors.join(' | '));
+});
+
+test('v144: a guest never touches the account endpoints', { skip: SKIP }, async (t) => {
+  const { window, errors, calls, dom } = boot();
+  t.after(() => dom.window.close());
+  await settle(300);
+  assert.ok(!calls.some((c) => c.url.includes('/rest/v1/profiles')), 'no profile traffic without accounts');
+  assert.deepStrictEqual(errors, [], 'errors: ' + errors.join(' | '));
+});
 
 test('v140: the client boots end to end with no uncaught exception', { skip: SKIP }, (t) => {
   const { window, errors, dom } = boot();
@@ -329,3 +399,4 @@ test('v140: an unavailable WebGL renderer explains itself instead of dying silen
   assert.ok(/3D graphics are not available/i.test(body), 'a clear on-screen explanation is shown');
   assert.ok(errors.some((e) => /WebGL unavailable/i.test(e)), 'the failure is reported as an error, not swallowed');
 });
+
