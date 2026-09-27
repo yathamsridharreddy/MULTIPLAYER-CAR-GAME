@@ -1,0 +1,15 @@
+<!-- SRIDHAR RUSH icon - Lucide geometry (ISC), re-emitted on the house 128 grid
+     by tools/icon-forge/lucide_icons.py. Lucide: https://lucide.dev (ISC). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<defs>
+  <linearGradient id="user-plus-g0" x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#c8ffe4"/><stop offset="0.5" stop-color="#00d97e"/><stop offset="1" stop-color="#066b41"/></linearGradient>
+  <filter id="user-plus-f0" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#00d97e" flood-opacity="0.9"/></filter>
+</defs>
+  <g transform="translate(7.6000 7.6000) scale(4.7000)" fill="none" stroke="url(#user-plus-g0)" stroke-width="2.75"
+     stroke-linecap="round" stroke-linejoin="round" filter="url(#user-plus-f0)">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+  <circle cx="9" cy="7" r="4" />
+  <line x1="19" x2="19" y1="8" y2="14" />
+  <line x1="22" x2="16" y1="11" y2="11" />
+  </g>
+</svg>

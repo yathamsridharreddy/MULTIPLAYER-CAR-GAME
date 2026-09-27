@@ -1,0 +1,13 @@
+<!-- SRIDHAR RUSH icon - Lucide geometry (ISC), re-emitted on the house 128 grid
+     by tools/icon-forge/lucide_icons.py. Lucide: https://lucide.dev (ISC). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<defs>
+  <linearGradient id="gear-g0" x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#eef4ff"/><stop offset="0.5" stop-color="#9fb2cc"/><stop offset="1" stop-color="#4a5972"/></linearGradient>
+  <filter id="gear-f0" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#8fb4ff" flood-opacity="0.9"/></filter>
+</defs>
+  <g transform="translate(7.6000 7.6000) scale(4.7000)" fill="none" stroke="url(#gear-g0)" stroke-width="2.75"
+     stroke-linecap="round" stroke-linejoin="round" filter="url(#gear-f0)">
+    <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+  <circle cx="12" cy="12" r="3" />
+  </g>
+</svg>

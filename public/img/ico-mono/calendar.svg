@@ -1,0 +1,17 @@
+<!-- SRIDHAR RUSH icon - Lucide geometry (ISC), re-emitted on the house 128 grid
+     by tools/icon-forge/lucide_icons.py. Lucide: https://lucide.dev (ISC). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <g transform="translate(7.6000 7.6000) scale(4.7000)" fill="none" stroke="currentColor" stroke-width="2.75"
+     stroke-linecap="round" stroke-linejoin="round" opacity="0.86">
+    <path d="M8 2v3" />
+  <path d="M16 2v3" />
+  <rect x="3" y="3" width="18" height="18" rx="2" />
+  <path d="M3 9h18" />
+  <path d="M8 13h.01" />
+  <path d="M12 13h.01" />
+  <path d="M16 13h.01" />
+  <path d="M8 17h.01" />
+  <path d="M12 17h.01" />
+  <path d="M16 17h.01" />
+  </g>
+</svg>

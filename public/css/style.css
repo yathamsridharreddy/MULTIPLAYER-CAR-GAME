@@ -1434,15 +1434,34 @@ h1 span {
   transition: all 0.18s ease;
 }
 
-.mode3-btn span:first-child {
+/* v149: these used to be `span:first-child` / `span:last-child` - the exact
+   construct that broke the weather row. It survived here only because the title
+   happened to be the first child, and it stopped being true the moment the emoji
+   became an icon span. Every part has its own class now, and the button is a
+   flex row so the icon sits beside the label instead of above it. */
+.mode3-btn {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  text-align: left;
+}
+
+.mode3-btn .m3-name {
   font: 800 13px var(--font-display);
   letter-spacing: 1px;
   color: #ffffff;
 }
 
-.mode3-btn span:last-child {
+.mode3-btn .m3-sub {
   font-size: 11px;
   color: #8fa2b8;
+}
+
+.mode3-btn .m3-sub::before {
+  content: '·';
+  margin-right: 7px;
+  opacity: 0.55;
 }
 
 .mode3-btn.active {
@@ -1451,7 +1470,7 @@ h1 span {
   box-shadow: 0 0 16px rgba(0, 240, 255, 0.25);
 }
 
-.mode3-btn.active span:first-child {
+.mode3-btn.active .m3-name {
   color: var(--cyber-cyan);
 }
 
@@ -1849,6 +1868,74 @@ h1 span {
   .weather-btn:hover { transform: none; }
   .weather-btn:hover .wx-art { transform: none; }
 }
+
+/* ---- icon tints: a status dot keeps its meaning now that it is a real glyph ---- */
+.ico-green { color: #25d366; }
+.ico-amber { color: #ffc24a; }
+.ico-flame { color: #ff7a2f; }
+.ico-cyan  { color: var(--cyber-cyan); }
+.ico-muted { color: #8fa2b8; }
+.ico-red   { color: #ff5a4d; }
+
+/* v149: an icon before a label needs a little air, and must line up with the
+   cap-height rather than the baseline. */
+.ico + span, .ico + b, .ico + label { margin-left: 0.5em; }
+.ghost.sm .ico, .ghost .ico, .ltab .ico, .btab .ico, .mode-btn .ico,
+.mode3-btn .ico, .cls-btn .ico, .res-btn-secondary .ico, .res-btn-primary .ico,
+.mob-choice-btn .ico, .q-btn .ico, .lsec-title .ico, .toggle-line .ico,
+.lcomp-title .ico, .rrc-tag .ico, .rb-title .ico, h2 .ico, h3 .ico { vertical-align: -0.14em; }
+.ltab .ico, .btab .ico { margin-right: 7px; }
+.toggle-line .ico { margin-right: 6px; }
+.lsec-title .ico, .rb-title .ico, .lcomp-title .ico, h2 .ico, h3 .ico { margin-right: 8px; }
+button.tool .ico { vertical-align: 0; }
+
+/* ---- v149: keyboard focus, everywhere --------------------------------------
+   Only a handful of controls had a :focus-visible ring. A racing UI is used with
+   a keyboard as often as a gamepad (the tutorial even documents WASD), so every
+   control that can take focus now shows the same cyan ring as the map and weather
+   cards. Pointer users never see it; keyboard users always do. */
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible,
+.toggle-line input:focus-visible + span {
+  outline: 2px solid var(--cyber-cyan);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.ghost:focus-visible, .big-cta:focus-visible, .ltab:focus-visible, .btab:focus-visible,
+.mode-btn:focus-visible, .mode3-btn:focus-visible, .cls-btn:focus-visible,
+.res-btn-primary:focus-visible, .res-btn-secondary:focus-visible, .q-btn:focus-visible,
+.lcomp-btn:focus-visible, .mob-choice-btn:focus-visible, button.tool:focus-visible {
+  outline-offset: 3px;
+}
+/* a radio-ish group should not paint the ring on the visual label as well */
+.toggle-line input:focus-visible { outline: none; }
+
+/* ---- C2: the lobby's competitive cards join the card language ---------------
+   The map, weather and car cards share one dialect now: an accent, a hover lift,
+   a lit state and a 14px radius. The lobby cards were still wearing the older
+   style, which is what made the app feel like two apps. */
+.lcomp-card {
+  position: relative;
+  border-radius: 14px;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.lcomp-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 240, 255, 0.4);
+  box-shadow: 0 14px 30px -18px rgba(0, 240, 255, 0.9);
+}
+.lcomp-card::before { border-radius: 14px 14px 0 0; }
+.lcomp-btn, .lcomp-ghost-btn, .lcomp-season-btn {
+  border-radius: 10px;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+.lcomp-btn:hover, .lcomp-ghost-btn:hover, .lcomp-season-btn:hover { transform: translateY(-1px); }
+
+/* ---- D: typography + contrast polish --------------------------------------- */
+/* the faintest text in the app was 10.5px at 43% grey; lift it one step so it
+   reads on a phone in daylight without changing the layout */
+.mc-sub, .lcomp-sub, .dsec-sub, .daily-meta, .rrc-sub { color: #93a5bb; }
+:root { --border-subtle: rgba(255, 255, 255, 0.11); }
 
 /* Car Cards */
 .car-card {
@@ -2509,6 +2596,80 @@ h1 span {
 .ico[data-i="weather-rain"] { -webkit-mask-image: url("../img/ico-mono/weather-rain.svg"); mask-image: url("../img/ico-mono/weather-rain.svg"); }
 .ico[data-i="weather-snow"] { -webkit-mask-image: url("../img/ico-mono/weather-snow.svg"); mask-image: url("../img/ico-mono/weather-snow.svg"); }
 .ico[data-i="weather-sun"] { -webkit-mask-image: url("../img/ico-mono/weather-sun.svg"); mask-image: url("../img/ico-mono/weather-sun.svg"); }
+.ico[data-i="star"] { -webkit-mask-image: url("../img/ico-mono/star.svg"); mask-image: url("../img/ico-mono/star.svg"); }
+
+/* v149: the generic half of the icon set - Lucide geometry (ISC), re-emitted on the
+   house 128 grid by tools/icon-forge/lucide_icons.py. Identity icons (car, flag,
+   helmet, nitro, speedo, wheel, trophy, crown, swords, ghost, target, stopwatch,
+   weather) stay hand-drawn in make_icons.py because they are the site's own
+   language; these are the utility glyphs that do not need redrawing badly. */
+.ico[data-i="arrow-right-circle"] { -webkit-mask-image: url("../img/ico-mono/arrow-right-circle.svg"); mask-image: url("../img/ico-mono/arrow-right-circle.svg"); }
+.ico[data-i="arrow-up-right"] { -webkit-mask-image: url("../img/ico-mono/arrow-up-right.svg"); mask-image: url("../img/ico-mono/arrow-up-right.svg"); }
+.ico[data-i="ban"] { -webkit-mask-image: url("../img/ico-mono/ban.svg"); mask-image: url("../img/ico-mono/ban.svg"); }
+.ico[data-i="bolt"] { -webkit-mask-image: url("../img/ico-mono/bolt.svg"); mask-image: url("../img/ico-mono/bolt.svg"); }
+.ico[data-i="book"] { -webkit-mask-image: url("../img/ico-mono/book.svg"); mask-image: url("../img/ico-mono/book.svg"); }
+.ico[data-i="bulb"] { -webkit-mask-image: url("../img/ico-mono/bulb.svg"); mask-image: url("../img/ico-mono/bulb.svg"); }
+.ico[data-i="calendar"] { -webkit-mask-image: url("../img/ico-mono/calendar.svg"); mask-image: url("../img/ico-mono/calendar.svg"); }
+.ico[data-i="camera-plus"] { -webkit-mask-image: url("../img/ico-mono/camera-plus.svg"); mask-image: url("../img/ico-mono/camera-plus.svg"); }
+.ico[data-i="chart"] { -webkit-mask-image: url("../img/ico-mono/chart.svg"); mask-image: url("../img/ico-mono/chart.svg"); }
+.ico[data-i="chat"] { -webkit-mask-image: url("../img/ico-mono/chat.svg"); mask-image: url("../img/ico-mono/chat.svg"); }
+.ico[data-i="check"] { -webkit-mask-image: url("../img/ico-mono/check.svg"); mask-image: url("../img/ico-mono/check.svg"); }
+.ico[data-i="clock"] { -webkit-mask-image: url("../img/ico-mono/clock.svg"); mask-image: url("../img/ico-mono/clock.svg"); }
+.ico[data-i="coin"] { -webkit-mask-image: url("../img/ico-mono/coin.svg"); mask-image: url("../img/ico-mono/coin.svg"); }
+.ico[data-i="compass"] { -webkit-mask-image: url("../img/ico-mono/compass.svg"); mask-image: url("../img/ico-mono/compass.svg"); }
+.ico[data-i="copy"] { -webkit-mask-image: url("../img/ico-mono/copy.svg"); mask-image: url("../img/ico-mono/copy.svg"); }
+.ico[data-i="copy-check"] { -webkit-mask-image: url("../img/ico-mono/copy-check.svg"); mask-image: url("../img/ico-mono/copy-check.svg"); }
+.ico[data-i="crown-plus"] { -webkit-mask-image: url("../img/ico-mono/crown-plus.svg"); mask-image: url("../img/ico-mono/crown-plus.svg"); }
+.ico[data-i="dot"] { -webkit-mask-image: url("../img/ico-mono/dot.svg"); mask-image: url("../img/ico-mono/dot.svg"); }
+.ico[data-i="exit"] { -webkit-mask-image: url("../img/ico-mono/exit.svg"); mask-image: url("../img/ico-mono/exit.svg"); }
+.ico[data-i="eye"] { -webkit-mask-image: url("../img/ico-mono/eye.svg"); mask-image: url("../img/ico-mono/eye.svg"); }
+.ico[data-i="flame"] { -webkit-mask-image: url("../img/ico-mono/flame.svg"); mask-image: url("../img/ico-mono/flame.svg"); }
+.ico[data-i="gauge"] { -webkit-mask-image: url("../img/ico-mono/gauge.svg"); mask-image: url("../img/ico-mono/gauge.svg"); }
+.ico[data-i="gear"] { -webkit-mask-image: url("../img/ico-mono/gear.svg"); mask-image: url("../img/ico-mono/gear.svg"); }
+.ico[data-i="gift"] { -webkit-mask-image: url("../img/ico-mono/gift.svg"); mask-image: url("../img/ico-mono/gift.svg"); }
+.ico[data-i="globe"] { -webkit-mask-image: url("../img/ico-mono/globe.svg"); mask-image: url("../img/ico-mono/globe.svg"); }
+.ico[data-i="handshake"] { -webkit-mask-image: url("../img/ico-mono/handshake.svg"); mask-image: url("../img/ico-mono/handshake.svg"); }
+.ico[data-i="hourglass"] { -webkit-mask-image: url("../img/ico-mono/hourglass.svg"); mask-image: url("../img/ico-mono/hourglass.svg"); }
+.ico[data-i="image"] { -webkit-mask-image: url("../img/ico-mono/image.svg"); mask-image: url("../img/ico-mono/image.svg"); }
+.ico[data-i="install"] { -webkit-mask-image: url("../img/ico-mono/install.svg"); mask-image: url("../img/ico-mono/install.svg"); }
+.ico[data-i="key"] { -webkit-mask-image: url("../img/ico-mono/key.svg"); mask-image: url("../img/ico-mono/key.svg"); }
+.ico[data-i="keyboard"] { -webkit-mask-image: url("../img/ico-mono/keyboard.svg"); mask-image: url("../img/ico-mono/keyboard.svg"); }
+.ico[data-i="list"] { -webkit-mask-image: url("../img/ico-mono/list.svg"); mask-image: url("../img/ico-mono/list.svg"); }
+.ico[data-i="loader"] { -webkit-mask-image: url("../img/ico-mono/loader.svg"); mask-image: url("../img/ico-mono/loader.svg"); }
+.ico[data-i="lock"] { -webkit-mask-image: url("../img/ico-mono/lock.svg"); mask-image: url("../img/ico-mono/lock.svg"); }
+.ico[data-i="mail"] { -webkit-mask-image: url("../img/ico-mono/mail.svg"); mask-image: url("../img/ico-mono/mail.svg"); }
+.ico[data-i="map"] { -webkit-mask-image: url("../img/ico-mono/map.svg"); mask-image: url("../img/ico-mono/map.svg"); }
+.ico[data-i="medal"] { -webkit-mask-image: url("../img/ico-mono/medal.svg"); mask-image: url("../img/ico-mono/medal.svg"); }
+.ico[data-i="megaphone"] { -webkit-mask-image: url("../img/ico-mono/megaphone.svg"); mask-image: url("../img/ico-mono/megaphone.svg"); }
+.ico[data-i="monitor"] { -webkit-mask-image: url("../img/ico-mono/monitor.svg"); mask-image: url("../img/ico-mono/monitor.svg"); }
+.ico[data-i="music"] { -webkit-mask-image: url("../img/ico-mono/music.svg"); mask-image: url("../img/ico-mono/music.svg"); }
+.ico[data-i="mute"] { -webkit-mask-image: url("../img/ico-mono/mute.svg"); mask-image: url("../img/ico-mono/mute.svg"); }
+.ico[data-i="palette"] { -webkit-mask-image: url("../img/ico-mono/palette.svg"); mask-image: url("../img/ico-mono/palette.svg"); }
+.ico[data-i="pause"] { -webkit-mask-image: url("../img/ico-mono/pause.svg"); mask-image: url("../img/ico-mono/pause.svg"); }
+.ico[data-i="phone"] { -webkit-mask-image: url("../img/ico-mono/phone.svg"); mask-image: url("../img/ico-mono/phone.svg"); }
+.ico[data-i="piggy"] { -webkit-mask-image: url("../img/ico-mono/piggy.svg"); mask-image: url("../img/ico-mono/piggy.svg"); }
+.ico[data-i="plus"] { -webkit-mask-image: url("../img/ico-mono/plus.svg"); mask-image: url("../img/ico-mono/plus.svg"); }
+.ico[data-i="refresh-cw"] { -webkit-mask-image: url("../img/ico-mono/refresh-cw.svg"); mask-image: url("../img/ico-mono/refresh-cw.svg"); }
+.ico[data-i="rocket"] { -webkit-mask-image: url("../img/ico-mono/rocket.svg"); mask-image: url("../img/ico-mono/rocket.svg"); }
+.ico[data-i="route"] { -webkit-mask-image: url("../img/ico-mono/route.svg"); mask-image: url("../img/ico-mono/route.svg"); }
+.ico[data-i="search"] { -webkit-mask-image: url("../img/ico-mono/search.svg"); mask-image: url("../img/ico-mono/search.svg"); }
+.ico[data-i="send"] { -webkit-mask-image: url("../img/ico-mono/send.svg"); mask-image: url("../img/ico-mono/send.svg"); }
+.ico[data-i="share"] { -webkit-mask-image: url("../img/ico-mono/share.svg"); mask-image: url("../img/ico-mono/share.svg"); }
+.ico[data-i="shield"] { -webkit-mask-image: url("../img/ico-mono/shield.svg"); mask-image: url("../img/ico-mono/shield.svg"); }
+.ico[data-i="shirt"] { -webkit-mask-image: url("../img/ico-mono/shirt.svg"); mask-image: url("../img/ico-mono/shirt.svg"); }
+.ico[data-i="sliders"] { -webkit-mask-image: url("../img/ico-mono/sliders.svg"); mask-image: url("../img/ico-mono/sliders.svg"); }
+.ico[data-i="sparkle"] { -webkit-mask-image: url("../img/ico-mono/sparkle.svg"); mask-image: url("../img/ico-mono/sparkle.svg"); }
+.ico[data-i="swords-plus"] { -webkit-mask-image: url("../img/ico-mono/swords-plus.svg"); mask-image: url("../img/ico-mono/swords-plus.svg"); }
+.ico[data-i="terminal"] { -webkit-mask-image: url("../img/ico-mono/terminal.svg"); mask-image: url("../img/ico-mono/terminal.svg"); }
+.ico[data-i="ticket"] { -webkit-mask-image: url("../img/ico-mono/ticket.svg"); mask-image: url("../img/ico-mono/ticket.svg"); }
+.ico[data-i="trophy-plus"] { -webkit-mask-image: url("../img/ico-mono/trophy-plus.svg"); mask-image: url("../img/ico-mono/trophy-plus.svg"); }
+.ico[data-i="user"] { -webkit-mask-image: url("../img/ico-mono/user.svg"); mask-image: url("../img/ico-mono/user.svg"); }
+.ico[data-i="user-plus"] { -webkit-mask-image: url("../img/ico-mono/user-plus.svg"); mask-image: url("../img/ico-mono/user-plus.svg"); }
+.ico[data-i="users"] { -webkit-mask-image: url("../img/ico-mono/users.svg"); mask-image: url("../img/ico-mono/users.svg"); }
+.ico[data-i="video"] { -webkit-mask-image: url("../img/ico-mono/video.svg"); mask-image: url("../img/ico-mono/video.svg"); }
+.ico[data-i="wifi"] { -webkit-mask-image: url("../img/ico-mono/wifi.svg"); mask-image: url("../img/ico-mono/wifi.svg"); }
+.ico[data-i="wind"] { -webkit-mask-image: url("../img/ico-mono/wind.svg"); mask-image: url("../img/ico-mono/wind.svg"); }
+.ico[data-i="x"] { -webkit-mask-image: url("../img/ico-mono/x.svg"); mask-image: url("../img/ico-mono/x.svg"); }
 
 /* ============================================================================
    Time Trial & Practice Overlay

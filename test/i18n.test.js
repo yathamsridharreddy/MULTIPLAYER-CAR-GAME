@@ -57,10 +57,10 @@ describe('Full-Game Internationalization (i18n) Engine', () => {
   });
 
   it('translates correctly with tI18n for different languages', () => {
-    assert.equal(tI18n('start', null, 'en'), '🏁 START RACE');
-    assert.equal(tI18n('start', null, 'te'), '🏁 రేస్ ప్రారంభించండి');
-    assert.equal(tI18n('start', null, 'hi'), '🏁 रेस शुरू करें');
-    assert.equal(tI18n('start', null, 'es'), '🏁 INICIAR CARRERA');
+    assert.equal(tI18n('start', null, 'en'), 'START RACE');
+    assert.equal(tI18n('start', null, 'te'), 'రేస్ ప్రారంభించండి');
+    assert.equal(tI18n('start', null, 'hi'), 'रेस शुरू करें');
+    assert.equal(tI18n('start', null, 'es'), 'INICIAR CARRERA');
   });
 
   it('interpolates string placeholders correctly', () => {
@@ -87,7 +87,7 @@ describe('Full-Game Internationalization (i18n) Engine', () => {
   });
 
   it('falls back gracefully to english when given unknown language or unknown key', () => {
-    assert.equal(tI18n('start', null, 'unknown_lang'), '🏁 START RACE');
+    assert.equal(tI18n('start', null, 'unknown_lang'), 'START RACE');
     assert.equal(tI18n('totally_non_existent_key_xyz', null, 'en'), 'totally_non_existent_key_xyz');
   });
 });

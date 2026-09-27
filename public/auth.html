@@ -10,9 +10,12 @@
   <meta property="og:description" content="Sign in or create your racer account to enter the game."/>
   <title>SRIDHAR RUSH — Racer Account</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml"/>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap" media="print" onload="this.media='all'"/>
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap"/></noscript>
-  <link rel="stylesheet" href="css/style.css?v=148"/>
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap" media="print" onload="this.media='all'"/>
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap"/></noscript>
+  <link rel="stylesheet" href="css/style.css?v=149"/>
   <style>
     /* gate layout — everything else comes from the shared site stylesheet */
     html, body { height: 100%; }
@@ -117,7 +120,7 @@
         <form id="f-signin" novalidate>
           <div class="a-field"><label for="si-email">Email</label><input id="si-email" type="email" autocomplete="email" placeholder="you@example.com" required/></div>
           <div class="a-field"><label for="si-pass">Password</label><div class="a-pw"><input id="si-pass" type="password" autocomplete="current-password" placeholder="••••••••" required/><button type="button" class="a-eye" data-eye="si-pass" aria-label="Show password" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button></div></div>
-          <button id="si-go" class="a-go" type="submit">⚡ ENTER THE GRID</button>
+          <button id="si-go" class="a-go" type="submit"><span class="ico" data-i="bolt" aria-hidden="true"></span>ENTER THE GRID</button>
           <div class="a-link"><button type="button" data-tab="view-forgot">Forgot password?</button></div>
         </form>
       </div>
@@ -129,7 +132,7 @@
           <div class="a-field"><label for="su-email">Email</label><input id="su-email" type="email" autocomplete="email" placeholder="you@example.com" required/></div>
           <div class="a-field"><label for="su-pass">Password</label><div class="a-pw"><input id="su-pass" type="password" autocomplete="new-password" placeholder="min 8 characters" required/><button type="button" class="a-eye" data-eye="su-pass" aria-label="Show password" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button></div></div>
           <div class="a-field"><label for="su-pass2">Confirm password</label><div class="a-pw"><input id="su-pass2" type="password" autocomplete="new-password" placeholder="repeat password" required/><button type="button" class="a-eye" data-eye="su-pass2" aria-label="Show password" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button></div></div>
-          <button id="su-go" class="a-go" type="submit">🏁 CREATE RACER ACCOUNT</button>
+          <button id="su-go" class="a-go" type="submit"><span class="ico" data-i="race-flag" aria-hidden="true"></span>CREATE RACER ACCOUNT</button>
         </form>
       </div>
 
@@ -138,7 +141,7 @@
         <form id="f-forgot" novalidate>
           <p class="a-note">Enter the email you signed up with — we'll send a secure link to set a new password.</p>
           <div class="a-field"><label for="fg-email">Email</label><input id="fg-email" type="email" autocomplete="email" placeholder="you@example.com" required/></div>
-          <button id="fg-go" class="a-go" type="submit">📨 SEND RESET LINK</button>
+          <button id="fg-go" class="a-go" type="submit"><span class="ico" data-i="mail" aria-hidden="true"></span>SEND RESET LINK</button>
           <div class="a-link"><button type="button" data-tab="view-signin">Back to sign in</button></div>
         </form>
       </div>
@@ -149,7 +152,7 @@
           <p class="a-note">Recovery link verified. Choose a new password for your racer account.</p>
           <div class="a-field"><label for="rs-pass">New password</label><div class="a-pw"><input id="rs-pass" type="password" autocomplete="new-password" placeholder="min 8 characters" required/><button type="button" class="a-eye" data-eye="rs-pass" aria-label="Show password" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button></div></div>
           <div class="a-field"><label for="rs-pass2">Confirm new password</label><div class="a-pw"><input id="rs-pass2" type="password" autocomplete="new-password" placeholder="repeat password" required/><button type="button" class="a-eye" data-eye="rs-pass2" aria-label="Show password" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button></div></div>
-          <button id="rs-go" class="a-go" type="submit">🔐 SET NEW PASSWORD</button>
+          <button id="rs-go" class="a-go" type="submit"><span class="ico" data-i="lock" aria-hidden="true"></span>SET NEW PASSWORD</button>
         </form>
       </div>
 
@@ -176,7 +179,7 @@
   </div>
 
   <script src="js/config.js"></script>
-  <script defer src="js/account.js?v=148"></script>
-  <script defer src="js/auth.js?v=148"></script>
+  <script defer src="js/account.js?v=149"></script>
+  <script defer src="js/auth.js?v=149"></script>
 </body>
 </html>

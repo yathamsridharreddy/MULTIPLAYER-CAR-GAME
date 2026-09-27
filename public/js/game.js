@@ -93,7 +93,7 @@ const renderer = createRenderer();
 if (!renderer) {
   const d = document.createElement('div');
   d.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#0a0e18;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px;font:600 15px system-ui,sans-serif;line-height:1.5;';
-  d.innerHTML = '<div><div style="font-size:34px;margin-bottom:10px">🏁</div>' +
+  d.innerHTML = '<div><div style="margin-bottom:12px">' + icoSpan('race-flag') + '</div>' +
     '<b>3D graphics are not available on this device/browser right now.</b><br><br>' +
     'Turn off Lockdown/private browsing, close other tabs using 3D, then reload.<br>' +
     'Your account, races and stats are safe.</div>';
@@ -2126,7 +2126,7 @@ function showTTResults(order, finalT) {
   const bestLap = p.bestLap && p.bestLap[mapId] != null ? p.bestLap[mapId] : null;
   const box = $('tt-body');
   if (TT.practice) {
-    box.innerHTML = '<h2>🎮 PRACTICE COMPLETE</h2><div class="tt-line">TRACK: <b>' + M + '</b></div>' +
+    box.innerHTML = '<h2>' + icoSpan('gamepad') + ' PRACTICE COMPLETE</h2><div class="tt-line">TRACK: <b>' + M + '</b></div>' +
       '<div class="tt-line">TIME: <b>' + (finalT != null ? fmtTime(finalT) : '—') + '</b></div>' +
       '<div class="tt-dim">No records submitted — keep learning!</div>';
   } else {
@@ -2134,7 +2134,7 @@ function showTTResults(order, finalT) {
       '<div class="tt-line">FINAL TIME: <b>' + (finalT != null ? fmtTime(finalT) : 'DNF') + '</b></div>' +
       '<div class="tt-line">PERSONAL BEST: <b>' + (isRecord ? fmtTime(finalT) : (best != null ? fmtTime(best) : '—')) + '</b></div>' +
       (bestLap != null ? '<div class="tt-line">BEST LAP: <b>' + fmtTime(bestLap) + '</b></div>' : '') +
-      (isRecord && oldBest != null ? '<div class="pb-note">🏆 NEW RECORD! OLD ' + fmtTime(oldBest) + ' → NEW ' + fmtTime(finalT) + ' · ' + (finalT - oldBest).toFixed(2) + 's</div>' :
+      (isRecord && oldBest != null ? '<div class="pb-note">' + icoSpan('trophy', 'ico-amber') + ' NEW RECORD! OLD ' + fmtTime(oldBest) + ' → NEW ' + fmtTime(finalT) + ' · ' + (finalT - oldBest).toFixed(2) + 's</div>' :
         (!isRecord && best != null && finalT != null ? '<div class="tt-cmp">+' + (finalT - best).toFixed(2) + 's off your best</div>' : ''));
     if (isRecord) toast('🏆 NEW PERSONAL RECORD!');
   }
@@ -2218,7 +2218,8 @@ function ghostUpdate(raceTime) {
         chip.style.display = 'block';
         const ahead = d < 0;
         chip.className = 'ghost-gap-chip ' + (ahead ? 'ahead' : 'behind');
-        chip.textContent = '👻 GHOST: ' + (ahead ? '-' : '+') + Math.abs(d).toFixed(2) + 's ' + (ahead ? '⚡' : '🔻');
+        setIcoIcon(chip, ahead ? 'bolt' : 'arrow-down'); setIcoTone(chip, ahead ? 'ico-green' : 'ico-amber');
+        setIcoLabel(chip, 'GHOST: ' + (ahead ? '-' : '+') + Math.abs(d).toFixed(2) + 's' + (ahead ? ' ahead' : ' behind'));
       } else {
         chip.style.display = 'none';
       }
@@ -2778,7 +2779,7 @@ function paintIdentity() {
     const signedIn = !!(acc && acc.loggedIn && acc.loggedIn());
     const paintChip = () => {
       const chip = $('account-chip');
-      if (chip) chip.textContent = '👤 ' + ((signedIn && acc.name && acc.name()) || prefs.name || 'racer');
+      if (chip) setIcoLabel(chip, (signedIn && acc.name && acc.name()) || prefs.name || 'racer');
     };
     paintChip();
     bindDriverNameField();
@@ -2792,7 +2793,7 @@ function paintIdentity() {
       const f = $('inp-name');
       if (f && document.activeElement !== f) f.value = s.name;
       const chip = $('account-chip');
-      if (chip) chip.textContent = '👤 ' + s.name;
+      if (chip) setIcoLabel(chip, s.name);
       sendMeta();
     }).catch(() => {});
   } catch (e) { console.warn('[lobby] identity paint failed', e); }
@@ -2868,14 +2869,14 @@ function wireLobbyV2() {
       // the sign-in controls works for a guest, so a missing account SDK must never
       // hide CLUBS, BADGES, BOUNTIES or GARAGE.
       applyAccountRowVisibility(accountRowVisibility(accountsOn, signedIn), $);
-      const chip0 = $('account-chip'); if (chip0) chip0.textContent = '👤 ' + (prefs.name || 'racer');   // v121: no guest identity anywhere
+      const chip0 = $('account-chip'); if (chip0) setIcoLabel(chip0, prefs.name || 'racer');   // v121: no guest identity anywhere
       if (!accountsOn) return;
 
       const chip = $('account-chip'), btn = $('account-btn'), out = $('account-out'), dlg = $('account-dlg');
       function paint(s) {
         applyAccountRowVisibility(accountRowVisibility(true, !!s), $);
         // v130: show driver identity (prefs.name) not email — name from account OR driver identity, email only as last resort
-        if (chip) chip.textContent = '👤 ' + (s ? (s.name || prefs.name || (s.email || 'racer').split('@')[0]) : (prefs.name || 'racer'));
+        if (chip) setIcoLabel(chip, s ? (s.name || prefs.name || (s.email || 'racer').split('@')[0]) : (prefs.name || 'racer'));
         sendMeta();
       }
       // v144: the account's name is the racer's name, so the lobby is correct on
@@ -3025,7 +3026,7 @@ applyQuality(prefs.quality);
   document.querySelectorAll('.cos-btn').forEach((b) => {
     const k = b.dataset.cos; const v = parseInt(b.dataset.v, 10);
     b.classList.toggle('active', (prefs.cos[k] || 0) === v);
-    b.textContent = b.dataset.label || b.textContent; if (!cosUnlocked(k, v)) b.textContent = '🔒' + b.textContent.replace('🔒', '');
+    b.textContent = b.dataset.label || b.textContent; b.classList.toggle('cos-locked', !cosUnlocked(k, v));
     b.addEventListener('click', () => {
       if (!cosUnlocked(k, v)) { toast('🔒 Unlocks at level ' + UNLOCK_LVL[k][v]); return; }
       prefs.cos[k] = v; savePrefs();
@@ -3107,7 +3108,7 @@ applyQuality(prefs.quality);
   if (rivalBtn) rivalBtn.addEventListener('click', () => { const qb = $('quickplay-btn'); if (qb) qb.click(); });
   const ghTogBtn = $('lobby-ghost-toggle-btn');
   function updateLobbyGhostBtn() {
-    if (ghTogBtn) ghTogBtn.textContent = prefs.ghost ? '👻 GHOST: ON' : '👻 GHOST: OFF';
+    if (ghTogBtn) setIcoLabel(ghTogBtn, prefs.ghost ? 'GHOST: ON' : 'GHOST: OFF');
     const sGh = $('set-ghost'); if (sGh) sGh.checked = !!prefs.ghost;
   }
   if (ghTogBtn) {
@@ -3160,11 +3161,11 @@ function renderChallengeBanner(ch) {
   const tStr = ch.targetMs ? fmtTime(ch.targetMs / 1000) : null;
 
   if (ch.verified) {
-    if (badge) { badge.textContent = '🏆 VERIFIED CHALLENGE'; badge.className = 'ch-badge'; }
+    if (badge) { badge.innerHTML = icoSpan('trophy') + ' VERIFIED CHALLENGE'; badge.className = 'ch-badge'; }
     if (msg) msg.textContent = `🔥 ${ch.name} challenges you${tStr ? ' to beat ' + tStr : ''} on ${M}!`;
     if (note) note.textContent = 'Official Supabase challenge • Win to claim rating & record';
   } else {
-    if (badge) { badge.textContent = '🔥 PERSONAL CHALLENGE'; badge.className = 'ch-badge unverified'; }
+    if (badge) { badge.innerHTML = icoSpan('flame') + ' PERSONAL CHALLENGE'; badge.className = 'ch-badge unverified'; }
     if (msg) msg.textContent = `⚔️ ${ch.name} wants you to beat ${tStr || 'their time'} on ${M}`;
     if (note) note.textContent = 'Personal challenge • Not a verified leaderboard result';
   }
@@ -3274,7 +3275,7 @@ function openFriends() {
     const inch = await sbGet('/rest/v1/challenges?to_uid=eq.' + uid + '&status=eq.open&select=id,from_name,map,target_ms,created_at', tok);
     const live = (inch || []).filter((x) => new Date(x.created_at).getTime() > week);
     if (live.length) {
-      html += '<div class="p-sub">⚔️ CHALLENGES FOR YOU</div>';
+      html += '<div class="p-sub">' + icoSpan('swords') + ' CHALLENGES FOR YOU</div>';
       live.forEach((x) => {
         html += '<div class="f-item"><span>🔥 ' + escapeHtml(x.from_name) + ' · ' + escapeHtml(((CORE.MAPS[x.map] || {}).name || 'CIRCUIT')) + (x.target_ms ? ' · beat ' + fmtTime(x.target_ms / 1000) : '') + '</span><span><button class="ghost sm ch-acc" data-id="' + x.id + '">✔</button> <button class="ghost sm ch-rej" data-id="' + x.id + '">✖</button></span></div>';
       });
@@ -3350,7 +3351,7 @@ function renderRoomLobby(e) {
   }).join('') +
     (ps.length < (e.cap || 6) ? '<div class="rp-row empty"><span class="rp-slot">·</span><span class="rp-name dim">' + ((typeof tI18n === 'function' ? tI18n('openSlot') : null) || 'open slot — share the code') + '</span></div>' : '');
   const rb = $('ready-btn');
-  if (rb) { rb.hidden = ps.length < 3; rb.textContent = iAmReady ? ('✅ ' + ((typeof tI18n === 'function' ? tI18n('ready') : null) || 'READY')) : ('🏁 ' + ((typeof tI18n === 'function' ? tI18n('readyUp') : null) || 'READY UP')); }
+  if (rb) { rb.hidden = ps.length < 3; setIcoIcon(rb, iAmReady ? 'check' : 'race-flag'); setIcoLabel(rb, iAmReady ? ((typeof tI18n === 'function' ? tI18n('ready') : null) || 'READY') : ((typeof tI18n === 'function' ? tI18n('readyUp') : null) || 'READY UP')); }
 }
 window.renderRoomLobby = renderRoomLobby;
 // v73 wiring: profile / ratings access points
@@ -3801,7 +3802,7 @@ function showResults(order) {
   });
   // v141: textContent escapes by itself - escapeHtml() here printed the raw entity
   // ("O&#39;Brien") for any name containing & < > or an apostrophe
-  $('results-title').textContent = winner ? `🏁 ${winner.name || ('PLAYER ' + winner.slot)} WINS!` : '🏁 RACE RESULTS';
+  setIcoLabel($('results-title'), winner ? `${winner.name || ('PLAYER ' + winner.slot)} WINS!` : 'RACE RESULTS');
   // Podium celebration & fanfare
   const myRes = order.find((c) => (c.slot || c.s) === mySlot);
   if (myRes) {
@@ -3826,7 +3827,7 @@ function showResults(order) {
       const rows3 = window.__lbRows || [];
       const boardRank = rows3.findIndex((r) => r.pid && r.pid === prefs.pid) + 1;
       const riv = p.rival;
-      rs.innerHTML = '🏁 P' + pos + ' · ' + (my.finished ? fmtTime(my.t) : 'DNF') +
+      rs.innerHTML = icoSpan('race-flag') + ' P' + pos + ' · ' + (my.finished ? fmtTime(my.t) : 'DNF') +
         (my.best != null ? ' · ⚡ lap ' + fmtTime(my.best) : '') +
         (pb3 != null ? ' · PB ' + fmtTime(pb3) : '') +
         (riv && riv.t != null && my.t != null ? ' · rival ' + (my.t - riv.t >= 0 ? '+' : '') + (my.t - riv.t).toFixed(2) + 's' : '') +
@@ -3840,7 +3841,7 @@ function showResults(order) {
     if (f.length >= 2 && f[0].t != null && f[1].t != null && (f[1].t - f[0].t) <= 0.60) {
       const margin = f[1].t - f[0].t;
       pf.hidden = false;
-      pf.innerHTML = '⚡ PHOTO FINISH — ' + escapeHtml(f[0].name || 'P' + f[0].slot) + ' ' + fmtTime(f[0].t) + ' vs ' + escapeHtml(f[1].name || 'P' + f[1].slot) + ' ' + fmtTime(f[1].t) + ' · margin <b>+' + margin.toFixed(3) + 's</b>';
+      pf.innerHTML = icoSpan('bolt', 'ico-amber') + ' PHOTO FINISH — ' + escapeHtml(f[0].name || 'P' + f[0].slot) + ' ' + fmtTime(f[0].t) + ' vs ' + escapeHtml(f[1].name || 'P' + f[1].slot) + ' ' + fmtTime(f[1].t) + ' · margin <b>+' + margin.toFixed(3) + 's</b>';
       triggerPhotoFinish(margin, f[0].name || 'P' + f[0].slot, f[1].name || 'P' + f[1].slot);
     } else pf.hidden = true;
   }
@@ -3901,12 +3902,12 @@ function showResults(order) {
     const row = (pendingSettle || []).find((r) => r.slot === mySlot);
     if (row && row.overtakenRival) {
       rivCard.hidden = false;
-      const rTag = $('res-rival-tag'); if (rTag) rTag.textContent = '🎉 RIVAL OVERTAKEN!';
+      const rTag = $('res-rival-tag'); if (rTag) rTag.innerHTML = icoSpan('trophy') + ' RIVAL OVERTAKEN!';
       const rGap = $('res-rival-gap'); if (rGap) rGap.textContent = `+#${row.rankDelta || 1} RANKS`;
       const rTxt = $('res-rival-text'); if (rTxt) rTxt.textContent = `You overtook ${row.overtakenRival.rivalName} (#${row.overtakenRival.previousRivalRank}) on the global ladder!`;
     } else if (row && row.rankAfter) {
       rivCard.hidden = false;
-      const rTag = $('res-rival-tag'); if (rTag) rTag.textContent = '⚔️ CURRENT STANDING';
+      const rTag = $('res-rival-tag'); if (rTag) rTag.innerHTML = icoSpan('swords') + ' CURRENT STANDING';
       const rGap = $('res-rival-gap'); if (rGap) rGap.textContent = `#${row.rankAfter}`;
       const rTxt = $('res-rival-text'); if (rTxt) rTxt.textContent = `Rating: ${row.ratingNew} (${row.rd >= 0 ? '+' : ''}${row.rd}) · Global Rank #${row.rankAfter}`;
     } else {
@@ -3927,7 +3928,7 @@ function showResults(order) {
       const gTxtEl = $('res-ghost-text');
       if (delta < 0) {
         if (gDeltaEl) gDeltaEl.textContent = `${Math.abs(delta).toFixed(2)}s FASTER`;
-        if (gTxtEl) gTxtEl.textContent = `⚡ Personal Best smashed! New circuit record: ${fmtTime(myRow.t)}`;
+        if (gTxtEl) gTxtEl.innerHTML = icoSpan('bolt', 'ico-amber') + ` Personal Best smashed! New circuit record: ${fmtTime(myRow.t)}`;
       } else {
         if (gDeltaEl) gDeltaEl.textContent = `+${delta.toFixed(2)}s vs PB`;
         if (gTxtEl) gTxtEl.textContent = `Ghost target: ${fmtTime(pb)} · You were ${delta.toFixed(2)}s off your best.`;
@@ -3966,12 +3967,12 @@ function showResults(order) {
     if (row && (row.streak || (row.divisionChange && row.divisionChange.changed))) {
       strRow.hidden = false;
       const sPill = $('res-streak-pill');
-      if (sPill) sPill.textContent = `🔥 ${row.streak || 1}-Day Streak`;
+      if (sPill) sPill.innerHTML = icoSpan('flame', 'ico-flame') + ` ${row.streak || 1}-Day Streak`;
       const pPill = $('res-promo-pill');
       if (pPill) {
         if (row.divisionChange && row.divisionChange.promoted) {
           pPill.hidden = false;
-          pPill.textContent = `🎖️ PROMOTED TO ${row.divisionChange.toTier.toUpperCase()}!`;
+          pPill.innerHTML = icoSpan('medal') + ` PROMOTED TO ${row.divisionChange.toTier.toUpperCase()}!`;
         } else {
           pPill.hidden = true;
         }
@@ -3987,12 +3988,12 @@ function showResults(order) {
     const row = (pendingSettle || []).find((r) => r.slot === mySlot);
     if (row && row.revengeAwarded) {
       revResCard.hidden = false;
-      const rTag = $('res-revenge-tag'); if (rTag) rTag.textContent = '🎉 REVENGE VICTORY!';
-      const rBadge = $('res-revenge-badge'); if (rBadge) rBadge.textContent = `+${row.revengeAwarded.xpBonus} XP · +${row.revengeAwarded.coinsBonus} 🪙`;
+      const rTag = $('res-revenge-tag'); if (rTag) rTag.innerHTML = icoSpan('trophy') + ' REVENGE VICTORY!';
+      const rBadge = $('res-revenge-badge'); if (rBadge) rBadge.innerHTML = `+${row.revengeAwarded.xpBonus} XP · +${row.revengeAwarded.coinsBonus}` + icoSpan('coin', 'ico-amber');
       const rTxt = $('res-revenge-text'); if (rTxt) rTxt.textContent = 'You defeated your rival and claimed the +50% Revenge Bounty!';
     } else if (row && row.pos > 1 && order.length > 1 && (!latest || !latest.bot)) {
       revResCard.hidden = false;
-      const rTag = $('res-revenge-tag'); if (rTag) rTag.textContent = '⚔️ REVENGE OPPORTUNITY';
+      const rTag = $('res-revenge-tag'); if (rTag) rTag.innerHTML = icoSpan('swords') + ' REVENGE OPPORTUNITY';
       const rBadge = $('res-revenge-badge'); if (rBadge) rBadge.textContent = '+50% BOUNTY';
       const rivalName = (order[0] && order[0].name) ? order[0].name : 'your rival';
       const rTxt = $('res-revenge-text'); if (rTxt) rTxt.textContent = `Defeated by ${rivalName}. Instant rematch to claim Revenge Bounty!`;
@@ -4029,7 +4030,7 @@ function showResults(order) {
     const row = (pendingSettle || []).find((r) => r.slot === mySlot);
     if (row && row.crew) {
       crewResCard.hidden = false;
-      const cTag = $('res-crew-tag'); if (cTag) cTag.textContent = `🏁 [${row.crew.tag}] SYNDICATE MILEAGE`;
+      const cTag = $('res-crew-tag'); if (cTag) cTag.innerHTML = icoSpan('race-flag') + ` [${row.crew.tag}] SYNDICATE MILEAGE`;
       const cContrib = $('res-crew-contrib'); if (cContrib) cContrib.textContent = `+${row.crew.contribMeters}m / +${row.crew.contribPoints} PTS`;
       const cTxt = $('res-crew-text'); if (cTxt) cTxt.textContent = `Contributed +${row.crew.contribMeters}m (+${row.crew.contribPoints} Pts) to ${row.crew.name} weekly pool! Total: ${row.crew.totalWeeklyKm} km.`;
     } else {
@@ -4044,7 +4045,7 @@ function showResults(order) {
     if (row) {
       rwdCard.hidden = false;
       const xpVal = $('rb-xp-val'); if (xpVal) xpVal.textContent = `+${row.xp || 50} XP`;
-      const coinVal = $('rb-coins-val'); if (coinVal) coinVal.textContent = `🪙 +${row.coins || 10}`;
+      const coinVal = $('rb-coins-val'); if (coinVal) coinVal.innerHTML = icoSpan('coin', 'ico-amber') + ` +${row.coins || 10}`;
       if (window.SRProg && row.levelNew) {
         const lvlInfo = SRProg.levelFromXp((Pget ? Pget().xp : 0) + (row.xp || 50));
         const lvlLbl = $('rb-level-lbl'); if (lvlLbl) lvlLbl.textContent = `LEVEL ${lvlInfo.level}`;
@@ -4069,7 +4070,7 @@ function showResults(order) {
       if (pb == null || myRow.t < pb) {
         try { localStorage.setItem('sr_best_' + mapId, JSON.stringify(myRow.t)); } catch (e) {}
         const d = document.createElement('div'); d.className = 'pb-note';
-        d.textContent = '🎉 PERSONAL BEST on ' + ((CORE.MAPS[mapId] || {}).name || 'track') + '!';
+        d.innerHTML = icoSpan('trophy') + ' PERSONAL BEST on ' + ((CORE.MAPS[mapId] || {}).name || 'track') + '!';
         rows.appendChild(d);
       }
       if (dailyInfoCache && dailyInfoCache.map === mapId) {
@@ -4083,7 +4084,7 @@ function showResults(order) {
     const v60 = v60OnResults(order, mapId);
     const podEl = $('podium-line');
     if (podEl) {
-      if (v60 && v60.won) { podEl.hidden = false; podEl.textContent = '🏆 YOU WIN! · 1ST PLACE' + (v60.streak >= 2 ? ' · 🔥 streak ' + v60.streak : ''); }
+      if (v60 && v60.won) { podEl.hidden = false; podEl.innerHTML = icoSpan('trophy', 'ico-amber') + ' YOU WIN! · 1ST PLACE' + (v60.streak >= 2 ? ' · ' + icoSpan('flame', 'ico-flame') + ' streak ' + v60.streak : ''); }
       else podEl.hidden = true;
     }
     const moEl = $('motiv-line');
@@ -4152,7 +4153,7 @@ function renderLeaderboard(snap) {
       const below = rows.filter((r) => r.t > myBest);
       const chaser = below.length ? below[0] : null;
       if (target) lm.textContent = 'YOU ' + (myRank > 0 ? '#' + myRank : '') + ' · BEAT ' + target.name + ' by ' + (myBest - target.t).toFixed(2) + 's' + (chaser ? ' · ' + chaser.name + ' is ' + (chaser.t - myBest).toFixed(2) + 's behind YOU' : '');
-      else lm.textContent = myRank === 1 ? '👑 YOU LEAD THIS BOARD' : 'YOU ' + (myRank > 0 ? '#' + myRank : '#' + (rows.length + 1)) + ' — set a faster lap to climb!';
+      else lm.innerHTML = myRank === 1 ? (icoSpan('crown') + ' YOU LEAD THIS BOARD') : 'YOU ' + (myRank > 0 ? '#' + myRank : '#' + (rows.length + 1)) + ' — set a faster lap to climb!';
     } else lm.textContent = '';
   }
   if (snap.lb) window.__lbRows = snap.lb;
@@ -4174,6 +4175,31 @@ function renderLeaderboard(snap) {
     return `<div class="lb-row${me ? ' me' : ''}"><span class="lb-pos">${i + 1}</span><span class="lb-name">${escapeHtml(r.name)}${me ? ' ★' : ''}</span><span class="lb-time">${fmtTime(r.t)}</span></div>`;
   }).join('');
 }
+/* ---- v149: chrome labels keep their icon ----------------------------------
+   The chrome markup now carries a real icon span plus a label span. Code that
+   overwrote a whole element with an emoji + name deleted that icon span and put
+   an emoji back on screen, which is why the UI still looked emoji-driven even
+   after the markup was cleaned up. These helpers only touch the label, and can
+   swap the icon itself when the state changes (searching -> found).
+   Toasts, share text and the turtle/rabbit sensitivity ends keep their emoji on
+   purpose - those are sentences, not chrome. */
+function icoSpan(name, tone) {
+  return '<span class="ico ' + (tone || '') + '" data-i="' + name + '" aria-hidden="true"></span>';
+}
+function setIcoLabel(el, text) {
+  if (!el) return;
+  const lbl = el.querySelector('.lbl') || el.querySelector('[data-i18n]');
+  if (lbl) lbl.textContent = text; else el.textContent = text;
+}
+function setIcoIcon(el, name) {
+  const i = el && el.querySelector('.ico');
+  if (i) i.setAttribute('data-i', name);
+}
+function setIcoTone(el, tone) {
+  const i = el && el.querySelector('.ico');
+  if (i) i.className = 'ico' + (tone ? ' ' + tone : '');
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -4434,7 +4460,7 @@ async function fetchAndRenderRetention() {
       const sBadge = $('lcomp-streak-badge');
       if (sBadge) sBadge.textContent = `DAY ${strRes.currentStreak || 1}`;
       const sTxt = $('lcomp-streak-txt');
-      if (sTxt) sTxt.textContent = strRes.racedToday ? '🔥 Streak maintained today!' : '🏁 Race today to maintain streak';
+      if (sTxt) sTxt.innerHTML = strRes.racedToday ? (icoSpan('flame', 'ico-flame') + ' Streak maintained today!') : (icoSpan('race-flag') + ' Race today to maintain streak');
       const sMs = $('lcomp-streak-milestone');
       if (sMs && strRes.milestoneInfo) {
         sMs.textContent = strRes.milestoneInfo.nextMilestone ? `Next: ${strRes.milestoneInfo.nextMilestone}-Day Milestone (+${strRes.milestoneInfo.rewardXp} XP)` : 'Max milestone achieved!';
@@ -4444,7 +4470,7 @@ async function fetchAndRenderRetention() {
     // 4. Season info
     if (seaRes && seaRes.ok && seaRes.season) {
       const sBtn = $('lobby-season-btn');
-      if (sBtn) sBtn.textContent = `🏆 S${seaRes.season.seasonId} LADDER`;
+      if (sBtn) setIcoLabel(sBtn, `S${seaRes.season.seasonId} LADDER`);
     }
   } catch (e) {
   } finally {
@@ -4854,10 +4880,10 @@ window.handleCreateCrewSubmit = async function(e) {
     } else {
       const errEl = $('cf-err');
       if (errEl) {
-        if (res.error === 'tag_taken') errEl.textContent = '❌ Club Tag is already taken by another syndicate!';
-        else if (res.error === 'invalid_crew_name') errEl.textContent = '❌ Club Name must be 3-30 characters (letters, numbers, spaces, and punctuation)!';
-        else if (res.error === 'invalid_crew_tag') errEl.textContent = '❌ Club Tag must be 2-5 letters/numbers (e.g. APEX, F1, SPEED)!';
-        else errEl.textContent = '❌ ' + (res.error || 'Validation error');
+        if (res.error === 'tag_taken') errEl.innerHTML = icoSpan('x', 'ico-red') + ' Club Tag is already taken by another syndicate!';
+        else if (res.error === 'invalid_crew_name') errEl.innerHTML = icoSpan('x', 'ico-red') + ' Club Name must be 3-30 characters (letters, numbers, spaces, and punctuation)!';
+        else if (res.error === 'invalid_crew_tag') errEl.innerHTML = icoSpan('x', 'ico-red') + ' Club Tag must be 2-5 letters/numbers (e.g. APEX, F1, SPEED)!';
+        else errEl.innerHTML = icoSpan('x', 'ico-red') + ' ' + (res.error || 'Validation error');
       }
     }
   } catch (e) {
@@ -4891,7 +4917,7 @@ if (ghostToggleBtn) {
       record: '👑 GHOST: RECORD',
       off: '🚫 GHOST: OFF'
     };
-    ghostToggleBtn.textContent = labels[mode] || '👻 GHOST: PB';
+    setIcoLabel(ghostToggleBtn, labels[mode] || 'GHOST: PB');
     toast(`Ghost target set to: ${mode.toUpperCase()}`);
   });
 }
@@ -4908,7 +4934,7 @@ function paintDailyHeader() {
   const box = $('daily-box'); if (!box || !dailyInfoCache) return;
   const M = CORE.MAPS[dailyInfoCache.map];
   box.hidden = false;
-  $('daily-title').textContent = (tI18n('daily') || '📅 DAILY CHALLENGE') + ' — ' + (M ? M.name : 'CIRCUIT');
+  setIcoLabel($('daily-title'), (tI18n('daily') || 'DAILY CHALLENGE') + ' — ' + (M ? M.name : 'CIRCUIT'));
   const b = $('daily-play'); if (b) b.onclick = () => net.send({ type: 'map', map: dailyInfoCache.map });
   const ds = $('daily-share'); if (ds) ds.onclick = () => { track('share', dailyInfoCache && dailyInfoCache.map, { channel: 'daily' }); const top = (dailyRowsCache || [])[0]; const msg = `📅 DAILY CHALLENGE — ${(CORE.MAPS[dailyInfoCache.map] || {}).name || ''}\n🎯 ${top ? 'Target ' + fmtTime(top.t) : 'No time yet'}\nBeat it: ${location.origin}/`; if (navigator.share) navigator.share({ text: msg }).catch(() => {}); else { copyText(msg); toast('Daily challenge copied!'); } };
 }
@@ -4923,13 +4949,13 @@ function renderDailyBoard(rows) {
   const meta = $('daily-meta'); // v59 target / your time / rank / % behind
   if (meta) {
     const me = rows.find((r) => r.pid && prefs.pid && r.pid === prefs.pid) || rows.find((r) => r.name === prefs.name);
-    if (!me) meta.textContent = '🎯 Target ' + fmtTime(rows[0].t) + ' · No time yet — race now!';
+    if (!me) meta.innerHTML = icoSpan('target') + ' Target ' + fmtTime(rows[0].t) + ' · No time yet — race now!';
     else {
       const gap = ((me.t - rows[0].t) / Math.max(0.001, rows[0].t)) * 100;
       meta.textContent = '🎯 Target ' + fmtTime(rows[0].t) + ' · You #' + (rows.indexOf(me) + 1) + ' ' + fmtTime(me.t) + (rows.indexOf(me) === 0 ? ' 👑' : ' (+' + gap.toFixed(1) + '%)');
     }
-    meta.textContent += ' · 🎁 +150 XP first finish · ⏳ ' + utcResetCountdown();
-  } else if (meta) meta.textContent += ' · 🎁 +150 XP first finish · ⏳ ' + utcResetCountdown();
+    meta.innerHTML += ' · ' + icoSpan('gift') + ' +150 XP first finish · ' + icoSpan('hourglass') + ' ' + utcResetCountdown();
+  } else if (meta) meta.innerHTML += ' · ' + icoSpan('gift') + ' +150 XP first finish · ' + icoSpan('hourglass') + ' ' + utcResetCountdown();
 }
 function utcResetCountdown() {
   const now = new Date();
@@ -5082,7 +5108,7 @@ function fillMapMeta() {
     const best = p.bestRace[m];
     const bl = p.bestLap && p.bestLap[m];
     let lastT = null; try { lastT = JSON.parse(localStorage.getItem('sr_last_' + m) || 'null'); } catch (e) {}
-    el.textContent = '⭐'.repeat(MAP_DIFF[m] || 1) + (best != null ? ' · 🏁 ' + fmtTime(best) : ' · no time yet') + (bl != null ? ' · ⚡ ' + fmtTime(bl) : '') + (lastT != null ? ' · LAST ' + fmtTime(lastT) : '') + ' · ' + (p.maps[m] || 0) + ' races · ⏱️ TT · 🎮 ALL MODES';
+    el.innerHTML = icoSpan('star', 'ico-amber').repeat(MAP_DIFF[m] || 1) + (best != null ? ' · 🏁 ' + fmtTime(best) : ' · no time yet') + (bl != null ? ' · ⚡ ' + fmtTime(bl) : '') + (lastT != null ? ' · LAST ' + fmtTime(lastT) : '') + ' · ' + (p.maps[m] || 0) + ' races · ⏱️ TT · 🎮 ALL MODES';
   });
 }
 function renderProfile() {
@@ -5112,7 +5138,7 @@ function renderProfile() {
   if (wk) {
     if (p.week && p.week.races > 0) {
       wk.hidden = false;
-      $('weekly-txt').innerHTML = '🏁 ' + p.week.races + ' races · 🏆 ' + p.week.wins + ' wins' + (p.week.best != null ? ' · ⚡ best ' + fmtTime(p.week.best) : '') + ' · 🏅 ' + Object.keys(p.ach).length + '/' + ACHV.length;
+      $('weekly-txt').innerHTML = icoSpan('race-flag') + ' ' + p.week.races + ' races · ' + icoSpan('trophy') + ' ' + p.week.wins + ' wins' + (p.week.best != null ? ' · ' + icoSpan('bolt', 'ico-amber') + ' best ' + fmtTime(p.week.best) : '') + ' · ' + icoSpan('medal') + ' ' + Object.keys(p.ach).length + '/' + ACHV.length;
     } else wk.hidden = true;
   }
   // rival (from cached leaderboard rows when available)
@@ -5133,7 +5159,7 @@ function renderProfile() {
   if (wb && p.last && Date.now() - p.last > 12 * 3600 * 1000 && !window.__wbShown) {
     window.__wbShown = true;
     wb.hidden = false;
-    wb.textContent = '👋 WELCOME BACK! ' + (p.rival ? 'Rival ' + p.rival.name + ' is ' + (p.rival.t != null ? fmtTime(p.rival.t) : '') + ' · ' : '') + 'Streak ' + p.streak + ' · Daily challenge available!';
+    wb.innerHTML = icoSpan('sparkle') + ' WELCOME BACK! ' + (p.rival ? 'Rival ' + p.rival.name + ' is ' + (p.rival.t != null ? fmtTime(p.rival.t) : '') + ' · ' : '') + 'Streak ' + p.streak + ' · Daily challenge available!';
   }
 }
 function renderRival(p) {
@@ -5241,7 +5267,7 @@ function applyI18n() {
     const s = tI18n(el.getAttribute('data-i18n-title'));
     if (s) el.title = s;
   });
-  const lb = $('lang-btn'); if (lb) lb.textContent = '🌐 ' + ((window.SRI18N_LABEL && window.SRI18N_LABEL[prefs.lang]) || (prefs.lang || 'EN').toUpperCase());
+  const lb = $('lang-btn'); if (lb) setIcoLabel(lb, (window.SRI18N_LABEL && window.SRI18N_LABEL[prefs.lang]) || (prefs.lang || 'EN').toUpperCase());
   paintDailyHeader();
   if (typeof renderProfile === 'function') renderProfile();
   if (typeof fetchAndRenderRetention === 'function') fetchAndRenderRetention();
@@ -5300,7 +5326,7 @@ function updateStreak() {
   const el = $('streak-badge'); if (!el) return;
   let days = []; try { days = JSON.parse(localStorage.getItem('sr_days') || '[]'); } catch (e) {}
   const n = computeStreak(days, new Date().toISOString().slice(0, 10));
-  if (n >= 2) { el.hidden = false; el.textContent = '🔥' + n; el.title = n + ' day streak'; }
+  if (n >= 2) { el.hidden = false; el.innerHTML = icoSpan('flame', 'ico-flame') + n; el.title = n + ' day streak'; }
   else el.hidden = true;
 }
 function recordPlayDay() {
@@ -5488,7 +5514,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v148';
+const BUILD = 'v149';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -5539,7 +5565,7 @@ const net = new RoomLink({
       applyMyColor();
       const gl = $('game-link'); if (gl) gl.textContent = 'Click CREATE or SET UP RACE to generate room link';
       const cu = $('ctrl-url'); if (cu) cu.textContent = 'Create a room to connect phone controller';
-      const qb = $('quickplay-btn'); if (qb) { qb.disabled = false; qb.textContent = '⚡ QUICK PLAY — find a rival'; }
+      const qb = $('quickplay-btn'); if (qb) { qb.disabled = false; setIcoIcon(qb, 'bolt'); setIcoLabel(qb, 'QUICK PLAY — find a rival'); }
       return;
     }
     mySlot = msg.slot; roomCode = msg.code;
@@ -5560,7 +5586,7 @@ const net = new RoomLink({
     if (ctrlUrlEl) ctrlUrlEl.textContent = phoneLink;
     drawQR(phoneLink);
     const qb = $('quickplay-btn');
-    if (qb) { qb.disabled = false; qb.textContent = '⚡ QUICK PLAY — find a rival'; }
+    if (qb) { qb.disabled = false; setIcoIcon(qb, 'bolt'); setIcoLabel(qb, 'QUICK PLAY — find a rival'); }
     if (msg.snapshot) ingestSnapshot(msg.snapshot);
   },
   onMessage(msg) {
@@ -5602,12 +5628,12 @@ const net = new RoomLink({
       }
       case 'searching': {
         const b = $('quickplay-btn');
-        if (b) { b.disabled = true; b.textContent = '🔎 Searching for a rival…'; }
+        if (b) { b.disabled = true; setIcoIcon(b, 'search'); setIcoLabel(b, 'SEARCHING FOR A RIVAL…'); }
         break;
       }
       case 'matched': {
         const b = $('quickplay-btn');
-        if (b) { b.disabled = false; b.textContent = '⚡ QUICK PLAY — find a rival'; }
+        if (b) { b.disabled = false; setIcoIcon(b, 'bolt'); setIcoLabel(b, 'QUICK PLAY — find a rival'); }
         toast('⚡ Match found!');
         break;
       }
@@ -5648,7 +5674,7 @@ const net = new RoomLink({
   },
   onStatus(s) {
     setNetBanner(s === 'connected');
-    $('lobby-conn').textContent = s === 'connected' ? '🟢 connected' : (s === 'connecting' ? '🟡 connecting…' : '🔴 reconnecting…');
+    const lc = $('lobby-conn'); setIcoTone(lc, s === 'connected' ? 'ico-green' : (s === 'connecting' ? 'ico-amber' : 'ico-red')); setIcoLabel(lc, s === 'connected' ? 'connected' : (s === 'connecting' ? 'connecting…' : 'reconnecting…'));
   }
 });
 setInterval(() => { if (net.isOpen()) net.send({ type: 'ping', t: performance.now() }); }, 2000);
@@ -5676,7 +5702,7 @@ function sendHello() {
     net.connect(Object.assign({ type: 'hello', role: 'spec', room: SPEC_ROOM }, identityPayload()));
     document.body.classList.add('spec');
     const chip = document.createElement('div'); chip.id = 'spec-chip';
-    chip.innerHTML = '👁️ SPECTATING · <button id="spec-leave">LEAVE</button>';
+    chip.innerHTML = icoSpan('eye') + ' SPECTATING · <button id="spec-leave">LEAVE</button>';
     document.body.appendChild(chip);
     setTimeout(() => { const b = $('spec-leave'); if (b) b.addEventListener('click', () => { location.href = '/'; }); }, 0);
     return;
@@ -5775,13 +5801,13 @@ sendHello();
 const qpBtn = $('quickplay-btn');
 if (qpBtn) qpBtn.addEventListener('click', () => {
   if (!net.isOpen()) return;
-  qpBtn.disabled = true; qpBtn.textContent = '🔎 Searching…';
+  qpBtn.disabled = true; setIcoIcon(qpBtn, 'search'); setIcoLabel(qpBtn, 'SEARCHING…');
   net.send({ type: 'matchmake' });
   setTimeout(() => { // v59: never leave players stuck searching
     if (qpBtn.disabled && latest && latest.state === 'waiting') {
       toast('No rival found — racing AI 🤖');
       net.send(startPayload()); // v93 carries the chosen track + identity
-      qpBtn.disabled = false; qpBtn.textContent = '⚡ QUICK PLAY — find a rival';
+      qpBtn.disabled = false; setIcoIcon(qpBtn, 'bolt'); setIcoLabel(qpBtn, 'QUICK PLAY — find a rival');
     }
   }, 8000);
 });
@@ -7087,7 +7113,7 @@ function renderCompetitiveDailyBoard(data, container) {
   const rows = data.leaderboard || [];
   if (!rows.length) { container.innerHTML = `<div class="lb-empty">No daily times today on ${data.mapName || 'circuit'} — be the first!</div>`; return; }
 
-  container.innerHTML = `<div class="daily-meta" style="margin-bottom:6px">📅 ${data.mapName || 'DAILY'} · ⏳ Ends in ${data.endsInFormatted || ''} · 🎁 +150 XP</div>` +
+  container.innerHTML = `<div class="daily-meta" style="margin-bottom:6px">${icoSpan('calendar')} ${data.mapName || 'DAILY'} · ⏳ Ends in ${data.endsInFormatted || ''} · 🎁 +150 XP</div>` +
     rows.map((r) => {
       const isMe = data.userEntry && data.userEntry.rank === r.rank;
       return `<div class="lb-row${isMe ? ' me' : ''}">` +
@@ -7103,7 +7129,7 @@ function renderCompetitiveWeeklyBoard(data, container) {
   const rows = data.leaderboard || [];
   if (!rows.length) { container.innerHTML = `<div class="lb-empty">Founders Cup in progress — race to earn points!</div>`; return; }
 
-  container.innerHTML = `<div class="daily-meta" style="margin-bottom:6px">🏆 FOUNDERS CUP (${data.weekKey || 'THIS WEEK'}) · ⏳ Ends in ${data.endsInFormatted || ''}</div>` +
+  container.innerHTML = `<div class="daily-meta" style="margin-bottom:6px">${icoSpan('trophy')} FOUNDERS CUP (${data.weekKey || 'THIS WEEK'}) · ⏳ Ends in ${data.endsInFormatted || ''}</div>` +
     rows.map((r) => {
       const isMe = data.userEntry && data.userEntry.rank === r.rank;
       return `<div class="lb-row${isMe ? ' me' : ''}">` +

@@ -9,13 +9,13 @@
   <meta name="theme-color" content="#05070c"/>
   <meta name="description" content="Wireless joystick for Sridhar Rush — steer, throttle, nitro and drift from your phone."/>
   <link rel="manifest" href="manifest-controller.webmanifest"/>
-  <link rel="apple-touch-icon" href="icon.svg"/>
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png"/>
   <title>Sridhar Rush — Controller</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕹️</text></svg>"/>
+  <link rel="icon" href="icon.svg" type="image/svg+xml"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap"/>
-  <link rel="stylesheet" href="css/controller.css?v=87"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap"/>
+  <link rel="stylesheet" href="css/controller.css?v=149"/>
 </head>
 <body data-player="p0">
   <script>
@@ -35,11 +35,11 @@
     </div>
     <div id="top-right">
       <span id="lat-badge" class="pill" hidden></span>
-      <button id="reconnect-btn" class="tool" hidden title="Reconnect">🔄</button>
+      <button id="reconnect-btn" class="tool" hidden title="Reconnect"><span class="ico" data-i="refresh-cw" aria-hidden="true"></span></button>
       <div id="player-label" style="display:none">PLAYER 1</div>
-      <a id="btn-screen-mode" class="tool" title="Play on Screen" style="text-decoration:none;display:inline-flex;align-items:center;padding:2px 8px;font-size:11px;background:rgba(255,255,255,0.12);border-radius:4px;color:#fff;font-weight:700;">🖥️ SCREEN</a>
-      <button id="btn-vib" class="tool" title="Vibration on/off">📳</button>
-      <button id="btn-full" class="tool" title="Fullscreen + landscape lock">⛶</button>
+      <a id="btn-screen-mode" class="tool" title="Play on Screen" style="text-decoration:none;display:inline-flex;align-items:center;padding:2px 8px;font-size:11px;background:rgba(255,255,255,0.12);border-radius:4px;color:#fff;font-weight:700;"><span class="ico" data-i="monitor" aria-hidden="true"></span>SCREEN</a>
+      <button id="btn-vib" class="tool" title="Vibration on/off"><span class="ico" data-i="vibrate" aria-hidden="true"></span></button>
+      <button id="btn-full" class="tool" title="Fullscreen + landscape lock"><span class="ico" data-i="fullscreen" aria-hidden="true"></span></button>
     </div>
   </div>
 
@@ -50,7 +50,7 @@
     </div>
 
     <div id="buttons">
-      <button id="btn-nitro" class="btn nitro" data-i18n="ctrlNitro">🔥 NITRO</button>
+      <button id="btn-nitro" class="btn nitro"><span class="ico ico-flame" data-i="flame" aria-hidden="true"></span><span data-i18n="ctrlNitro">NITRO</span></button>
       <button id="btn-hb" class="btn big" data-i18n="ctrlDrift">DRIFT</button>
       <div class="btn-row">
         <button id="btn-gyro" class="btn sm" data-i18n="ctrlGyro">GYRO</button>
@@ -69,12 +69,12 @@
   <div id="phone-banner"></div>
 
   <div id="ctrl-rematch-wrap" style="display:none">
-    <button id="ctrl-rematch-btn" class="ctrl-rematch-btn" data-i18n="ctrlRematch">🔁 REMATCH NOW</button>
+    <button id="ctrl-rematch-btn" class="ctrl-rematch-btn"><span class="ico" data-i="refresh" aria-hidden="true"></span><span data-i18n="ctrlRematch">REMATCH NOW</span></button>
   </div>
 
   <div id="join-screen" style="display:none">
     <div id="join-card">
-      <h2 data-i18n="ctrlJoinTitle">🕹️ JOIN A RACE</h2>
+      <h2><span class="ico" data-i="gamepad" aria-hidden="true"></span><span data-i18n="ctrlJoinTitle">JOIN A RACE</span></h2>
       <p data-i18n="ctrlJoinDesc">Enter the 5-letter room code shown on the laptop screen.</p>
       <input id="room-input" maxlength="5" placeholder="XXXXX" autocomplete="off" autocapitalize="characters"/>
       <button id="join-btn" data-i18n="ctrlJoinBtn">JOIN</button>
@@ -83,17 +83,17 @@
   </div>
 
   <div id="full-note" style="display:none">
-    <p>😕 All joystick slots are taken (up to 6 phones max).</p>
+    <p><span class="ico" data-i="ban" aria-hidden="true"></span>All joystick slots are taken (up to 6 phones max).</p>
     <p>Ask a player to close their controller page, then reload this one.</p>
   </div>
 
-  <div id="rotate-hint" data-i18n="ctrlRotate">🔄 Rotate your phone for the best layout</div>
-  <div id="ios-hint" hidden>📱 iPhone tip: tap <b>Share ⬆</b> then <b>“Add to Home Screen”</b> — instant joystick app! <button id="ios-hint-x" class="ghost sm">OK</button></div>
+  <div id="rotate-hint"><span class="ico" data-i="refresh-cw" aria-hidden="true"></span><span data-i18n="ctrlRotate">Rotate your phone for the best layout</span></div>
+  <div id="ios-hint" hidden><span class="ico" data-i="phone" aria-hidden="true"></span> iPhone tip: tap <b>Share <span class="ico" data-i="arrow-up" aria-hidden="true"></span></b> then <b>“Add to Home Screen”</b> — instant joystick app! <button id="ios-hint-x" class="ghost sm">OK</button></div>
 
   <script src="js/config.js"></script>
-  <script src="js/i18n.js?v=148"></script>
-  <script src="js/net.js?v=148"></script>
-  <script src="js/controller.js?v=148"></script>
+  <script src="js/i18n.js?v=149"></script>
+  <script src="js/net.js?v=149"></script>
+  <script src="js/controller.js?v=149"></script>
   <script>
   // PWA (v36): register service worker (makes the joystick installable on the phone)
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {

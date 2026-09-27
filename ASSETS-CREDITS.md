@@ -72,6 +72,49 @@ prompts exclude them explicitly).
 **No trademark clearance was performed** - same caveat as the wordmark, the car
 portraits and the weather art.
 
+## Icons — the generic half (Lucide, ISC)
+
+The chrome icons are a hybrid set. The identity icons (car, flag, helmet, nitro,
+speedometer, wheel, trophy, crown, swords, ghost, target, stopwatch, the weather
+symbols) are hand-authored for this project in `tools/icon-forge/make_icons.py` and
+are covered by the project's own copyright. The utility icons — gear, globe, user,
+chart, mute, plus, key, share, search, star and the rest — are **Lucide**
+(https://lucide.dev), which is released under the **ISC licence** (a permissive,
+MIT-equivalent licence that requires the copyright notice and permission notice to
+be retained). They are not copied as-is: `tools/icon-forge/lucide_icons.py`
+re-emits the same path geometry on this project's own 128-unit grid, with its own
+stroke weight and opacity, and every emitted file carries a provenance header.
+
+```
+ISC License
+
+Copyright (c) for portions of Lucide are held by Lucide Contributors 2022.
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+```
+
+The licence text above is reproduced in full because ISC requires it to travel with
+the work; the icon files themselves repeat the attribution in their header comment.
+
+### The app icon and the favicons
+
+`public/icon.svg` is drawn geometry (a shield and a road, from this project's own
+logo), not a font glyph — it replaced a `<text>` element that rendered whatever
+emoji the visitor's device happened to have. `public/img/icon-192.png`,
+`icon-512.png`, `icon-512-maskable.png` and `apple-touch-icon.png` are rendered from
+`public/img/logo.png` by `tools/icon-forge/make_app_icon.py` and the PIL pipeline in
+`tools/icon-forge/`. The maskable variant exists because Android crops maskable
+icons to a circle: pointing that entry at the same file as the "any" icon (which is
+what the manifest used to do) cut the artwork's edges off.
+
 ## Rejected candidate sources (licensing audit, 2026-09-22)
 
 - `Vivekkk-1/3D-Models` - owner disclaims ownership; Sketchfab rips of

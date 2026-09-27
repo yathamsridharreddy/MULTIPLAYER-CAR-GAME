@@ -155,7 +155,9 @@ describe('Lobby guest features survive a missing account SDK', () => {
     const at = HTML.indexOf('id="account-line"');
     assert.ok(at !== -1, 'the row exists');
     assert.match(HTML.slice(at - 60, at + 40), /hidden/, 'and it ships hidden, so JS must reveal it');
-    const row = HTML.slice(at, at + 900);
+    // slice to the row's own closing tag. A fixed width broke the moment the
+    // buttons gained icons - the row was fine, the window was just too small.
+    const row = HTML.slice(at, HTML.indexOf('</div>', HTML.indexOf('id="account-out"', at)));
     for (const id of ['crew-btn', 'badges-btn', 'bounties-btn', 'account-btn']) {
       assert.ok(row.includes('id="' + id + '"'), `${id} lives in the account row`);
     }

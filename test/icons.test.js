@@ -125,8 +125,14 @@ test('v142: the generated SVGs are well-formed, and mono icons are tintable', ()
   }
   for (const f of monoIcons) {
     const svg = fs.readFileSync(path.join(ROOT, MONO_DIR, f), 'utf8');
-    // a mask is painted entirely by CSS, so every shape must be currentColor
-    assert.match(svg, /fill="currentColor"/, `${f}: mono icons must use currentColor`);
+    // A mask is painted entirely by CSS, so the shape must take currentColor.
+    // Two families ship: the house icons are filled (fill="currentColor") and the
+    // Lucide-derived ones are stroked (stroke="currentColor"). Both are tintable;
+    // what must NEVER happen is a hardcoded colour in a mono icon.
+    assert.match(svg, /(?:fill|stroke)="currentColor"/,
+      `${f}: mono icons must take currentColor (fill or stroke)`);
+    assert.ok(!/(?:fill|stroke)="#[0-9a-f]{3,8}"/i.test(svg),
+      `${f}: a mono icon must not hardcode a paint colour - it is tinted by CSS`);
     assert.ok(!/url\(#/.test(svg), `${f}: mono icons must not reference gradients (a mask needs flat alpha)`);
   }
 });

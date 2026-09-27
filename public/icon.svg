@@ -1,4 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="20" fill="#05070c"/>
-  <text x="50" y="62" font-size="52" text-anchor="middle">🏎️</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="SRIDHAR RUSH">
+  <defs>
+    <linearGradient id="k" x1="24" y1="12" x2="104" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3fe7ff"/>
+      <stop offset="0.28" stop-color="#0a86c8"/>
+      <stop offset="0.62" stop-color="#0c2f57"/>
+      <stop offset="1" stop-color="#ff3a1f"/>
+    </linearGradient>
+    <linearGradient id="t" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#08111c"/>
+      <stop offset="1" stop-color="#0b1220"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="url(#t)"/>
+  <path d="M64 12 L104 30 L104 66 Q104 92 64 116 Q24 92 24 66 L24 30 Z" fill="none" stroke="url(#k)" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M46 92 C68 92 66 70 60 64 C54 58 82 58 84 34" fill="none" stroke="url(#k)" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="46" cy="92" r="3.4" fill="#7ceaff"/>
+  <circle cx="84" cy="34" r="3.4" fill="#ff6a4d"/>
 </svg>
