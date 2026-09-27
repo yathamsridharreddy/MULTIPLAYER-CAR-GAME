@@ -1458,37 +1458,17 @@ h1 span {
 /* Circuit Cards */
 .card-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  /* auto-FIT, not auto-fill: five circuits in a row that fits six tracks used to
+     leave an empty track on the right, so the row sat short of the panel edge */
+  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }
 
-.map-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: left;
-  overflow: hidden;
-}
-
-.map-card img {
-  width: 100%;
-  height: 90px;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  transition: transform 0.3s ease;
-}
-
-.map-card:hover img {
-  transform: scale(1.06);
-}
-
+/* Card title, SHARED by the car cards and the circuit cards. The base style has to
+   live somewhere unpinned: the car cards are built in game.js and rely on this
+   rule for their display font, so deleting it silently drops them to the
+   browser's default (which is exactly how the weather row broke). */
 .mc-name {
   font: 800 12px var(--font-display);
   letter-spacing: 0.8px;
@@ -1496,20 +1476,127 @@ h1 span {
   padding: 0 4px;
 }
 
-.mc-sub {
-  font-size: 10.5px;
-  color: #8fa2b8;
-  padding: 0 4px 4px;
+/* ---- Circuit cards (v148) ---------------------------------------------------
+   Same lesson as the weather row: the circuit IS the card, so the picture is
+   full-bleed and the text sits under it - no inset thumbnail floating in a grey
+   box. Each circuit carries its own accent (the spine along the top, the active
+   border, the title colour), and the picture is a fixed height with the title
+   block reserving two lines, so five cards can never come out ragged whatever a
+   translation does to the names ("ISLAND MOTORFEST" wrapped and grew its card
+   taller than its neighbours).
+   The name/sub styles are SCOPED to .map-card: the car cards share .mc-name and
+   keep their own centred treatment. */
+.map-card {
+  --mc: #00f0ff;                        /* accent, set per circuit below */
+  --mc-rgb: 0, 240, 255;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: grid;
+  grid-template-rows: 118px 1fr;        /* the picture is one fixed height everywhere */
+  align-content: start;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-card);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
+
+.map-card img {
+  width: 100%;
+  height: 118px;
+  object-fit: cover;
+  border-radius: 0;                     /* full-bleed: the card's radius clips it */
+  transition: transform 0.4s ease;
+}
+
+/* the circuit's accent, as a spine across the top */
+.map-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 2;
+  opacity: 0.5;
+  background: linear-gradient(90deg, var(--mc), rgba(var(--mc-rgb), 0.22) 58%, transparent);
+  transition: opacity 0.18s ease;
+}
+
+/* the picture settles into the card instead of stopping on a hard edge */
+.map-card::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 84px;
+  height: 34px;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(10, 14, 22, 0) 0%, rgba(10, 14, 22, 0.45) 55%, var(--bg-card) 100%);
+}
+
+.map-card .mc-text {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  padding: 9px 12px 12px;
+}
+
+.map-card .mc-name {
+  /* two lines RESERVED, not hoped for: the longest name here is "ISLAND
+     MOTORFEST" and the translated ones are longer still, so every card ends up
+     exactly as tall as its neighbours */
+  min-height: 2.4em;
+  font: 800 11.5px var(--font-display);
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  color: #eef4fb;
+  padding: 0;
+  transition: color 0.18s ease;
+}
+
+.map-card .mc-sub {
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: #93a5bb;
+  padding: 0;
+}
+
+.map-card[data-map="0"] { --mc: #3ddc84; --mc-rgb: 61, 220, 132; }   /* highland: forest green */
+.map-card[data-map="1"] { --mc: #ff3bd4; --mc-rgb: 255, 59, 212; }   /* neon: downtown magenta */
+.map-card[data-map="2"] { --mc: #ff9d3d; --mc-rgb: 255, 157, 61; }   /* island: sunset orange */
+.map-card[data-map="3"] { --mc: #e2543a; --mc-rgb: 226, 84, 58; }    /* canyon: rust red */
+.map-card[data-map="4"] { --mc: #7fe3ff; --mc-rgb: 127, 227, 255; }  /* hairpin: ice cyan */
+
+.map-card:hover {
+  border-color: rgba(var(--mc-rgb), 0.45);
+  transform: translateY(-1px);
+}
+.map-card:hover img { transform: scale(1.05); }
+.map-card::before { transition: opacity 0.18s ease; }
 
 .map-card.active {
-  border-color: var(--cyber-cyan);
-  box-shadow: 0 0 18px rgba(0, 240, 255, 0.35);
-  background: rgba(0, 240, 255, 0.08);
+  border-color: rgba(var(--mc-rgb), 0.8);
+  background: var(--bg-card);
+  box-shadow:
+    0 0 0 1px rgba(var(--mc-rgb), 0.30),
+    0 16px 34px -18px rgba(var(--mc-rgb), 0.95);
+}
+.map-card.active::before { opacity: 1; }
+.map-card.active .mc-name {
+  color: var(--mc);
+  text-shadow: 0 0 14px rgba(var(--mc-rgb), 0.45);
 }
 
-.map-card.active .mc-name {
-  color: var(--cyber-cyan);
+.map-card:focus-visible {
+  outline: 2px solid rgba(var(--mc-rgb), 0.8);
+  outline-offset: 2px;
 }
 
 /* Weather Condition Cards */
@@ -3573,7 +3660,16 @@ h1 span {
 }
 
 @media (max-width: 480px) {
+  /* v148: two even columns, and the circuit picture keeps its fixed height so the
+     cards stay level; five cards in a 2-up grid simply leave the last row short,
+     which reads better than five cramped ones */
   .card-row { grid-template-columns: 1fr 1fr; }
+  .map-card { grid-template-rows: 104px 1fr; }
+  .map-card img { height: 104px; }
+  .map-card::after { top: 72px; height: 32px; }
+  .map-card .mc-text { padding: 8px 10px 11px; }
+  .map-card .mc-name { font-size: 10.5px; }
+  .map-card .mc-sub { font-size: 10px; }
   .weather-row { grid-template-columns: 1fr; }
   .rmc-body { grid-template-columns: 1fr; gap: 6px; }
 }

@@ -54,6 +54,24 @@ side so the card's text has somewhere quiet to sit.
 **No trademark clearance was performed** - same caveat as the wordmark and the car
 portraits.
 
+## Circuit card art (v148)
+
+`public/img/map-<id>.webp` — five pictures (highland, neon, island, canyon, snow)
+shown on the circuit cards.
+
+**Original images generated for this project** with an image model from prompts
+written here, replacing the previous pack. They are not photographs or imported
+artwork, and no brand mark, logo or readable signage appears in any of them (the
+prompts exclude them explicitly).
+
+- 512x230, 21-38 KB each
+- one family: low camera just above the tarmac, the road entering bottom-left and
+  sweeping through the middle of the frame, a grade that matches that circuit's
+  accent colour
+
+**No trademark clearance was performed** - same caveat as the wordmark, the car
+portraits and the weather art.
+
 ## Rejected candidate sources (licensing audit, 2026-09-22)
 
 - `Vivekkk-1/3D-Models` - owner disclaims ownership; Sketchfab rips of

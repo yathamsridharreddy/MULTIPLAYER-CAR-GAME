@@ -15,3 +15,6 @@ __pycache__/
 
 # weather-condition model renders (the shipped .webp are committed; the sources are not)
 tools/weather-art/raw/
+
+# circuit-art model renders (the shipped .webp are committed; the sources are not)
+tools/map-art/raw/
