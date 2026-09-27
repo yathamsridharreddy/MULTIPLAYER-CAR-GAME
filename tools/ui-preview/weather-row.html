@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Weather row — real stylesheet preview</title>
+
+  <!-- The SAME fonts the game loads -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700;800&display=swap"/>
+
+  <!-- The SHIPPING stylesheet, not a copy of it -->
+  <link rel="stylesheet" href="/public/css/style.css?v=146"/>
+
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 34px 20px 60px;
+      background: radial-gradient(120% 90% at 50% 0%, #0d1527 0%, #05070c 70%);
+      font-family: var(--font-body);
+      color: #e8ecf2;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; }
+    .note {
+      font-size: 12px; line-height: 1.7; color: #8fa2b8;
+      border-left: 2px solid #00f0ff33; padding-left: 12px; margin: 0 0 22px;
+    }
+    .note b { color: #cfe3f5; font-weight: 700; }
+    .note code { color: #9fe8ff; }
+    /* the wizard card the row actually lives in */
+    .overlay-card { max-width: 1124px; }
+    h1 { font: 900 18px var(--font-display); letter-spacing: 2px; margin: 0 0 10px; }
+    .toggle {
+      display: inline-flex; gap: 8px; align-items: center; margin: 0 0 20px;
+      font: 700 11px var(--font-display); letter-spacing: 1px; color: #8fa2b8; cursor: pointer;
+    }
+    /* the phone rendering, side by side with the desktop one */
+    .phone { width: 390px; max-width: 100%; margin-top: 30px; }
+    .phone .overlay-card { max-width: 390px; padding: 16px; }
+    .phone-title { font: 800 11px var(--font-display); letter-spacing: 1.5px; color: #8fa2b8; margin: 0 0 10px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>WEATHER ROW — RENDERED BY YOUR OWN BROWSER</h1>
+    <p class="note">
+      This page loads the <b>shipping stylesheet</b> (<code>/public/css/style.css</code>), pulls the
+      weather row <b>out of the real <code>index.html</code></b>, and runs the <b>real splitter</b>
+      extracted from <code>game.js</code> — nothing here is a mock-up or a copy, so what you see is
+      what the game will render. Resize the window to check the tablet/phone breakpoints.
+    </p>
+
+    <div class="overlay-card">
+      <div class="wiz-sec" id="wiz-weather"></div>
+    </div>
+
+    <div class="phone">
+      <div class="phone-title">PHONE WIDTH (390px)</div>
+      <div class="overlay-card">
+        <div class="wiz-sec" id="wiz-weather-phone"></div>
+      </div>
+    </div>
+
+    <p class="note" id="status" style="margin-top:26px">loading the real markup…</p>
+  </div>
+
+  <script>
+    // Pull the shipping markup + splitter in, so this page cannot drift from the game.
+    (async () => {
+      const status = document.getElementById('status');
+      try {
+        const [htmlRes, jsRes] = await Promise.all([
+          fetch('/public/index.html', { cache: 'no-store' }),
+          fetch('/public/js/game.js', { cache: 'no-store' })
+        ]);
+        const html = await htmlRes.text();
+        const js = await jsRes.text();
+
+        // the real <div class="wiz-sec" id="wiz-weather"> … </div>
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const section = doc.getElementById('wiz-weather');
+        if (!section) throw new Error('wiz-weather not found in index.html');
+        const markup = section.outerHTML;
+        document.getElementById('wiz-weather').outerHTML = markup;
+        // the phone copy must not repeat the section's ids
+        document.getElementById('wiz-weather-phone').outerHTML =
+          markup.replace(/\sid="[^"]*"/g, '');
+
+        // the real decorateWeatherCards(), brace-matched out of game.js
+        const at = js.indexOf('function decorateWeatherCards()');
+        if (at < 0) throw new Error('decorateWeatherCards not found in game.js');
+        let depth = 0, end = at;
+        for (let i = js.indexOf('{', at); i < js.length; i++) {
+          if (js[i] === '{') depth++;
+          else if (js[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
+        }
+        const src = js.slice(at, end);
+        (0, eval)(src + '\n;window.__decorateWeatherCards = decorateWeatherCards;');
+        window.__decorateWeatherCards();
+
+        // the cards are clickable in the game; show the same swap here
+        document.querySelectorAll('.weather-btn').forEach((b) => {
+          b.addEventListener('click', () => {
+            document.querySelectorAll('.weather-btn').forEach((x) => x.classList.remove('active'));
+            b.classList.add('active');
+          });
+        });
+
+        status.innerHTML = 'rendered from <code>public/css/style.css</code>, <code>public/index.html</code> ' +
+          'and <code>public/js/game.js</code> as they are in the repo right now.';
+      } catch (e) {
+        status.textContent = 'could not load the shipping files: ' + e.message;
+      }
+    })();
+  </script>
+</body>
+</html>
