@@ -137,8 +137,11 @@ test('v118: eight distinct silhouettes, one per selectable car id', () => {
   for (const [id, lit] of Object.entries(HEXLIT)) {
     assert.ok(g.includes(lit + ": 'ghost'"), 'SHELL_BY_HEX ' + id + ' should be ghost (v136)');
   }
-  // lobby thumbnails render per car id, not per class
-  assert.ok(g.includes('url = renderCarPreview(hex, shellForHex(hex));'), 'card thumbs per id');
+  // v145: the lobby cards show a portrait per car id (baked art, not a live render)
+  for (const id of ids) {
+    assert.ok(g.includes(`${id}: 'img/cars/${id}.webp'`), 'card art table maps ' + id);
+    assert.ok(fs.existsSync(path.join(ROOT, 'public', 'img', 'cars', id + '.webp')), id + '.webp ships');
+  }
 });
 
 test('service worker does not precache car models (runtime cache only)', () => {

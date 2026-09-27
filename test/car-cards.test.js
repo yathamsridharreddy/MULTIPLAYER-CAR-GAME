@@ -1,15 +1,20 @@
 'use strict';
 /* ============================================================================
-   v141 — "cars pictures not visible": the car-select cards rendered EMPTY.
+   Car-select cards.
 
-   The card falls back to a colour swatch whenever a 3D thumbnail is unavailable
-   (LOW quality skips the second WebGL context on purpose). That swatch was built
-   with `background:${hex}` where hex is a NUMBER, so the template literal emitted
-   the decimal string "14747136" - not a CSS <color>. The browser dropped the
-   declaration and the card was a transparent box: eight empty cards with nothing
-   but the colour dot and the name.
+   v141 fixed the cards rendering EMPTY: the fallback swatch was assembled with
+   `background:${hex}` where hex is a NUMBER, so the template literal emitted the
+   decimal string "14747136" - not a CSS <color>. The browser dropped the
+   declaration and the card was a transparent box.
 
-   These tests build the REAL cards in a DOM and check every branch is visible.
+   v145 changed WHAT the card shows: the picture is a baked portrait of the car
+   (public/img/cars/<id>.webp) instead of a live render into a second WebGL
+   context - identical on every device, no GPU context to lose, nothing to draw at
+   open. The vector swatch stays as the fallback, so v141's guarantee still holds:
+   a card is never empty.
+
+   These tests build the REAL cards in a DOM and check every branch is visible,
+   and that every picture they reference exists on disk.
    ========================================================================== */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -19,20 +24,24 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'public', 'js', 'game.js'), 'utf8');
+const CAR_IDS = ['fury', 'storm', 'volt', 'viper', 'blaze', 'phantom', 'ghost', 'reaper'];
+const HEX2ID = { 0xe10600: 'fury', 0x0a84ff: 'storm', 0xffd400: 'volt', 0x00a651: 'viper',
+  0xff6a00: 'blaze', 0x7b2ff7: 'phantom', 0xffffff: 'ghost', 0x111111: 'reaper' };
 
-// pull the three functions out of game.js and run them with a tiny fake DOM, so the
+// pull the real card block out of game.js and run it with a tiny fake DOM, so the
 // test exercises the shipping code rather than a copy of it
 function loadCardBuilder(opts) {
   opts = opts || {};
-  const start = SRC.indexOf('// ---- live 3D car thumbnails for the car-select cards ----');
-  const end = SRC.indexOf('// ---------------------------------------------------------------------------', SRC.indexOf('function buildCarCards()'));
+  const start = SRC.indexOf('// ---- car-select card art ---');
+  const end = SRC.indexOf('// ---------------------------------------------------------------------------',
+    SRC.indexOf('function buildCarCards()'));
   assert.ok(start > 0 && end > start, 'card builder block found');
   const block = SRC.slice(start, end);
 
   const made = [];
   const mkEl = (tag) => {
     const el = {
-      tagName: tag, className: '', dataset: {}, innerHTML: '', style: {}, children: [],
+      tagName: tag, className: '', dataset: {}, style: {}, children: [], _html: '', _on: {},
       classList: {
         _s: new Set(),
         add(c) { this._s.add(c); },
@@ -40,9 +49,25 @@ function loadCardBuilder(opts) {
         toggle(c, on) { if (on) this._s.add(c); else this._s.delete(c); },
         contains(c) { return this._s.has(c); }
       },
+      get innerHTML() { return this._html; },
+      set innerHTML(v) {
+        this._html = String(v);
+        this.children = [];
+        // the real code assigns markup to a holder and then reads firstChild
+        if (/^\s*<svg/i.test(this._html)) {
+          const child = mkEl('svg');
+          child._html = this._html;          // set the field, not the setter (that recursed)
+          // a real DOM would carry the markup's class onto the element
+          const cls = /<svg[^>]*class="([^"]+)"/.exec(this._html);
+          child.className = cls ? cls[1] : '';
+          this.firstChild = child;
+        }
+      },
       querySelectorAll: () => [],
-      appendChild(c) { this.children.push(c); return c; },
-      addEventListener() {}
+      appendChild(c) { this.children.push(c); c.parent = this; return c; },
+      replaceWith(c) { const p = this.parent; if (p) { const i = p.children.indexOf(this); if (i >= 0) p.children[i] = c; } c.parent = p; },
+      addEventListener(t, f) { (this._on[t] = this._on[t] || []).push(f); },
+      fire(t) { (this._on[t] || []).forEach((f) => f({ type: t })); }
     };
     made.push(el);
     return el;
@@ -53,26 +78,10 @@ function loadCardBuilder(opts) {
     console,
     document: doc,
     window: {},
-    THREE: {
-      WebGLRenderer: opts.noGL
-        ? function () { throw new Error('no second context in this test'); }
-        : function () {
-            this.domElement = { toDataURL: () => 'data:image/png;base64,' + 'A'.repeat(300) };
-            this.setSize = () => {}; this.setPixelRatio = () => {};
-            this.render = () => {}; this.dispose = () => {}; this.forceContextLoss = () => {};
-          },
-      Scene: function () { this.add = () => {}; this.remove = () => {}; },
-      HemisphereLight: function () {}, DirectionalLight: function () { this.position = { set() {} }; },
-      PerspectiveCamera: function () { this.position = { set() {} }; this.lookAt = () => {}; }
-    },
-    localStorage: { getItem: () => opts.prefs || null },
-    prefs: opts.prefs === '{"quality":"low"}' ? { quality: 'low', color: 0xe10600 } : { quality: 'high', color: 0x0a84ff },
-    // stubs the module reaches for
-    scene: { add() {}, remove() {} },
-    disposeCarVisual: () => {},
-    createCar: () => ({ group: { x: 1 }, paint: { color: { setHex() {} } } }),
-    shellForHex: () => 'ghost',
-    savePrefs() {}, applyMyColor() {}, sendMeta() {}, $: (id) => (id === 'car-cards' ? wrap : null)
+    CarModels: { idForHex: (h) => HEX2ID[h | 0] || null },
+    prefs: { quality: 'high', color: 0x0a84ff },
+    savePrefs() {}, applyMyColor() {}, sendMeta() {},
+    $: (id) => (id === 'car-cards' ? wrap : null)
   };
   sandbox.CAR_COLORS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
   sandbox.CAR_NAMES = [
@@ -81,143 +90,151 @@ function loadCardBuilder(opts) {
   ];
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext(block +
-    '\n;globalThis.__build = buildCarCards;' +
-    '\nglobalThis.__peek = () => ({ prev: _prev, cacheSize: _prevCache.size, failed: _prevFailed });',
+  vm.runInContext(block + '\n;globalThis.__build = buildCarCards;globalThis.__art = carArtFor;',
     sandbox, { filename: 'cards.js' });
-  return { build: sandbox.__build, peek: sandbox.__peek, wrap, made, sandbox };
+  return { build: sandbox.__build, art: sandbox.__art, wrap, made, sandbox };
 }
 
-test('v141: every car card carries a VISIBLE picture (never an empty box)', () => {
+// the card's picture element, whichever branch produced it
+function pictureOf(card) {
+  return card.children.find((c) => c.className === 'car-thumb' || c.className === 'car-swatch');
+}
+
+test('v145: every card shows a portrait, and the file behind it EXISTS on disk', () => {
   const { build, wrap } = loadCardBuilder();
   build();
   assert.strictEqual(wrap.children.length, 8, 'eight cards');
-  for (const card of wrap.children) {
-    const html = card.innerHTML;
-    assert.ok(html.length > 0, 'card has content');
-    const hasImg = /<img[^>]+src="[^"]+"/.test(html);
-    const hasSwatch = /class="car-swatch"/.test(html);
-    assert.ok(hasImg || hasSwatch, 'card must render either a thumbnail or a silhouette: ' + html.slice(0, 90));
-  }
-});
-
-test('v141: the fallback swatch paints a VALID css colour (the reported bug)', () => {
-  // LOW quality is the path that produced the empty cards
-  const { build, wrap } = loadCardBuilder({ prefs: '{"quality":"low"}', noGL: true });
-  build();
-  assert.strictEqual(wrap.children.length, 8, 'eight cards in the fallback path');
   wrap.children.forEach((card, i) => {
-    const html = card.innerHTML;
-    assert.ok(/class="car-swatch"/.test(html), 'card ' + i + ' uses the silhouette fallback');
-    // a bare decimal number (the old bug) or 0x notation must never appear as a colour
-    assert.ok(!/(fill|stroke|background|color)\s*[:=]\s*"?0x/i.test(html), 'no 0x-prefixed colour: ' + html.slice(0, 80));
-    // the paint colour is applied as a #rrggbb value
-    const fills = html.match(/fill="(#[0-9a-f]{6})"/gi) || [];
-    assert.ok(fills.length >= 1, 'card ' + i + ' paints the car with a #rrggbb colour');
+    const pic = pictureOf(card);
+    assert.ok(pic, `card ${i} has a picture area`);
+    if (pic.className === 'car-thumb') {
+      const rel = String(pic.src || '').replace(/^\//, '');
+      assert.ok(fs.existsSync(path.join(ROOT, 'public', rel)), `card ${i} points at a real file: ${pic.src}`);
+      assert.ok(fs.statSync(path.join(ROOT, 'public', rel)).size > 1024, `card ${i} picture is not a stub`);
+    } else {
+      assert.ok(/<svg/.test(pic.innerHTML), `card ${i} fell back to the drawn car`);
+    }
+    assert.ok(card.children.some((c) => c.className === 'mc-name'), `card ${i} shows its name`);
   });
-  // and specifically: the decimal-string bug
-  const allHtml = wrap.children.map((c) => c.innerHTML).join(' ');
-  assert.ok(!/background:\d/.test(allHtml), 'a raw decimal must never be used as a CSS colour');
-  assert.ok(!/background:0x/.test(allHtml), 'nor 0x notation');
 });
 
-test('v141: each fallback swatch uses ITS OWN car colour', () => {
-  const { build, wrap } = loadCardBuilder({ prefs: '{"quality":"low"}', noGL: true });
+test('v145: each card shows ITS OWN car, in the order the game lists them', () => {
+  const { build, wrap, art } = loadCardBuilder();
+  build();
+  CAR_IDS.forEach((id, i) => {
+    assert.strictEqual(art(sandboxHex(i)), `img/cars/${id}.webp`, `card ${i} is ${id}`);
+    const src = wrap.children[i].children.find((c) => c.className === 'car-thumb').src;
+    assert.strictEqual(src, `img/cars/${id}.webp`, `card ${i} shows ${id}`);
+  });
+  function sandboxHex(i) { return [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111][i]; }
+});
+
+test('v145: a picture that FAILS to load degrades to the drawn car, never an empty box', () => {
+  // the v141 contract, still enforced: a missing/blocked/failed image must leave a
+  // real drawing in the card rather than a blank rectangle
+  const { build, wrap } = loadCardBuilder();
+  build();
+  const card = wrap.children[3];
+  const img = card.children.find((c) => c.className === 'car-thumb');
+  img.fire('error');
+  const after = pictureOf(card);
+  assert.ok(after, 'the card still has a picture area');
+  assert.strictEqual(after.className, 'car-swatch', 'the fallback replaced the broken image');
+  assert.ok(/<svg/.test(after.innerHTML), 'and it is a real drawing');
+  assert.ok(/viewBox="0 0 120 64"/.test(after.innerHTML), 'with the stable viewBox');
+  assert.ok(card.children.some((c) => c.className === 'mc-name'), 'the name survived the swap');
+});
+
+test('v145: the fallback swatch paints a VALID css colour (the original bug)', () => {
+  // force the fallback path: no id mapping means no portrait to show
+  const { build, wrap, sandbox } = loadCardBuilder();
+  sandbox.CarModels.idForHex = () => null;
+  build();
+  assert.strictEqual(wrap.children.length, 8, 'eight cards on the fallback path');
+  wrap.children.forEach((card, i) => {
+    const pic = pictureOf(card);
+    assert.strictEqual(pic.className, 'car-swatch', `card ${i} uses the silhouette fallback`);
+    assert.ok(!/(fill|stroke|background|color)\s*[:=]\s*"?0x/i.test(pic.innerHTML), 'no 0x-prefixed colour');
+    const fills = pic.innerHTML.match(/fill="(#[0-9a-f]{6})"/gi) || [];
+    assert.ok(fills.length >= 1, `card ${i} paints the car with a #rrggbb colour`);
+  });
+  const all = wrap.children.map((c) => pictureOf(c).innerHTML).join(' ');
+  assert.ok(!/background:\d/.test(all), 'a raw decimal must never be used as a CSS colour');
+});
+
+test('v145: each fallback swatch uses ITS OWN car colour', () => {
+  const { build, wrap, sandbox } = loadCardBuilder();
+  sandbox.CarModels.idForHex = () => null;
   build();
   const expected = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111]
     .map((h) => '#' + h.toString(16).padStart(6, '0'));
   wrap.children.forEach((card, i) => {
-    assert.ok(card.innerHTML.includes(expected[i]), 'card ' + i + ' paints ' + expected[i]);
-    assert.strictEqual(card.dataset.color, expected[i],
-      'card ' + i + ' exposes its paint as a CSS colour');
+    assert.ok(pictureOf(card).innerHTML.includes(expected[i]), `card ${i} paints ${expected[i]}`);
+    assert.strictEqual(card.dataset.color, expected[i], `card ${i} exposes its paint as a CSS colour`);
   });
 });
 
-test('v141: the swatch is a car silhouette, not a plain colour block', () => {
-  const { build, wrap } = loadCardBuilder({ prefs: '{"quality":"low"}', noGL: true });
+test('v145: the swatch is still a car silhouette, not a plain colour block', () => {
+  const { build, wrap, sandbox } = loadCardBuilder();
+  sandbox.CarModels.idForHex = () => null;
   build();
-  const html = wrap.children[0].innerHTML;
+  const html = pictureOf(wrap.children[0]).innerHTML;
   assert.ok(/<svg/.test(html), 'vector car');
   assert.ok(/viewBox="0 0 120 64"/.test(html), 'stable viewBox');
-  const wheels = html.match(/<circle[^>]*r="8\.8"/g) || [];
-  assert.strictEqual(wheels.length, 2, 'two wheels');
-  const hubs = html.match(/<circle[^>]*r="3\.2"/g) || [];
-  assert.strictEqual(hubs.length, 2, 'two hubs');
+  assert.strictEqual((html.match(/<circle[^>]*r="8\.8"/g) || []).length, 2, 'two wheels');
+  assert.strictEqual((html.match(/<circle[^>]*r="3\.2"/g) || []).length, 2, 'two hubs');
   assert.ok(/<path[^>]*fill="#e10600"/.test(html), 'body painted in the car colour');
 });
 
-test('v141: hexCss converts a paint number to a usable CSS colour', () => {
+test('v145: hexCss converts a paint number to a usable CSS colour', () => {
   const { sandbox } = loadCardBuilder();
   const f = sandbox.hexCss;
   assert.strictEqual(f(0xe10600), '#e10600');
   assert.strictEqual(f(0x0a84ff), '#0a84ff');
   assert.strictEqual(f(0xffffff), '#ffffff');
   assert.strictEqual(f(0x000000), '#000000');
-  assert.strictEqual(f(0x00a651), '#00a651');
-  // defensive: junk must not produce "NaN"-style colours
   assert.strictEqual(f(null), '#ffffff');
   assert.strictEqual(f(undefined), '#ffffff');
   assert.strictEqual(f(NaN), '#ffffff');
 });
 
-test('v141: the card picture area is styled so both branches share one box', () => {
+test('v145: the card picture area is styled so every branch shares one box', () => {
   const css = fs.readFileSync(path.join(ROOT, 'public', 'css', 'style.css'), 'utf8');
-  assert.ok(/\.car-thumb,\s*\.car-swatch\s*\{/.test(css), 'both branches styled together');
+  assert.ok(/\.car-thumb,\s*\.car-swatch\s*\{/.test(css), 'all branches styled together');
   assert.ok(/aspect-ratio:\s*120\s*\/\s*64/.test(css), 'fixed aspect ratio (no layout shift)');
+  assert.ok(/\.car-swatch\s*\{\s*object-fit:\s*contain/.test(css), 'the vector fallback sits inside its box');
+  assert.ok(/\.car-thumb[\s\S]{0,200}object-fit:\s*cover/.test(css), 'the portrait fills its box');
   assert.ok(/\.car-swatch[\s\S]{0,400}height:\s*84px/.test(css), 'fallback height for browsers without aspect-ratio');
 });
 
-test('v141: leaving LOW quality brings the real 3D thumbnails back', () => {
-  const src = SRC;
-  // the old guard read window._prev, which is never set (a top-level `let` is not a
-  // window property), so the preview context was never released and never restored
-  assert.ok(!/if\(window\._prev\)/.test(src), 'the broken window._prev guard is gone');
-  assert.ok(/function disposeCarPreview\(/.test(src), 'preview dispose helper exists');
-  // LOW no longer refuses the thumbnail: it renders it once and releases the context
-  const low = src.slice(src.indexOf("if (q === 'low')"), src.indexOf("} else if (q === 'med')"));
-  assert.ok(!/_prevFailed = true/.test(low), 'LOW must not disable thumbnails any more');
-  assert.ok(/disposeCarPreview\(true\)/.test(low), 'LOW hands the GPU back after the thumbnails are cached');
-  const med = src.slice(src.indexOf("} else if (q === 'med')"), src.indexOf('function fxActive'));
-  assert.ok((med.match(/_prevFailed = false/g) || []).length >= 2, 'HIGH and MED re-allow thumbnails');
-  // and the cache must be cleared whenever the context is dropped
-  assert.ok(/disposeCarPreview\(\)[\s\S]{0,80}_prevFailed = false/.test(src), 'context restore rebuilds the preview');
-});
-
-test('v141: thumbnails are cached (no re-render per panel open)', () => {
-  assert.ok(/_prevCache/.test(SRC), 'preview cache present');
-  assert.ok(/const hit = _prevCache\.get\(cacheKey\)/.test(SRC), 'cache is read before rendering');
-  assert.ok(/if \(url && url\.length > 64\) \{ _prevCache\.set\(cacheKey, url\)/.test(SRC), 'a blank data URL is never cached');
-});
-
-
-test('v141: LOW quality still shows REAL car pictures, then releases the GL context', () => {
-  const { build, wrap, peek } = loadCardBuilder({ prefs: '{"quality":"low"}' });
-  build();
-  // every card got a rendered thumbnail, not the fallback silhouette
-  for (const card of wrap.children) {
-    assert.ok(/<img class="car-thumb" src="data:image\/png/.test(card.innerHTML), 'card shows a rendered picture');
-    assert.ok(!/car-swatch/.test(card.innerHTML), 'and not the silhouette');
+test('v145: the picker no longer spends a second WebGL context', () => {
+  // the live-preview pipeline existed only for these cards; with baked portraits it
+  // is dead weight and a GPU context the phone cannot spare
+  for (const gone of ['carPreviewRenderer', 'renderCarPreview', 'disposeCarPreview', '_prevCache', '_prevFailed']) {
+    assert.ok(!SRC.includes(gone), gone + ' should be gone from game.js');
   }
-  // and the one-shot context was handed back (no standing GPU cost on a low-end device)
-  const after = peek();
-  assert.strictEqual(after.prev, null, 'preview context released after the one-shot render');
-  assert.ok(after.cacheSize >= 8, 'the pictures are cached for later openings: ' + after.cacheSize);
+  const block = SRC.slice(SRC.indexOf('// ---- car-select card art ---'), SRC.indexOf('function buildCarCards()'));
+  assert.ok(!/WebGLRenderer|THREE\./.test(block), 'the card block does not touch WebGL');
 });
 
-test('v141: without a usable GPU the cards fall back to a drawn car, never an empty box', () => {
-  const { build, wrap } = loadCardBuilder({ prefs: '{"quality":"high"}', noGL: true });
-  build();
-  assert.strictEqual(wrap.children.length, 8);
-  for (const card of wrap.children) {
-    assert.ok(/<svg class="car-swatch"/.test(card.innerHTML), 'silhouette shown');
-    assert.ok(/viewBox="0 0 120 64"/.test(card.innerHTML), 'with a real drawing');
+test('v145: the portraits ship with the app and are small enough to precache', () => {
+  const sw = fs.readFileSync(path.join(ROOT, 'public', 'sw.js'), 'utf8');
+  let total = 0;
+  for (const id of CAR_IDS) {
+    const rel = `public/img/cars/${id}.webp`;
+    assert.ok(fs.existsSync(path.join(ROOT, rel)), rel + ' exists');
+    const size = fs.statSync(path.join(ROOT, rel)).size;
+    total += size;
+    assert.ok(size < 60 * 1024, `${id}.webp is ${Math.round(size / 1024)}KB - keep the card art small`);
+    assert.ok(sw.includes(`/img/cars/${id}.webp`), `${id}.webp is precached`);
   }
+  assert.ok(total < 200 * 1024, `all eight portraits together are ${Math.round(total / 1024)}KB`);
 });
-
 
 test('v141: every glass shape stays INSIDE the body outline (no panes poking out of the roof)', () => {
   const src = SRC;
-  const svgFn = src.slice(src.indexOf('function hexCss(hex) {'), src.indexOf('function disposeCarPreview'));
+  const svgFn = src.slice(src.indexOf('function hexCss(hex) {'),
+    src.indexOf('// v145: the car cards show a rendered portrait'));
   const mod = new Function(svgFn + '; return { carSwatch };')();
   const svg = mod.carSwatch(0xe10600);
 

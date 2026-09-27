@@ -5,3 +5,10 @@ leaderboard.json
 
 # icon-forge preview renders (regenerate with tools/icon-forge/make_icons.py)
 tools/icon-forge/preview/*.png
+
+# car-art model renders (the shipped .webp are committed; the 14 MB sources are not)
+tools/car-art/raw/
+
+# python bytecode (tools/ is source only - the .pyc that was tracked by mistake is dropped here)
+__pycache__/
+*.pyc

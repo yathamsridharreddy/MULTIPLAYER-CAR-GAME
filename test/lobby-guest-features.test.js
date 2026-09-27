@@ -240,109 +240,107 @@ describe('js/config.js can never be served stale', () => {
 // unwound wireLobbyV2() and left the buttons unwired and the row unrevealed.
 // These tests run the real shipped functions against a stub renderer that fails.
 // ---------------------------------------------------------------------------
-function carSandbox(rendererThrows) {
+function carSandbox() {
+  // v145: the card list is built from baked portraits, so this harness needs no
+  // THREE stub at all - and that is the point. These tests prove the picker cannot
+  // be taken down by a picture, because there is no GPU work in the path any more.
   const made = [];
-  const el = () => {
-    const e = {
-      className: '', dataset: {}, innerHTML: '', children: made,
-      addEventListener() {}, setAttribute() {},
-      appendChild(c) { made.push(c); return c; },
-      querySelectorAll() { return []; }
-    };
-    return e;
-  };
-  const wrap = el();
-  let ctorCalls = 0;
-  const sb = {
-    console: { warn() {}, log() {}, error() {} },
-    $: (id) => (id === 'car-cards' ? wrap : null),
-    document: { createElement: () => el() },
-    CAR_COLORS: ['#ff3344', '#00e5ff', '#ffd479'],
-    CAR_NAMES: [{ e: '🏎️', n: 'REDLINE' }, { e: '⚡', n: 'AKINA' }, { e: '🌃', n: 'MIDNIGHT' }],
-    prefs: { color: '#00e5ff', cos: {} },
-    savePrefs() {}, applyMyColor() {}, sendMeta() {}, toast() {},
-    createCar: () => ({ group: {}, paint: { color: { setHex() {} } } }),
-    shellForHex: () => 'ghost', disposeCarVisual() {}, BODY_FOR_CLASS: { velocity: 0 },
-    THREE: {
-      WebGLRenderer: function () {
-        ctorCalls++;
-        if (rendererThrows) throw new Error('Error creating WebGL context');
-        return {
-          setSize() {}, setPixelRatio() {}, render() {}, dispose() {}, forceContextLoss() {},
-          // a real 180x110 PNG data URL is several KB; the source treats a
-          // squashed one as a dead context, so the fixture must be realistic
-          domElement: { toDataURL: () => 'data:image/png;base64,' + 'iVBORw0KGgo'.repeat(400) }
-        };
+  const mkEl = (tag) => {
+    const el = {
+      tagName: tag, className: '', dataset: {}, style: {}, children: [], _html: '', _on: {},
+      classList: {
+        _s: new Set(), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); },
+        toggle(c, on) { if (on) this._s.add(c); else this._s.delete(c); }, contains(c) { return this._s.has(c); }
       },
-      Scene: function () { this.add = () => {}; },
-      HemisphereLight: function () {},
-      DirectionalLight: function () { this.position = { set() {} }; },
-      PerspectiveCamera: function () { this.position = { set() {} }; this.lookAt = () => {}; }
-    },
-    __wrap: wrap,
-    __ctorCalls: () => ctorCalls,
-    __cards: made
+      get innerHTML() { return this._html; },
+      set innerHTML(v) {
+        this._html = String(v); this.children = [];
+        if (/^\s*<svg/i.test(this._html)) {
+          const child = mkEl('svg');
+          child._html = this._html;
+          const cls = /<svg[^>]*class="([^"]+)"/.exec(this._html);
+          child.className = cls ? cls[1] : '';
+          this.firstChild = child;
+        }
+      },
+      querySelectorAll: () => [],
+      appendChild(c) { this.children.push(c); c.parent = this; return c; },
+      replaceWith(c) { const p = this.parent; if (p) { const i = p.children.indexOf(this); if (i >= 0) p.children[i] = c; } c.parent = p; },
+      addEventListener(t, f) { (this._on[t] = this._on[t] || []).push(f); },
+      fire(t) { (this._on[t] || []).forEach((f) => f({ type: t })); }
+    };
+    made.push(el);
+    return el;
   };
+  const wrap = mkEl('div');
+  const HEX2ID = { 0x111111: 'reaper', 0x222222: 'fury', 0x333333: 'storm' };
+  const sb = {
+    console,
+    document: { createElement: mkEl, getElementById: (id) => (id === 'car-cards' ? wrap : null) },
+    window: {},
+    CarModels: { idForHex: (h) => HEX2ID[h | 0] || null },
+    prefs: { quality: 'low', color: 0x222222 },
+    CAR_COLORS: [0x111111, 0x222222, 0x333333],
+    CAR_NAMES: [{ e: '', n: 'MIDNIGHT' }, { e: '', n: 'REDLINE' }, { e: '', n: 'AKINA' }],
+    savePrefs() {}, applyMyColor() {}, sendMeta() {},
+    $: (id) => (id === 'car-cards' ? wrap : null)
+  };
+  sb.globalThis = sb;
   vm.createContext(sb);
+  const extract = (name) => {
+    const at = SRC.indexOf('function ' + name + '(');
+    assert.ok(at > 0, name + ' exists in game.js');
+    let depth = 0;
+    for (let j = SRC.indexOf('{', at); j < SRC.length; j++) {
+      if (SRC[j] === '{') depth++;
+      else if (SRC[j] === '}') { depth--; if (depth === 0) return SRC.slice(at, j + 1); }
+    }
+    throw new Error('could not extract ' + name);
+  };
+  // the id -> portrait table is a module-level const, not a function, so it has to
+  // be carried over with them
+  const artAt = SRC.indexOf('const CAR_ART = {');
+  const artDecl = SRC.slice(artAt, SRC.indexOf('};', artAt) + 2);
+  assert.ok(artAt > 0 && artDecl.length > 20, 'CAR_ART table found');
   vm.runInContext(
-    'let _prev = null; let _prevFailed = false; let _prevCache = new Map();\n' +
-    ['hexCss', 'carSwatch', 'qualityIsLow', 'disposeCarPreview',
-      'carPreviewRenderer', 'renderCarPreview', 'buildCarCards'].map(extract).join('\n') +
-    '\n;globalThis.__api = { carPreviewRenderer, buildCarCards };',
+    [artDecl, extract('hexCss'), extract('carSwatch'), extract('carArtFor'), extract('buildCarCards')].join('\n') +
+    '\n;globalThis.__api = { buildCarCards };',
     sb
   );
+  sb.__wrap = wrap;
+  sb.__cards = made;
   return sb;
 }
 
-describe('A failing 3D car preview cannot take the lobby down', () => {
-  it('builds every car card as a swatch when the WebGL context fails', () => {
-    const sb = carSandbox(true);
-    assert.doesNotThrow(() => sb.__api.buildCarCards(),
-      'the picker must still be built - this throw is what used to delete CLUBS');
-    assert.equal(sb.__cards.length, 3, 'all three cars are offered');
-    for (const c of sb.__cards) {
-      assert.ok(!c.innerHTML.includes('<img'), 'no preview image without a context');
-      assert.match(c.innerHTML, /car-swatch/, 'a painted car silhouette instead');
-      assert.match(c.innerHTML, /<svg[^>]*viewBox="0 0 120 64"/, 'and it is a real car, not an empty box');
-      assert.match(c.innerHTML, /REDLINE|AKINA|MIDNIGHT/, 'and the car is still named');
-    }
-    assert.ok(sb.__cards.some((c) => /active/.test(c.className)), 'the saved choice is still marked');
-  });
-
-  it('does not retry a renderer that already failed', () => {
-    const sb = carSandbox(true);
-    assert.equal(sb.__api.carPreviewRenderer(), null, 'null, not a throw');
-    sb.__api.buildCarCards();
-    sb.__api.buildCarCards();
-    assert.equal(sb.__ctorCalls(), 1,
-      'one attempt, then remembered - retrying would throw on every lobby visit');
-  });
-
-  it('still renders real 3D previews when the context works', () => {
-    const sb = carSandbox(false);
-    sb.__api.buildCarCards();
-    assert.equal(sb.__cards.length, 3);
-    for (const c of sb.__cards) {
-      assert.match(c.innerHTML, /<img class="car-thumb" src="data:image\/png/, 'the silhouette is only a fallback');
-      assert.ok(!c.innerHTML.includes('car-swatch'));
-    }
-  });
-
-  it('a context lost mid-render degrades that card instead of emptying the list', () => {
-    const sb = carSandbox(false);
-    // the renderer is created fine, then toDataURL starts throwing (lost context)
-    sb.__api.carPreviewRenderer();
-    const orig = sb.THREE.WebGLRenderer;
-    sb.THREE.WebGLRenderer = function () {
-      const r = new orig();
-      r.domElement.toDataURL = () => { throw new Error('CONTEXT_LOST_WEBGL'); };
-      return r;
-    };
-    vm.runInContext('_prev = null; _prevFailed = false;', sb);
+describe('A car picture can never take the lobby down', () => {
+  it('builds every card with no WebGL context available at all', () => {
+    // v145: the picker makes no GL calls, so "no second context" is no longer a
+    // degraded path, it is the only path. Previously this situation left cards
+    // empty and could delete CLUBS/BADGES with it.
+    const sb = carSandbox();
     assert.doesNotThrow(() => sb.__api.buildCarCards());
-    assert.equal(sb.__cards.length, 3, 'every card survives a lost context');
-    assert.ok(sb.__cards.every((c) => /car-swatch/.test(c.innerHTML)),
-      'every card still shows a car after the context dies');
+    const cards = sb.__wrap.children;
+    assert.equal(cards.length, 3, 'every car is still offered');
+    assert.ok(cards.every((c) => c.children.some((x) => x.className === 'mc-name')), 'every card is named');
+    assert.ok(cards.some((c) => /active/.test(c.className)), 'the saved choice is still marked');
+  });
+
+  it('a portrait that fails to decode degrades that card, not the list', () => {
+    const sb = carSandbox();
+    sb.__api.buildCarCards();
+    const cards = sb.__wrap.children;
+    const img = cards[1].children.find((c) => c.className === 'car-thumb');
+    img.fire('error');
+    const pic = cards[1].children.find((c) => c.className === 'car-thumb' || c.className === 'car-swatch');
+    assert.equal(pic.className, 'car-swatch', 'the broken card fell back to the drawn car');
+    assert.match(pic.innerHTML, /<svg[^>]*viewBox="0 0 120 64"/, 'and it is a real car, not an empty box');
+    assert.equal(cards.length, 3, 'and the other cards are untouched');
+  });
+
+  it('the card block does no GPU work at all (nothing to lose a context over)', () => {
+    const start = SRC.indexOf('// ---- car-select card art ---');
+    const block = SRC.slice(start, SRC.indexOf('function buildCarCards()'));
+    assert.ok(!/WebGLRenderer|THREE\.|toDataURL/.test(block), 'the card block never touches WebGL');
   });
 
   it('the guest wiring runs before anything that creates a WebGL context', () => {
