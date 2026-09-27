@@ -9,17 +9,17 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v145';
+const CACHE = 'sridhar-rush-v146';
 
 const CORE = [
   '/', '/controller', '/auth.html',
-  '/css/style.css?v=145', '/css/controller.css?v=145',
-  '/js/game-core.js?v=145', '/js/progression.js?v=145', '/js/net.js?v=145', '/js/game.js?v=145', '/js/controller.js?v=145', '/js/account.js?v=145', '/js/i18n.js?v=145', '/js/auth.js?v=145',
+  '/css/style.css?v=146', '/css/controller.css?v=146',
+  '/js/game-core.js?v=146', '/js/progression.js?v=146', '/js/net.js?v=146', '/js/game.js?v=146', '/js/controller.js?v=146', '/js/account.js?v=146', '/js/i18n.js?v=146', '/js/auth.js?v=146',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
   '/js/vendor/post/RenderPass.js', '/js/vendor/post/UnrealBloomPass.js',
-  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=145',
+  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=146',
   '/icon.svg', '/img/icon-192.png', '/img/icon-512.png',
   // v145: the car-select portraits - small, and on screen as soon as the picker opens
   '/img/cars/fury.webp', '/img/cars/storm.webp', '/img/cars/volt.webp', '/img/cars/viper.webp',

@@ -1513,50 +1513,207 @@ h1 span {
 }
 
 /* Weather Condition Cards */
+/* ---- Weather & surface conditions (v146) ------------------------------------
+   The old row styled its title with `span:first-child` / `span:last-child`. That
+   was written for a card whose FIRST child is the title, but on this row the first
+   child is the ICON - so the icon was given the display font, the title fell
+   through to the browser's default button font, and all four cards were the same
+   grey box. Each part now has its own class, and every weather carries its own
+   accent, a tinted icon tile and a subtle atmosphere layer. */
 .weather-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(212px, 1fr));
+  gap: 10px;
   margin-bottom: 16px;
 }
 
 .weather-btn {
-  background: var(--bg-card);
+  --wx: #ffc24a;                 /* accent, per weather below */
+  --wx-rgb: 255, 194, 74;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 10px 14px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(0, 0, 0, 0.16)),
+    var(--bg-card);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* the weather's own atmosphere, painted behind the content */
+.weather-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.75;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+
+.weather-btn[data-weather="dry"] { --wx: #ffc24a; --wx-rgb: 255, 194, 74; }
+.weather-btn[data-weather="wet"] { --wx: #56b6ff; --wx-rgb: 86, 182, 255; }
+.weather-btn[data-weather="night"] { --wx: #b07cff; --wx-rgb: 176, 124, 255; }
+.weather-btn[data-weather="blizzard"] { --wx: #9fe8ff; --wx-rgb: 159, 232, 255; }
+
+.weather-btn[data-weather="dry"]::before {
+  background: radial-gradient(120% 95% at 90% -10%, rgba(255, 194, 74, 0.20), transparent 62%);
+}
+.weather-btn[data-weather="wet"]::before {
+  background:
+    repeating-linear-gradient(102deg, rgba(86, 182, 255, 0.16) 0 1px, transparent 1px 8px),
+    radial-gradient(95% 85% at 84% -10%, rgba(86, 182, 255, 0.20), transparent 62%);
+}
+.weather-btn[data-weather="night"]::before {
+  background:
+    radial-gradient(circle at 70% 20%, rgba(255, 255, 255, 0.75) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 80% 46%, rgba(255, 255, 255, 0.5) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 62% 60%, rgba(255, 255, 255, 0.35) 0 1px, transparent 1.4px),
+    radial-gradient(105% 90% at 86% -12%, rgba(176, 124, 255, 0.28), transparent 64%);
+}
+.weather-btn[data-weather="blizzard"]::before {
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 9px),
+    radial-gradient(95% 85% at 84% -10%, rgba(159, 232, 255, 0.22), transparent 64%);
+}
+
+/* the tinted tile: background on the tile, the mask icon painted on top of it */
+.weather-btn .wx-ico {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  font-size: 19px;                 /* the .ico inside is 1em */
+  color: var(--wx);
+  border-radius: 10px;
+  background: linear-gradient(155deg, rgba(var(--wx-rgb), 0.26), rgba(var(--wx-rgb), 0.07));
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--wx-rgb), 0.30),
+    0 4px 14px -6px rgba(var(--wx-rgb), 0.7);
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.weather-btn .wx-txt {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-  text-align: left;
+  gap: 5px;
+  min-width: 0;
 }
 
-.weather-btn span:first-child {
-  font: 800 12px var(--font-display);
-  letter-spacing: 1px;
-  color: #ffffff;
+.weather-btn .wx-name {
+  font: 800 12.5px var(--font-display);
+  letter-spacing: 0.09em;
+  color: #eaf1fa;
+  text-transform: uppercase;
+  transition: color 0.18s ease;
 }
 
-.weather-btn span:last-child {
+.weather-btn .wx-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+/* the grip value: the number a racer actually compares across these cards */
+.weather-btn .wx-grip {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font: 800 10.5px var(--font-display);
+  letter-spacing: 0.04em;
+  color: var(--wx);
+  background: rgba(var(--wx-rgb), 0.13);
+  box-shadow: inset 0 0 0 1px rgba(var(--wx-rgb), 0.26);
+  white-space: nowrap;
+}
+
+.weather-btn .wx-desc {
   font-size: 11px;
+  line-height: 1.3;
+  color: #8fa2b8;
+}
+
+/* an unsplit label (a language that drops the separator) stays one plain line */
+.weather-btn .wx-sub:not(.wx-split) {
+  font-size: 11px;
+  line-height: 1.3;
   color: #8fa2b8;
 }
 
 .weather-btn:hover {
-  background: var(--bg-card-hover);
-  border-color: var(--border-medium);
+  border-color: rgba(var(--wx-rgb), 0.45);
+  transform: translateY(-1px);
 }
+.weather-btn:hover::before { opacity: 1; }
+.weather-btn:hover .wx-ico { transform: scale(1.05); }
 
 .weather-btn.active {
-  border-color: var(--velocity-gold);
-  background: rgba(255, 212, 121, 0.12);
-  box-shadow: 0 0 16px rgba(255, 212, 121, 0.25);
+  border-color: rgba(var(--wx-rgb), 0.85);
+  background:
+    linear-gradient(180deg, rgba(var(--wx-rgb), 0.14), rgba(10, 14, 22, 0.86)),
+    var(--bg-card);
+  box-shadow:
+    0 0 0 1px rgba(var(--wx-rgb), 0.28),
+    0 12px 30px -14px rgba(var(--wx-rgb), 0.85);
 }
 
-.weather-btn.active span:first-child {
-  color: var(--velocity-gold);
+/* a lit accent bar across the top of the chosen card */
+.weather-btn.active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg, transparent, var(--wx) 35%, var(--wx) 65%, transparent);
+  box-shadow: 0 0 10px rgba(var(--wx-rgb), 0.85);
+}
+
+.weather-btn.active .wx-name { color: var(--wx); }
+.weather-btn.active .wx-ico {
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--wx-rgb), 0.55),
+    0 0 18px -4px rgba(var(--wx-rgb), 0.9);
+}
+
+/* keyboard focus must be as obvious as the pointer state */
+.weather-btn:focus-visible {
+  outline: 2px solid rgba(var(--wx-rgb), 0.75);
+  outline-offset: 2px;
+}
+
+/* Between tablet and desktop a bare auto-fit leaves the fourth card alone on a
+   second row; two even columns read better than three-and-a-stray. */
+@media (max-width: 900px) {
+  .weather-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+}
+
+@media (max-width: 700px) {
+  .weather-btn { padding: 10px 11px; gap: 9px; border-radius: 12px; }
+  .weather-row { gap: 8px; }
+  .weather-btn .wx-ico { width: 30px; height: 30px; border-radius: 9px; font-size: 17px; }
+  .weather-btn .wx-name { font-size: 11px; letter-spacing: 0.06em; }
+  .weather-btn .wx-desc { font-size: 10.5px; }
+}
+
+@media (max-width: 420px) {
+  .weather-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weather-btn, .weather-btn::before, .weather-btn .wx-ico, .weather-btn .wx-name { transition: none; }
+  .weather-btn:hover { transform: none; }
 }
 
 /* Car Cards */
@@ -2169,7 +2326,8 @@ h1 span {
 }
 .ico-lg { width: 1.5em; height: 1.5em; }
 
-.weather-ico { font-size: 22px; color: var(--cyber-cyan); margin-right: 2px; }
+/* the mask icon itself is 1em: the tile sets the size and colour */
+.weather-ico { color: var(--wx, var(--cyber-cyan)); }
 .weather-chip .ico { font-size: 1.15em; margin-right: 4px; }
 .weather-chip { display: inline-flex; align-items: center; }
 .chip-txt { white-space: nowrap; }

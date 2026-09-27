@@ -5245,6 +5245,42 @@ function applyI18n() {
   paintDailyHeader();
   if (typeof renderProfile === 'function') renderProfile();
   if (typeof fetchAndRenderRetention === 'function') fetchAndRenderRetention();
+  decorateWeatherCards();
+}
+
+// v146 - the weather card's label arrives as ONE translated line, e.g.
+// "1.00x Grip · Optimal Track Pace". The grip is the value a racer actually
+// compares between the four cards, so it is pulled out into its own chip and the
+// rest becomes the description. Splitting the text (rather than adding a second
+// i18n key) keeps every language working unchanged, including ones that reorder
+// the sentence: whatever sits before the separator is the chip. A label with no
+// separator is left exactly as it is.
+function decorateWeatherCards() {
+  document.querySelectorAll('.weather-btn .wx-sub[data-i18n]').forEach((el) => {
+    const text = String(el.textContent || '').trim();
+    // Once split, this element's own textContent IS the two pieces without the
+    // separator, so a second pass (there are two callers) would read "1.00x
+    // GripOptimal Track Pace", find no separator and garble the label. Anything
+    // matching what we last built is our own output: leave it alone.
+    if (el._wxBuilt && text === el._wxBuilt) return;
+
+    const at = text.indexOf('·');
+    const grip = at > 0 ? text.slice(0, at).trim() : '';
+    const desc = at > 0 ? text.slice(at + 1).trim() : '';
+    if (!grip || !desc) {            // no separator, or nothing on one side of it
+      el._wxBuilt = text;            // a plain label: show it whole, whatever it replaces
+      el.classList.remove('wx-split');
+      return;
+    }
+    el.textContent = '';
+    const g = document.createElement('span');
+    g.className = 'wx-grip'; g.textContent = grip;
+    const d = document.createElement('span');
+    d.className = 'wx-desc'; d.textContent = desc;
+    el.appendChild(g); el.appendChild(d);
+    el._wxBuilt = grip + desc;       // this element's textContent now reads exactly this
+    el.classList.add('wx-split');
+  });
 }
 // pure + testable: consecutive play days ending today (or yesterday if not yet played today)
 function computeStreak(days, todayStr) {
@@ -5300,6 +5336,7 @@ function renderCup(rows) {
     window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
   });
   applyI18n();
+  decorateWeatherCards();   // applyI18n does this too, but it bails out without SRI18N
   updateStreak();
   paintAchievements();
   applyHD();
@@ -5451,7 +5488,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v145';
+const BUILD = 'v146';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
