@@ -43,16 +43,69 @@ test('v146: the weather row still offers all four conditions', () => {
   });
 });
 
-test('v146: every part of a card has its own class (no positional spans left)', () => {
+test('v147: every part of a card has its own class (no positional spans at all)', () => {
   cardBlocks.forEach((b, i) => {
+    assert.match(b, /class="wx-art"/, `card ${i} has its condition picture`);
+    assert.match(b, /class="wx-head"/, `card ${i} groups icon + title into one row`);
     assert.match(b, /class="wx-ico"/, `card ${i} wraps its icon`);
-    assert.match(b, /class="wx-txt"/, `card ${i} wraps its text`);
     assert.match(b, /class="wx-name"[^>]*data-i18n=/, `card ${i} names its title`);
     assert.match(b, /class="wx-sub"[^>]*data-i18n=/, `card ${i} names its subtitle`);
-    // the title must be the FIRST text the card shows, not an unclassed span the
-    // stylesheet has to guess at with :first-child
-    assert.ok(b.indexOf('wx-name') < b.indexOf('wx-sub'), `card ${i} orders title before subtitle`);
-    assert.doesNotMatch(b, /<span[^>]*>\s*[^<]*<\/span>\s*<\/button>/, `card ${i} has no unclassed tail span`);
+    assert.ok(b.indexOf('wx-head') < b.indexOf('wx-sub'), `card ${i} puts the title row above the detail row`);
+    assert.ok(b.indexOf('wx-art') < b.indexOf('wx-head'), `card ${i} paints the picture first`);
+    // every span must be classed: an unclassed one is exactly what made the old
+    // stylesheet guess with :first-child / :last-child
+    const unclassed = (b.match(/<span(?![^>]*class=)[^>]*>/g) || []);
+    assert.deepStrictEqual(unclassed, [], `card ${i} has no unclassed span: ` + unclassed.join(' '));
+    // an icon floated beside a stacked text column is the layout that looked broken
+    assert.ok(!/class="wx-txt"/.test(b), `card ${i} no longer stacks its text beside a floating icon`);
+  });
+});
+
+test('v147: each condition has its own picture, shipped and precached', () => {
+  const sw = fs.readFileSync(path.join(ROOT, 'public', 'sw.js'), 'utf8');
+  let total = 0;
+  WEATHERS.forEach((w) => {
+    const rel = 'public/img/weather/' + w + '.webp';
+    assert.ok(fs.existsSync(path.join(ROOT, rel)), rel + ' exists');
+    const size = fs.statSync(path.join(ROOT, rel)).size;
+    total += size;
+    assert.ok(size < 60 * 1024, `${w}.webp is ${Math.round(size / 1024)}KB - keep the card art small`);
+    assert.ok(sw.includes('/img/weather/' + w + '.webp'), `${w}.webp is precached`);
+    assert.ok(row.includes(`data-weather="${w}"`), `${w} card present`);
+  });
+  assert.ok(total < 200 * 1024, `all four together are ${Math.round(total / 1024)}KB`);
+});
+
+test('v147: the text always has a scrim to sit on', () => {
+  const block = CSS.slice(CSS.indexOf('.weather-row {'), CSS.indexOf('/* Car Cards */'));
+  const scrim = block.slice(block.indexOf('.weather-btn::before'), block.indexOf('.weather-btn::after'));
+  // two gradients: one from the reading edge (so the title and grip never sit on
+  // raw asphalt) and one settling at the bottom (where the grip row lives). Both
+  // are needed - a single flat wash either buries the picture or loses the text.
+  assert.strictEqual((scrim.match(/linear-gradient\(/g) || []).length, 2, 'two gradients');
+  assert.match(scrim, /rgba\(5, 8, 14, 0\.94\)/, 'dark at the reading edge');
+  assert.match(scrim, /rgba\(5, 8, 14, 0\.16\)/, 'and clearing toward the picture side');
+  assert.match(scrim, /rgba\(5, 8, 14, 0\.60\)/, 'with a settle at the bottom for the grip row');
+  // the picture must sit UNDER the scrim, or the text loses its contrast
+  const art = block.slice(block.indexOf('.weather-btn .wx-art'), block.indexOf('.weather-btn::before'));
+  assert.match(art, /z-index:\s*0/, 'the picture is the bottom layer');
+  assert.match(scrim, /z-index:\s*1/, 'the scrim sits above it');
+  const head = block.slice(block.indexOf('.weather-btn .wx-head'), block.indexOf('.weather-btn .wx-ico'));
+  assert.match(head, /z-index:\s*2/, 'and the content above both');
+  // the picture has to stay visible: a scrim can never be the whole design
+  assert.match(art, /opacity:\s*0\.9/, 'the artwork is not buried');
+});
+
+test('v147: every card still carries its condition\'s accent', () => {
+  const block = CSS.slice(CSS.indexOf('.weather-row {'), CSS.indexOf('/* Car Cards */'));
+  const accents = WEATHERS.map((w) => {
+    const m = block.match(new RegExp('\\.weather-btn\\[data-weather="' + w + '"\\]\\s*\\{[^}]*--wx:\\s*(#[0-9a-f]{6})'));
+    assert.ok(m, `${w} declares an accent`);
+    return m[1].toLowerCase();
+  });
+  assert.strictEqual(new Set(accents).size, 4, 'the four accents are distinct: ' + accents.join(', '));
+  WEATHERS.forEach((w) => {
+    assert.ok(new RegExp(`\\[data-weather="${w}"\\][^{]*\\{[^}]*--wx-art:\\s*url`).test(block), `${w} points at its picture`);
   });
 });
 
@@ -89,29 +142,17 @@ test('v146: the stylesheet no longer styles weather cards by position', () => {
   assert.ok(!/\.weather-btn\.active\s+span:first-child/.test(block), 'no positional active rule');
   // every part the markup uses must actually be styled - a class in the HTML with
   // no rule is exactly how this row broke in the first place
-  for (const cls of ['.wx-ico', '.wx-txt', '.wx-name', '.wx-sub', '.wx-grip', '.wx-desc']) {
+  for (const cls of ['.wx-art', '.wx-head', '.wx-ico', '.wx-name', '.wx-sub', '.wx-grip', '.wx-desc']) {
     assert.ok(block.includes(cls), `${cls} is styled`);
   }
-});
-
-test('v146: each weather carries its own accent, and they are all different', () => {
-  const block = CSS.slice(CSS.indexOf('.weather-row {'), CSS.indexOf('/* Car Cards */'));
-  const accents = WEATHERS.map((w) => {
-    const m = block.match(new RegExp('\\.weather-btn\\[data-weather="' + w + '"\\]\\s*\\{\\s*--wx:\\s*(#[0-9a-f]{6})'));
-    assert.ok(m, `${w} declares an accent`);
-    return m[1].toLowerCase();
-  });
-  assert.strictEqual(new Set(accents).size, 4, 'the four accents are distinct: ' + accents.join(', '));
-  WEATHERS.forEach((w) => {
-    assert.ok(new RegExp(`data-weather="${w}"[\\s\\S]{0,80}--wx-rgb`).test(block), `${w} accents paint translucently`);
-  });
 });
 
 test('v146: the chosen card is obvious without relying on hover', () => {
   const block = CSS.slice(CSS.indexOf('.weather-row {'), CSS.indexOf('/* Car Cards */'));
   assert.ok(/\.weather-btn\.active\s*\{[\s\S]*?border-color:\s*rgba\(var\(--wx-rgb\)/.test(block),
     'the active border takes the accent');
-  assert.ok(/\.weather-btn\.active::after\s*\{/.test(block), 'active gets its lit top bar');
+  assert.ok(/\.weather-btn\.active \{/.test(block) && /border-left-color:\s*var\(--wx\)/.test(block),
+    'the active card lights its accent rail');
   assert.ok(/\.weather-btn\.active\s+\.wx-name\s*\{\s*color:\s*var\(--wx\)/.test(block),
     'the active title turns the accent colour');
   assert.ok(/\.weather-btn:focus-visible/.test(block), 'keyboard focus is visible');
@@ -123,7 +164,9 @@ test('v146: the title uses the display font and the description stays quiet', ()
   assert.match(name, /var\(--font-display\)/, 'the title is display type');
   assert.match(name, /font:\s*800/, 'and bold');
   const desc = block.slice(block.indexOf('.weather-btn .wx-desc'), block.indexOf('.weather-btn .wx-sub:not'));
-  assert.match(desc, /color:\s*#8fa2b8/i, 'the description is muted');
+  // muted, but lifted a step so it still reads over a photograph
+  assert.match(desc, /color:\s*#a9bad0/i, 'the description is muted but legible over the picture');
+  assert.match(desc, /text-shadow:/i, 'and carries a shadow for contrast');
 });
 
 test('v146: the row reflows on a phone instead of leaving one card stranded', () => {
@@ -137,7 +180,8 @@ test('v146: the row reflows on a phone instead of leaving one card stranded', ()
 
 test('v146: the icon tile sets the icon size, not the other way round', () => {
   const block = CSS.slice(CSS.indexOf('.weather-row {'), CSS.indexOf('/* Car Cards */'));
-  assert.match(block, /\.weather-btn \.wx-ico \{[^}]*font-size:\s*19px/, 'the tile sizes the icon');
+  assert.match(block, /\.weather-btn \.wx-ico \{[^}]*font-size:\s*17px/, 'the tile sizes the icon');
+  assert.match(block, /\.weather-ico \{ color: var\(--wx, var\(--cyber-cyan\)\); \}/, 'the icon takes the accent');
   // the HUD chip keeps its own icon colour: --wx is only defined on the cards
   assert.match(CSS, /\.weather-ico \{ color: var\(--wx, var\(--cyber-cyan\)\); \}/, 'chip falls back to cyan');
   assert.ok(/\.weather-chip \.ico \{ font-size: 1\.15em/.test(CSS), 'the chip rule is untouched');

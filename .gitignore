@@ -12,3 +12,6 @@ tools/car-art/raw/
 # python bytecode (tools/ is source only - the .pyc that was tracked by mistake is dropped here)
 __pycache__/
 *.pyc
+
+# weather-condition model renders (the shipped .webp are committed; the sources are not)
+tools/weather-art/raw/

@@ -36,6 +36,24 @@ with the logo, whether a given silhouette is confusable with a registered
 trademark is a legal question this project cannot answer. See
 `tools/logo-forge/PROVENANCE.md` for the same note about the wordmark.
 
+## Weather-condition card art (v147)
+
+`public/img/weather/<id>.webp` - four pictures (dry, wet, night, blizzard) shown on
+the weather cards.
+
+Like the car portraits, these are **original images generated for this project**
+with an image model from prompts written here; they are not photographs or
+imported artwork. No brand mark, logo or readable signage appears in any of them
+(the prompts exclude them), and each was composed with a plain, dark band on one
+side so the card's text has somewhere quiet to sit.
+
+- 480x294, 17-36 KB each, precached by the service worker
+- one visual family: same low camera angle, surface filling the lower frame, a
+  colour grade that matches the game's accent for that condition
+
+**No trademark clearance was performed** - same caveat as the wordmark and the car
+portraits.
+
 ## Rejected candidate sources (licensing audit, 2026-09-22)
 
 - `Vivekkk-1/3D-Models` - owner disclaims ownership; Sketchfab rips of
