@@ -3856,11 +3856,11 @@ function showResults(order) {
         '<div class="c-pos">P' + row.pos + '</div>' +
         '<div class="c-xp">+' + row.xp + ' XP</div>' +
         (row.rd ? '<div class="c-rd ' + (row.rd > 0 ? 'up' : 'dn') + '">' + (row.rd > 0 ? '+' : '') + row.rd + ' RATING</div>' : '<div class="c-rd mu">RATED · vs humans only</div>') +
-        (row.levelUp ? '<div class="c-lvl">⬆ LEVEL ' + row.levelNew + '</div>' : '') +
-        (row.pr ? '<div class="c-pr">🎉 PERSONAL RECORD</div>' : '') +
-        (row.dailyXp ? '<div class="c-pr">📅 DAILY +150 XP</div>' : '') +
-        (row.chDone ? '<div class="c-pr">⚔️ CHALLENGE COMPLETE +100</div>' : '') +
-        (row.ach && row.ach.length ? '<div class="c-pr">' + row.ach.map((a) => a.icon + ' ' + a.name + ' +' + a.xp).join(' · ') + '</div>' : '') +
+        (row.levelUp ? '<div class="c-lvl">' + icoSpan('arrow-up') + ' LEVEL ' + row.levelNew + '</div>' : '') +
+        (row.pr ? '<div class="c-pr">' + icoSpan('sparkle') + ' PERSONAL RECORD</div>' : '') +
+        (row.dailyXp ? '<div class="c-pr">' + icoSpan('calendar') + ' DAILY +150 XP</div>' : '') +
+        (row.chDone ? '<div class="c-pr">' + icoSpan('swords') + ' CHALLENGE COMPLETE +100</div>' : '') +
+        (row.ach && row.ach.length ? '<div class="c-pr">' + row.ach.map((a) => icoSpan(a.icon) + ' ' + a.name + ' +' + a.xp).join(' · ') + '</div>' : '') +
         '<div class="c-tier" style="color:' + tr.col + '">' + tr.name + ' · ' + row.ratingNew + '</div>';
     } else if (cer) cer.hidden = true;
   }
@@ -5205,7 +5205,7 @@ function paintAchievements() {
   const row = $('ach-row'); if (!row) return;
   const have = achLoad();
   row.innerHTML = ACH_DEFS.map((a) =>
-    '<span class="ach' + (have[a.id] ? ' on' : '') + '" title="' + a.name + '">' + a.icon + '</span>').join('');
+    '<span class="ach' + (have[a.id] ? ' on' : '') + '" title="' + a.name + '">' + icoSpan(a.icon) + '</span>').join('');
 }
 
 let hdLoaded = false;
@@ -5531,7 +5531,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v150';
+const BUILD = 'v151';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

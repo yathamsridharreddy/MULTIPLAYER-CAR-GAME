@@ -379,3 +379,40 @@ test('v149: the club emblem still accepts what is already stored', () => {
   assert.match(read('server.js'), /\/\^\[a-z0-9-\]\{1,16\}\$\//,
     'the server sanitiser must let an icon name through whole');
 });
+
+test('v151: an icon field is never written into markup as text', () => {
+  // The bug the user actually saw: the account row printed the words "medal flame
+  // bolt ghost globe". The catalogues had been switched to icon NAMES, but two
+  // renderers still concatenated the field straight into HTML, so the name itself
+  // became the visible text. An icon field may only be read through icoSpan(),
+  // setIcoIcon(), setIcoLabel() or badgeMarkup() - never concatenated.
+  const offenders = [];
+  for (const [file, src] of [['game.js', GAME], ['progression.js', PROG]]) {
+    for (const line of src.split('\n')) {
+      if (!/\.icon\b/.test(line)) continue;
+      if (/icoSpan\(|setIcoIcon\(|icon:\s|def\.icon\b.*icoSpan|'\s*\+\s*def\.icon/.test(line)) continue;
+      if (/^\s*(\/\/|\*)/.test(line)) continue;                 // a comment is not code
+      offenders.push(`${file}: ${line.trim().slice(0, 120)}`);
+    }
+  }
+  assert.deepStrictEqual(offenders, [],
+    'an icon field is being rendered without an icon element:\n  ' + offenders.join('\n  '));
+});
+
+test('v151: the account row shows icons, not icon names', () => {
+  // the exact regression from the screenshot
+  const block = GAME.slice(GAME.indexOf("const row = $('ach-row')"), GAME.indexOf("const row = $('ach-row')") + 320);
+  assert.match(block, /icoSpan\(a\.icon\)/, 'the achievement strip must build an icon element');
+  assert.ok(!/'\s*\+\s*a\.icon\s*\+/.test(block), 'and must not concatenate the name');
+});
+
+test('v151: the chrome states an icon size, so glyphs are not 1em of 11px', () => {
+  // 1em of a small button label was an 11px icon - smaller than the text beside it
+  for (const sel of ['.ghost.sm .ico', '.ltab .ico', '.lsec-title .ico', '.mode3-btn .ico']) {
+    assert.ok(CSS.includes(sel), `no icon size declared for ${sel}`);
+  }
+  const sizes = [...CSS.matchAll(/\.(?:ghost|ltab|btab|lsec-title|mode3-btn)[^{]*\.ico[^{]*\{[^}]*font-size:\s*([\d.]+)px/g)]
+    .map((m) => parseFloat(m[1]));
+  assert.ok(sizes.length >= 4, `expected several declared sizes, found ${sizes.length}`);
+  assert.ok(Math.min(...sizes) >= 13, `the smallest chrome icon is ${Math.min(...sizes)}px - too small to read`);
+});

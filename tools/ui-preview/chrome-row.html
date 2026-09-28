@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Chrome row — v151 icon &amp; type pass</title>
+<link rel="stylesheet" href="/public/css/style.css"/>
+<style>
+  body { background: #070b14; padding: 24px; }
+  .box { max-width: 940px; margin: 0 auto 26px; background: rgba(8,13,24,.72);
+         border: 1px solid var(--border-subtle); border-radius: 16px; padding: 18px 20px; }
+  .cap { font: 700 11px var(--font-tech); letter-spacing: 1.6px; color: #6f819a;
+         text-transform: uppercase; margin: 0 0 14px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  /* the account row lives in a container on the real page; give it one here */
+  .account-line { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+  .ltabs { display: flex; gap: 6px; background: rgba(255,255,255,.03);
+           border: 1px solid var(--border-subtle); border-radius: 14px; padding: 6px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <p class="cap">The row from the screenshot — real markup, real stylesheet</p>
+    <div class="account-line"><div id="account-line" class="account-line" style="display:flex">
+          <span id="account-chip"><span class="ico" data-i="user" aria-hidden="true"></span><span class="lbl">racer</span></span><span id="streak-badge" hidden></span>
+          <button id="crew-btn" class="ghost sm"><span class="ico" data-i="race-flag" aria-hidden="true"></span><span data-i18n="clubs">CLUBS</span></button>
+          <button id="badges-btn" class="ghost sm"><span class="ico" data-i="medal" aria-hidden="true"></span><span data-i18n="badges">BADGES</span></button>
+          <button id="bounties-btn" class="ghost sm"><span class="ico" data-i="trophy" aria-hidden="true"></span><span data-i18n="bounties">BOUNTIES</span></button>
+          <button id="friends-btn" class="ghost sm" hidden><span class="ico" data-i="users" aria-hidden="true"></span><span data-i18n="friends">FRIENDS</span></button>
+          <div id="ach-row" class="ach-row"></div>
+          <button id="account-btn" class="ghost sm" data-i18n="signin">SIGN IN</button>
+          <button id="account-out" class="ghost sm" hidden data-i18n="signout">SIGN OUT</button>
+        </div>
+  </div>
+
+  <div class="box">
+    <p class="cap">Lobby tabs</p>
+    <div class="ltabs">
+          <button id="ltab-race" class="ltab active"><span class="ico" data-i="race-flag" aria-hidden="true"></span><span data-i18n="tabRace">RACE</span></button>
+          <button id="ltab-rank" class="ltab"><span class="ico" data-i="trophy" aria-hidden="true"></span><span data-i18n="tabRank">LEADERBOARDS</span></button>
+          <button id="ltab-prof" class="ltab"><span class="ico" data-i="chart" aria-hidden="true"></span><span data-i18n="tabProf">PROFILE</span></button>
+          <button id="ltab-sett" class="ltab"><span class="ico" data-i="gear" aria-hidden="true"></span><span data-i18n="tabSett">SETTINGS</span></button>
+        </div>  </div>
+
+  <div class="box">
+    <p class="cap">Mode cards — icon in a gutter, name over the description</p>
+    <div class="mode3-row">
+          <button class="mode3-btn active" data-m3="mp"><span class="ico" data-i="racing-car" aria-hidden="true"></span><span class="m3-name" data-i18n="modeMultiplayer">MULTIPLAYER</span><span class="m3-sub" data-i18n="modeMultiplayerSub">Race against players</span></button>
+          <button class="mode3-btn" data-m3="tt"><span class="ico" data-i="stopwatch" aria-hidden="true"></span><span class="m3-name" data-i18n="modeTimeTrial">TIME TRIAL</span><span class="m3-sub" data-i18n="modeTimeTrialSub">Beat your fastest time</span></button>
+          <button class="mode3-btn" data-m3="practice"><span class="ico" data-i="gamepad" aria-hidden="true"></span><span class="m3-name" data-i18n="modePractice">PRACTICE</span><span class="m3-sub" data-i18n="modePracticeSub">Learn the track</span></button>
+        </div>
+  </div>
+
+  <div class="box">
+    <p class="cap">Primary action</p>
+    <div class="row"><button id="quickplay-btn" class="big-cta" style="margin:4px 0 12px"><span class="ico" data-i="bolt" aria-hidden="true"></span><span data-i18n="quickplay">QUICK PLAY — find a rival</span></button></div>
+  </div>
+
+  <div class="box">
+    <p class="cap">Every button size, side by side</p>
+    <div class="row">
+      <button class="ghost sm"><span class="ico" data-i="gear" aria-hidden="true"></span><span>SETTINGS</span></button>
+      <button class="ghost"><span class="ico" data-i="share" aria-hidden="true"></span><span>SHARE</span></button>
+      <button class="big-cta"><span class="ico" data-i="race-flag" aria-hidden="true"></span><span>START RACE</span></button>
+      <button class="ghost sm"><span class="ico ico-amber" data-i="trophy" aria-hidden="true"></span><span>BOUNTIES</span></button>
+    </div>
+  </div>
+</body>
+</html>

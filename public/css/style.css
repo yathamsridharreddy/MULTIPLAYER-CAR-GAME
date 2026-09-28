@@ -509,11 +509,18 @@ h1 span {
 
 .ltab {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   background: transparent;
   border: 1px solid transparent;
-  color: #8fa2b8;
-  font: 800 12px var(--font-display);
-  letter-spacing: 1.5px;
+  color: #93a5bb;
+  /* Orbitron is a display face: wide, geometric, and it fights small uppercase
+     text at 12px. Chakra Petch is the HUD face - it was drawn for exactly this
+     size, and keeps the same squared-off character. */
+  font: 600 13px var(--font-tech);
+  letter-spacing: 1.1px;
   padding: 10px 14px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -600,11 +607,14 @@ h1 span {
 }
 
 .ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border-medium);
   color: #e2e8f0;
-  font: 700 12px var(--font-tech);
-  letter-spacing: 1px;
+  font: 600 12.5px var(--font-tech);
+  letter-spacing: 0.9px;
   padding: 9px 16px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -625,9 +635,10 @@ h1 span {
 }
 
 .ghost.sm {
-  padding: 5px 12px;
-  font-size: 11px;
-  font-weight: 700;
+  padding: 6px 13px;
+  font-size: 11.5px;
+  font-weight: 600;
+  gap: 6px;
 }
 
 /* Top Account / Driver Bar */
@@ -846,8 +857,11 @@ h1 span {
 }
 
 .lcomp-title {
-  font: 800 11.5px var(--font-display);
-  letter-spacing: 1.5px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 600 12px var(--font-tech);
+  letter-spacing: 1.1px;
   color: #94a3b8;
   text-transform: uppercase;
 }
@@ -1185,8 +1199,11 @@ h1 span {
 }
 
 .lsec-title {
-  font: 900 14px var(--font-display);
-  letter-spacing: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 700 13.5px var(--font-tech);
+  letter-spacing: 1.4px;
   color: #ffffff;
   margin-bottom: 12px;
   text-transform: uppercase;
@@ -1440,29 +1457,35 @@ h1 span {
    became an icon span. Every part has its own class now, and the button is a
    flex row so the icon sits beside the label instead of above it. */
 .mode3-btn {
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
   align-items: center;
-  justify-content: center;
-  gap: 9px;
+  column-gap: 11px;
+  row-gap: 2px;
   text-align: left;
 }
 
+.mode3-btn .ico {
+  grid-row: 1 / span 2;
+  font-size: 23px;
+  color: var(--cyber-cyan);
+}
+.mode3-btn .m3-name { grid-column: 2; }
+.mode3-btn .m3-sub { grid-column: 2; }
+
 .mode3-btn .m3-name {
-  font: 800 13px var(--font-display);
-  letter-spacing: 1px;
+  font: 800 14px var(--font-display);   /* featured: display type stays here */
+  letter-spacing: 0.8px;
   color: #ffffff;
 }
 
 .mode3-btn .m3-sub {
-  font-size: 11px;
-  color: #8fa2b8;
+  font: 500 11.5px var(--font-tech);
+  color: #93a5bb;
 }
 
-.mode3-btn .m3-sub::before {
-  content: '·';
-  margin-right: 7px;
-  opacity: 0.55;
-}
+
 
 .mode3-btn.active {
   background: linear-gradient(135deg, rgba(0, 240, 255, 0.18), rgba(12, 18, 30, 0.9));
@@ -1877,17 +1900,50 @@ h1 span {
 .ico-muted { color: #8fa2b8; }
 .ico-red   { color: #ff5a4d; }
 
-/* v149: an icon before a label needs a little air, and must line up with the
-   cap-height rather than the baseline. */
-.ico + span, .ico + b, .ico + label { margin-left: 0.5em; }
-.ghost.sm .ico, .ghost .ico, .ltab .ico, .btab .ico, .mode-btn .ico,
-.mode3-btn .ico, .cls-btn .ico, .res-btn-secondary .ico, .res-btn-primary .ico,
-.mob-choice-btn .ico, .q-btn .ico, .lsec-title .ico, .toggle-line .ico,
-.lcomp-title .ico, .rrc-tag .ico, .rb-title .ico, h2 .ico, h3 .ico { vertical-align: -0.14em; }
-.ltab .ico, .btab .ico { margin-right: 7px; }
-.toggle-line .ico { margin-right: 6px; }
-.lsec-title .ico, .rb-title .ico, .lcomp-title .ico, h2 .ico, h3 .ico { margin-right: 8px; }
-button.tool .ico { vertical-align: 0; }
+/* ---- v151: icons and labels, at a size you can actually see -----------------
+   v149 wired the icons but left them at 1em of an 11px button - an 11px glyph,
+   which is smaller than the letter next to it and reads as a smudge. Every chrome
+   context now states its icon size, and the containers are flex rows with a real
+   gap, so spacing is the container's job instead of each icon's margin. */
+button .ico, a .ico, .lsec-title .ico, .pstat .ico, .mis .ico, .ach .ico { flex: none; }
+
+.ghost.sm .ico, .ghost .ico, .q-btn .ico, .cls-btn .ico, .mob-choice-btn .ico,
+.res-btn-secondary .ico, .res-btn-primary .ico, .lcomp-btn .ico, .lcomp-ghost-btn .ico,
+.lcomp-season-btn .ico, .toggle-line .ico, .rb-title .ico, .name-input .ico { font-size: 14px; }
+
+.big-cta .ico, .mode-btn .ico { font-size: 17px; }
+.ltab .ico, .btab .ico { font-size: 16px; }
+.lsec-title .ico { font-size: 15px; }
+h2 .ico, h3 .ico { font-size: 0.7em; }        /* headings scale their own icon */
+.lcomp-title .ico { font-size: 1.05em; }
+.rrc-tag .ico { font-size: 13px; }
+button.tool .ico { font-size: 18px; vertical-align: 0; }
+
+/* the row of buttons under the driver name: flex with a gap, and each control
+   carries an accent so the row reads as a designed toolbar instead of five grey
+   pills. Two gameplay controls in green/amber, the two collections in gold, the
+   account in cyan. */
+#account-line .ghost, .account-line .ghost { display: inline-flex; align-items: center; gap: 6px; }
+#crew-btn .ico     { color: #3ddc84; }
+#badges-btn .ico   { color: #ffd479; }
+#bounties-btn .ico { color: #ffc24a; }
+#friends-btn .ico  { color: #b07cff; }
+#account-btn .ico, #account-out .ico { color: #7fe3ff; }
+#account-chip .ico { color: var(--cyber-cyan); font-size: 14px; }
+
+/* the tab row: the active tab lights its icon as well as its label */
+.ltab .ico, .btab .ico { color: #6c7c92; transition: color 0.18s ease; }
+.ltab:hover .ico, .btab:hover .ico { color: #a9bacd; }
+.ltab.active .ico, .btab.active .ico { color: var(--cyber-cyan); }
+
+/* the medal strip sits in the same row as the buttons - match their height so the
+   row has one baseline instead of two */
+#ach-row { display: inline-flex; align-items: center; gap: 6px; }
+#ach-row .ach { padding: 5px 9px; }
+#ach-row .ach .ico { font-size: 16px; }
+
+/* the driver-name strip itself */
+#account-chip { display: inline-flex; align-items: center; gap: 7px; }
 
 /* ---- v149: keyboard focus, everywhere --------------------------------------
    Only a handful of controls had a :focus-visible ring. A racing UI is used with
@@ -2755,6 +2811,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 }
 
 #results-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
   font: 900 24px var(--font-display);
   letter-spacing: 2.5px;
   text-align: center;
