@@ -68,14 +68,14 @@
 
   // v74 server-computed achievements (grants XP; unlocked at settlement only)
   const ACHIEVEMENTS = [
-    { id: 'first_blood',  icon: '🏆', name: 'FIRST BLOOD',  xp: 50,  test: (d) => d.wins >= 1 },
-    { id: 'hot_streak',   icon: '🔥', name: 'HOT STREAK',   xp: 75,  test: (d) => d.streak >= 3 },
-    { id: 'podium_10',    icon: '🥇', name: 'PODIUM',       xp: 100, test: (d) => d.podiums >= 10 },
-    { id: 'world_tour',   icon: '🌍', name: 'WORLD TOUR',   xp: 100, test: (d) => d.mapsPlayed >= 5 },
-    { id: 'daily_driver', icon: '📅', name: 'DAILY DRIVER', xp: 100, test: (d) => d.daily_days >= 7 },
-    { id: 'challenger',   icon: '️', name: 'CHALLENGER',   xp: 100, test: (d) => d.challenges_done >= 10 },
-    { id: 'rated_10',     icon: '🏁', name: 'COMPETITOR',   xp: 50,  test: (d) => d.races >= 10 },
-    { id: 'climber',      icon: '📈', name: 'CLIMBER',      xp: 75,  test: (d) => d.peak_rating >= 1100 }
+    { id: 'first_blood',  icon: 'trophy', name: 'FIRST BLOOD',  xp: 50,  test: (d) => d.wins >= 1 },
+    { id: 'hot_streak',   icon: 'flame', name: 'HOT STREAK',   xp: 75,  test: (d) => d.streak >= 3 },
+    { id: 'podium_10',    icon: 'medal', name: 'PODIUM',       xp: 100, test: (d) => d.podiums >= 10 },
+    { id: 'world_tour',   icon: 'globe', name: 'WORLD TOUR',   xp: 100, test: (d) => d.mapsPlayed >= 5 },
+    { id: 'daily_driver', icon: 'calendar', name: 'DAILY DRIVER', xp: 100, test: (d) => d.daily_days >= 7 },
+    { id: 'challenger',   icon: 'swords', name: 'CHALLENGER',   xp: 100, test: (d) => d.challenges_done >= 10 },
+    { id: 'rated_10',     icon: 'race-flag', name: 'COMPETITOR',   xp: 50,  test: (d) => d.races >= 10 },
+    { id: 'climber',      icon: 'trending-up', name: 'CLIMBER',      xp: 75,  test: (d) => d.peak_rating >= 1100 }
   ];
 
   // Seasons: deterministic current-season lookup against the seasons table row
@@ -226,13 +226,13 @@
 
   // ---- 2. Daily Missions (Deterministic 3 per UTC day) ----
   const DAILY_MISSION_CATALOG = [
-    { id: 'finish_2_races', title: 'Finish 2 Races', desc: 'Complete 2 full races on any circuit', goal: 2, xp: 60, coins: 30, icon: '🏁' },
-    { id: 'win_1_race', title: 'Victory Rush', desc: 'Win 1 race against rivals or bots', goal: 1, xp: 80, coins: 40, icon: '🏆' },
-    { id: 'use_nitro_5', title: 'Nitro Surge', desc: 'Trigger Nitro boost 5 times in races', goal: 5, xp: 50, coins: 25, icon: '⚡' },
-    { id: 'play_daily_cup', title: 'Daily Cup Entry', desc: 'Set a lap time in the Daily Cup challenge', goal: 1, xp: 75, coins: 35, icon: '📅' },
-    { id: 'beat_pb', title: 'Break Your Limits', desc: 'Set a new Personal Record on any circuit', goal: 1, xp: 90, coins: 45, icon: '📈' },
-    { id: 'race_human', title: 'Rivalry Duel', desc: 'Complete a multiplayer race vs human racers', goal: 1, xp: 70, coins: 35, icon: '⚔️' },
-    { id: 'clean_drive', title: 'Apex Master', desc: 'Finish a race with flawless track precision', goal: 1, xp: 65, coins: 30, icon: '🎯' }
+    { id: 'finish_2_races', title: 'Finish 2 Races', desc: 'Complete 2 full races on any circuit', goal: 2, xp: 60, coins: 30, icon: 'race-flag' },
+    { id: 'win_1_race', title: 'Victory Rush', desc: 'Win 1 race against rivals or bots', goal: 1, xp: 80, coins: 40, icon: 'trophy' },
+    { id: 'use_nitro_5', title: 'Nitro Surge', desc: 'Trigger Nitro boost 5 times in races', goal: 5, xp: 50, coins: 25, icon: 'bolt' },
+    { id: 'play_daily_cup', title: 'Daily Cup Entry', desc: 'Set a lap time in the Daily Cup challenge', goal: 1, xp: 75, coins: 35, icon: 'calendar' },
+    { id: 'beat_pb', title: 'Break Your Limits', desc: 'Set a new Personal Record on any circuit', goal: 1, xp: 90, coins: 45, icon: 'trending-up' },
+    { id: 'race_human', title: 'Rivalry Duel', desc: 'Complete a multiplayer race vs human racers', goal: 1, xp: 70, coins: 35, icon: 'swords' },
+    { id: 'clean_drive', title: 'Apex Master', desc: 'Finish a race with flawless track precision', goal: 1, xp: 65, coins: 30, icon: 'target' }
   ];
 
   function getDailyMissions(dateKey) {
@@ -282,10 +282,10 @@
 
   // ---- 3. Daily Engagement Streaks & Milestones ----
   const STREAK_MILESTONES = [
-    { days: 3, xp: 100, coins: 50, title: '🔥 Hot Streak' },
-    { days: 7, xp: 300, coins: 150, title: '⚡ Silver Runner' },
-    { days: 14, xp: 500, coins: 300, title: '👑 Gold Veteran' },
-    { days: 30, xp: 1000, coins: 750, title: '💎 Diamond Legend' }
+    { days: 3, xp: 100, coins: 50, title: 'Hot Streak', icon: 'flame' },
+    { days: 7, xp: 300, coins: 150, title: 'Silver Runner', icon: 'bolt' },
+    { days: 14, xp: 500, coins: 300, title: 'Gold Veteran', icon: 'crown' },
+    { days: 30, xp: 1000, coins: 750, title: 'Diamond Legend', icon: 'diamond' }
   ];
 
   function getStreakMilestoneInfo(streak) {
@@ -435,7 +435,7 @@
     {
       id: 'speed_demon',
       name: 'Speed Demon',
-      icon: '⚡',
+      icon: 'bolt',
       desc: 'Achieve blistering top speed in a competitive race',
       tiers: [
         { level: 1, name: 'Bronze', req: 160, label: '160 km/h', xp: 50, coins: 25 },
@@ -447,7 +447,7 @@
     {
       id: 'apex_predator',
       name: 'Apex Predator',
-      icon: '🏆',
+      icon: 'trophy',
       desc: 'Win official multiplayer races against human rivals',
       tiers: [
         { level: 1, name: 'Bronze', req: 5, label: '5 Wins', xp: 75, coins: 50 },
@@ -459,7 +459,7 @@
     {
       id: 'streak_king',
       name: 'Streak King',
-      icon: '🔥',
+      icon: 'flame',
       desc: 'Maintain a consecutive daily racing streak',
       tiers: [
         { level: 1, name: 'Bronze', req: 3, label: '3-Day Streak', xp: 50, coins: 25 },
@@ -471,7 +471,7 @@
     {
       id: 'rival_slayer',
       name: 'Rival Slayer',
-      icon: '⚔️',
+      icon: 'swords',
       desc: 'Overtake rivals ahead of you on the global rating ladder',
       tiers: [
         { level: 1, name: 'Bronze', req: 3, label: '3 Rivals Passed', xp: 60, coins: 30 },
@@ -483,7 +483,7 @@
     {
       id: 'phantom_master',
       name: 'Phantom Master',
-      icon: '👻',
+      icon: 'ghost',
       desc: 'Beat personal best and competitor ghost lap times',
       tiers: [
         { level: 1, name: 'Bronze', req: 3, label: '3 Ghosts Beaten', xp: 50, coins: 25 },
@@ -495,7 +495,7 @@
     {
       id: 'clean_driver',
       name: 'Clean Driver',
-      icon: '🎯',
+      icon: 'target',
       desc: 'Complete full race circuits without a single wall or car collision',
       tiers: [
         { level: 1, name: 'Bronze', req: 3, label: '3 Clean Races', xp: 50, coins: 25 },
@@ -507,7 +507,7 @@
     {
       id: 'nitro_junkie',
       name: 'Nitro Junkie',
-      icon: '🚀',
+      icon: 'rocket',
       desc: 'Deploy Nitro boosts across all racing circuits',
       tiers: [
         { level: 1, name: 'Bronze', req: 25, label: '25 Boosts', xp: 40, coins: 20 },
@@ -573,11 +573,11 @@
 
   // ---- 8. Weekly Syndicate Bounties ----
   const WEEKLY_BOUNTY_CATALOG = [
-    { id: 'weekly_laps_15', title: 'Circuit Endurance', desc: 'Complete 15 full race laps this week', goal: 15, xp: 200, coins: 100, icon: '🔄' },
-    { id: 'weekly_wins_3', title: 'Weekly Dominion', desc: 'Win 3 rated multiplayer matches', goal: 3, xp: 250, coins: 150, icon: '👑' },
-    { id: 'weekly_pts_100', title: 'Points Collector', desc: 'Accumulate 100 weekly championship points', goal: 100, xp: 300, coins: 200, icon: '🏆' },
-    { id: 'weekly_nitro_20', title: 'Boost Veteran', desc: 'Trigger Nitro boost 20 times this week', goal: 20, xp: 180, coins: 90, icon: '⚡' },
-    { id: 'weekly_clean_5', title: 'Flawless Pace', desc: 'Finish 5 races without hitting barriers', goal: 5, xp: 220, coins: 120, icon: '🎯' }
+    { id: 'weekly_laps_15', title: 'Circuit Endurance', desc: 'Complete 15 full race laps this week', goal: 15, xp: 200, coins: 100, icon: 'refresh-cw' },
+    { id: 'weekly_wins_3', title: 'Weekly Dominion', desc: 'Win 3 rated multiplayer matches', goal: 3, xp: 250, coins: 150, icon: 'crown' },
+    { id: 'weekly_pts_100', title: 'Points Collector', desc: 'Accumulate 100 weekly championship points', goal: 100, xp: 300, coins: 200, icon: 'trophy' },
+    { id: 'weekly_nitro_20', title: 'Boost Veteran', desc: 'Trigger Nitro boost 20 times this week', goal: 20, xp: 180, coins: 90, icon: 'bolt' },
+    { id: 'weekly_clean_5', title: 'Flawless Pace', desc: 'Finish 5 races without hitting barriers', goal: 5, xp: 220, coins: 120, icon: 'target' }
   ];
 
   function getWeeklyBounties(weekKey) {
@@ -641,7 +641,7 @@
         title: `Protect Your ${streakInfo.currentStreak || 1}-Day Streak`,
         desc: `Race once today to progress toward the ${streakInfo.nextMilestone || 3}-Day Milestone!`,
         actionType: 'quickplay',
-        cta: '🔥 RACE TO KEEP STREAK',
+        cta: 'RACE TO KEEP STREAK', icon: 'flame',
         badge: 'DAILY BONUS'
       };
     }
@@ -654,7 +654,7 @@
           title: `Claim ${claimable.title}`,
           desc: `Ready to collect +${claimable.xp} XP and +${claimable.coins} Coins!`,
           actionType: 'claim_mission',
-          cta: '🎁 CLAIM MISSION',
+          cta: 'CLAIM MISSION', icon: 'gift',
           badge: 'REWARD READY'
         };
       }
@@ -665,7 +665,7 @@
           title: `Finish ${almostDone.title}`,
           desc: `Only 1 more to complete: ${almostDone.desc}`,
           actionType: 'quickplay',
-          cta: '🎯 COMPLETE MISSION',
+          cta: 'COMPLETE MISSION', icon: 'target',
           badge: 'ALMOST DONE'
         };
       }
@@ -677,7 +677,7 @@
         title: `Overtake ${rivals.nextRival.name} (#${rivals.nextRival.rank})`,
         desc: `Only ${rivals.nextRival.ratingGap} rating points behind! Win to take their rank.`,
         actionType: 'quickplay',
-        cta: '⚔️ PASS RIVAL',
+        cta: 'PASS RIVAL', icon: 'swords',
         badge: 'RIVAL BATTLE'
       };
     }
@@ -688,7 +688,7 @@
         title: `Climb to ${nextTier.name}`,
         desc: `${nextTier.gap} rating points to reach ${nextTier.name}!`,
         actionType: 'quickplay',
-        cta: '🏆 CLIMB DIVISION',
+        cta: 'CLIMB DIVISION', icon: 'trophy',
         badge: 'RANKED'
       };
     }
@@ -698,14 +698,14 @@
       title: 'Jump into a Quick Race',
       desc: 'Compete in high-speed arcade multiplayer and level up your career.',
       actionType: 'quickplay',
-      cta: '🏎️ QUICK RACE',
+      cta: 'QUICK RACE', icon: 'racing-car',
       badge: 'MULTIPLAYER'
     };
   }
 
   // ---- 10. Racing Syndicate Crews ----
   const CREW_MILESTONES = [
-    { tier: 1, reqKm: 25,  reqMeters: 25000,   name: 'Rookie Milestone',    reward: { xp: 150, coins: 75, badge: '🔰' }, desc: '25 km team mileage' },
+    { tier: 1, reqKm: 25,  reqMeters: 25000,   name: 'Rookie Milestone',    reward: { xp: 150, coins: 75, badge: 'sparkle' }, desc: '25 km team mileage' },
     { tier: 2, reqKm: 75,  reqMeters: 75000,   name: 'Club Division',      reward: { xp: 350, coins: 150, title: 'SYNDICATE ROOKIE' }, desc: '75 km team mileage' },
     { tier: 3, reqKm: 200, reqMeters: 200000,  name: 'Pro Circuit',        reward: { xp: 750, coins: 350, paint: 'neon_crew' }, desc: '200 km team mileage' },
     { tier: 4, reqKm: 500, reqMeters: 500000,  name: 'Elite Grand Prix',   reward: { xp: 1500, coins: 750, rim: 'syndicate_gold' }, desc: '500 km team mileage' },
@@ -713,11 +713,11 @@
   ];
 
   const CREW_PRESETS = [
-    { id: 'apex', tag: 'REDL', name: 'Redline Motorsport', motto: 'Push past the limit, hold the racing line', badge: '🏁', color: '#ff3344' },
-    { id: 'drift', tag: 'AKNA', name: 'Akina SpeedStars', motto: 'Precision downhill touge apex mastery', badge: '⚡', color: '#00e5ff' },
-    { id: 'viper', tag: 'MDNT', name: 'Midnight Club Tokyo', motto: 'Rule the asphalt under city neon', badge: '🌃', color: '#b388ff' },
-    { id: 'titan', tag: 'VLCX', name: 'Veloce Grand Prix', motto: 'Pure racing pedigree and unmatched speed', badge: '🏎️', color: '#ffd479' },
-    { id: 'ghost', tag: 'MNZA', name: 'Monza Oversteer Works', motto: 'Flat-out through every chicane', badge: '🔥', color: '#ff6d00' }
+    { id: 'apex', tag: 'REDL', name: 'Redline Motorsport', motto: 'Push past the limit, hold the racing line', badge: 'race-flag', color: '#ff3344' },
+    { id: 'drift', tag: 'AKNA', name: 'Akina SpeedStars', motto: 'Precision downhill touge apex mastery', badge: 'bolt', color: '#00e5ff' },
+    { id: 'viper', tag: 'MDNT', name: 'Midnight Club Tokyo', motto: 'Rule the asphalt under city neon', badge: 'moon', color: '#b388ff' },
+    { id: 'titan', tag: 'VLCX', name: 'Veloce Grand Prix', motto: 'Pure racing pedigree and unmatched speed', badge: 'racing-car', color: '#ffd479' },
+    { id: 'ghost', tag: 'MNZA', name: 'Monza Oversteer Works', motto: 'Flat-out through every chicane', badge: 'flame', color: '#ff6d00' }
   ];
 
   function validCrewTag(tag) {

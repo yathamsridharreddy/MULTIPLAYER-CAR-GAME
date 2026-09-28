@@ -3950,8 +3950,8 @@ function showResults(order) {
       if (mList) {
         mList.innerHTML = row.missionUpdates.map(m => `
           <div class="res-mission-item ${m.completed ? 'completed' : ''}">
-            <span>${m.icon || '🎯'} ${escapeHtml(m.title)} (${m.progress}/${m.goal})</span>
-            <span>${m.justCompleted ? '🎉 COMPLETED! +' + m.xpAwarded + ' XP' : (m.completed ? '✅ Done' : '+' + (m.goal - m.progress) + ' to go')}</span>
+            <span>${icoSpan(m.icon || 'target')} ${escapeHtml(m.title)} (${m.progress}/${m.goal})</span>
+            <span>${m.justCompleted ? (icoSpan('sparkle') + ' COMPLETED! +' + m.xpAwarded + ' XP') : (m.completed ? (icoSpan('check') + ' Done') : '+' + (m.goal - m.progress) + ' to go')}</span>
           </div>
         `).join('');
       }
@@ -4014,7 +4014,7 @@ function showResults(order) {
       if (bList) {
         bList.innerHTML = row.bountyUpdates.map(b => `
           <div class="res-mission-item ${b.completed ? 'completed' : ''}">
-            <span>${b.icon || '🏆'} ${escapeHtml(b.title)} (${b.progress}/${b.goal})</span>
+            <span>${icoSpan(b.icon || 'trophy')} ${escapeHtml(b.title)} (${b.progress}/${b.goal})</span>
             <span>${b.justCompleted ? '🎉 COMPLETED! +' + b.xpAwarded + ' XP' : (b.completed ? '✅ Done' : '+' + (b.goal - b.progress) + ' to go')}</span>
           </div>
         `).join('');
@@ -4183,6 +4183,13 @@ function renderLeaderboard(snap) {
    swap the icon itself when the state changes (searching -> found).
    Toasts, share text and the turtle/rabbit sensitivity ends keep their emoji on
    purpose - those are sentences, not chrome. */
+/* ---- v149: a club emblem can be an icon name (new) or an emoji (created before
+   the emblem picker switched over). Both render; nothing already stored breaks. */
+const BADGE_ICONS = ['race-flag', 'bolt', 'racing-car', 'wind', 'flame', 'crown', 'shield', 'ghost', 'swords', 'target'];
+function badgeMarkup(badge, fallback) {
+  const b = badge || fallback || 'race-flag';
+  return BADGE_ICONS.includes(b) ? icoSpan(b) : '<span class="badge-emoji">' + b + '</span>';
+}
 function icoSpan(name, tone) {
   return '<span class="ico ' + (tone || '') + '" data-i="' + name + '" aria-hidden="true"></span>';
 }
@@ -4288,7 +4295,7 @@ async function fetchAndRenderRetention() {
       const bDesc = $('nah-desc'); if (bDesc) bDesc.textContent = act.desc;
       const bBtn = $('nah-btn');
       if (bBtn) {
-        bBtn.textContent = act.cta;
+        setIcoIcon(bBtn, act.icon || 'bolt'); setIcoLabel(bBtn, act.cta);   // v149: keep the button's icon
         bBtn.onclick = () => {
           if (act.actionKey === 'daily' || act.actionKey === 'streak' || act.id === 'streak') {
             const dp = $('daily-play'); if (dp) dp.click();
@@ -4443,8 +4450,8 @@ async function fetchAndRenderRetention() {
           return `
             <div class="lcomp-m-row">
               <div class="lcomp-m-header">
-                <span>${m.icon || '🎯'} ${escapeHtml(m.title)}</span>
-                <span>${m.progress}/${m.goal} ${m.completed ? '✅' : ''}</span>
+                <span>${icoSpan(m.icon || 'target')} ${escapeHtml(m.title)}</span>
+                <span>${m.progress}/${m.goal} ${m.completed ? icoSpan('check') : ''}</span>
               </div>
               <div class="lcomp-m-bar">
                 <div class="lcomp-m-fill ${m.completed ? 'done' : ''}" style="width:${pct}%"></div>
@@ -4497,7 +4504,7 @@ async function openBadgesShowcase() {
             const pct = Math.min(100, Math.round((b.progress / Math.max(1, b.target)) * 100));
             return `
               <div class="badge-card ${unlocked ? 'unlocked' : ''}">
-                <div class="bc-icon">${b.icon || '🎖️'}</div>
+                <div class="bc-icon">${icoSpan(b.icon || 'medal')}</div>
                 <div class="bc-title">${escapeHtml(b.title)}</div>
                 <div class="bc-tier">${unlocked ? (tI18n('tier', { tier: b.tierLevel, tierName: b.tierName }) || ('Tier ' + b.tierLevel + ' (' + b.tierName + ')')) : (tI18n('locked') || 'Locked')}</div>
                 <div class="bc-desc">${escapeHtml(b.desc)}</div>
@@ -4549,7 +4556,7 @@ async function openBountiesModal() {
             return `
               <div class="res-mission-item ${b.completed ? 'completed' : ''}" style="padding:10px;">
                 <div style="display:flex; flex-direction:column; gap:4px; text-align:left;">
-                  <b style="font-size:13px; color:#fff;">${b.icon || '🏆'} ${escapeHtml(b.title)}</b>
+                  <b style="font-size:13px; color:#fff;">${icoSpan(b.icon || 'trophy')} ${escapeHtml(b.title)}</b>
                   <span style="font-size:11px; color:#8b93a8;">${escapeHtml(b.desc)}</span>
                   <div class="lcomp-m-bar" style="width:180px;"><div class="lcomp-m-fill ${b.completed ? 'done' : ''}" style="width:${pct}%"></div></div>
                   <span style="font-size:10.5px; color:#ffd479;">${tI18n('rewardsText', { xp: b.xpReward, coins: b.coinReward, pts: b.ptsReward }) || `Rewards: +${b.xpReward} XP · +${b.coinReward} 🪙 · +${b.ptsReward} Pts`}</span>
@@ -4666,7 +4673,7 @@ async function openCrewModal(tab = 'my') {
             <div class="chc-header">
               <div class="chc-title">
                 <span class="syndicate-tag" style="background:${c.color || '#ff3366'};">[${escapeHtml(c.tag)}]</span>
-                <span class="chc-name">${c.badge || '⚡'} ${escapeHtml(c.name)}</span>
+                <span class="chc-name">${badgeMarkup(c.badge)} ${escapeHtml(c.name)}</span>
               </div>
               <span style="font:800 11px Orbitron; color:#ffd479;">${c.isLeader ? ('👑 ' + (tI18n('leader') || 'LEADER')) : (tI18n('member') || 'MEMBER')}</span>
             </div>
@@ -4742,7 +4749,7 @@ async function openCrewModal(tab = 'my') {
             <div class="crew-preset-card" style="border-color:${cr.color || 'rgba(255,255,255,0.1)'};">
               <div class="cpc-head">
                 <span class="syndicate-tag" style="background:${cr.color || '#ff3366'};">[${escapeHtml(cr.tag)}]</span>
-                <span class="cpc-name">${cr.badge || '⚡'} ${escapeHtml(cr.name)}</span>
+                <span class="cpc-name">${badgeMarkup(cr.badge)} ${escapeHtml(cr.name)}</span>
               </div>
               <div class="cpc-motto">"${escapeHtml(cr.motto)}"</div>
               <div class="cpc-stats">👥 ${cr.memberCount} Racers · ${cr.weeklyKm} km this week</div>
@@ -4772,12 +4779,12 @@ async function openCrewModal(tab = 'my') {
         <label>
           BADGE ICON:
           <select id="cf-badge" class="name-input" style="background:#141c30; color:#fff;">
-            <option value="🏁">🏁 Checkered Flag</option>
-            <option value="⚡">⚡ Lightning Bolt</option>
-            <option value="🏎️">🏎️ Grand Prix</option>
-            <option value="🌀">🌀 Vortex</option>
-            <option value="🔥">🔥 Flame</option>
-            <option value="👑">👑 Crown</option>
+            <option value="race-flag">Checkered Flag</option>
+            <option value="bolt">Lightning Bolt</option>
+            <option value="racing-car">Grand Prix</option>
+            <option value="wind">Vortex</option>
+            <option value="flame">Flame</option>
+            <option value="crown">Crown</option>
           </select>
         </label>
         <label>
@@ -4802,7 +4809,7 @@ async function openCrewModal(tab = 'my') {
                 <td class="clb-rank">#${cr.rank}</td>
                 <td class="clb-crew">
                   <span class="syndicate-tag" style="background:${cr.color || '#ff3366'};">[${escapeHtml(cr.tag)}]</span>
-                  <b>${cr.badge || '⚡'} ${escapeHtml(cr.name)}</b>
+                  <b>${badgeMarkup(cr.badge)} ${escapeHtml(cr.name)}</b>
                 </td>
                 <td>👥 ${cr.memberCount}</td>
                 <td class="clb-km">${cr.weeklyKm} km</td>
@@ -4998,11 +5005,11 @@ window.addEventListener('unhandledrejection', (ev) => track('err', undefined, 'p
 // v48 achievements (device-local medals) + photo-finish share. Purely additive.
 // ---------------------------------------------------------------------------
 const ACH_DEFS = [
-  { id: 'firstwin', icon: '🥇', name: 'First Win' },
-  { id: 'streak3', icon: '🔥', name: '3-Day Streak' },
-  { id: 'fastlap', icon: '⚡', name: 'Lap Under 0:30' },
-  { id: 'ghostwin', icon: '👻', name: 'Ghost Beaten' },
-  { id: 'allmaps', icon: '🌍', name: 'All 5 Circuits' },
+  { id: 'firstwin', icon: 'medal', name: 'First Win' },
+  { id: 'streak3', icon: 'flame', name: '3-Day Streak' },
+  { id: 'fastlap', icon: 'bolt', name: 'Lap Under 0:30' },
+  { id: 'ghostwin', icon: 'ghost', name: 'Ghost Beaten' },
+  { id: 'allmaps', icon: 'globe', name: 'All 5 Circuits' },
 ];
 function evalAchievements(facts, have) {
   const out = [];
@@ -5028,27 +5035,29 @@ function levelOf(xp) { return Math.floor(Math.sqrt(Math.max(0, xp) / 100)) + 1; 
 const TITLES = ['ROOKIE', 'RACER', 'PRO', 'ELITE', 'LEGEND'];
 function titleOf(p) { return TITLES[Math.min(TITLES.length - 1, Math.floor((levelOf(p.xp) - 1) / 2))]; }
 const ACHV = [
-  ['race1', '🏁', 'First Race', 'complete a race', (p) => p.races >= 1],
-  ['win1', '🏆', 'First Win', 'win a race', (p) => p.wins >= 1],
-  ['pod10', '🥇', 'Podium Hunter', '10 podiums', (p) => p.pod >= 10],
-  ['streak5', '🔥', 'Hot Driver', '5 win streak', (p) => p.streakMax >= 5],
-  ['lap30', '⚡', 'Speed Demon', 'lap under 0:30', (p) => Object.values(p.bestLap).some((t) => t < 30)],
-  ['race25', '🏎️', 'Road Warrior', '25 races', (p) => p.races >= 25],
-  ['win50', '👑', 'Champion', '50 wins', (p) => p.wins >= 50],
-  ['clean', '🎯', 'Perfect Run', 'win without crashing', (p) => p.cleanWin],
-  ['maps5', '🌍', 'World Tour', 'race all 5 maps', (p) => Object.keys(p.maps).length >= 5],
-  ['ghost1', '👻', 'Ghost Buster', 'beat a shared ghost', (p) => p.ghostWin],
-  ['daily1', '📅', 'Daily Driver', 'complete a daily', (p) => p.daily >= 1],
-  ['mission3', '🎯', 'Mission Pro', '3 missions done', (p) => p.misDone >= 3],
-  ['lvl5', '⭐', 'Rising Star', 'reach level 5', (p) => levelOf(p.xp) >= 5],
-  ['lvl10', '🌟', 'Veteran', 'reach level 10', (p) => levelOf(p.xp) >= 10],
+  // [id, icon, name, how to earn it, test, accent] - the icon is a NAME now, so the
+  // tile draws from the icon set instead of leaving it to the device's emoji font
+  ['race1', 'race-flag', 'First Race', 'complete a race', (p) => p.races >= 1, 'gold'],
+  ['win1', 'trophy', 'First Win', 'win a race', (p) => p.wins >= 1, 'gold'],
+  ['pod10', 'medal', 'Podium Hunter', '10 podiums', (p) => p.pod >= 10, 'gold'],
+  ['streak5', 'flame', 'Hot Driver', '5 win streak', (p) => p.streakMax >= 5, 'red'],
+  ['lap30', 'bolt', 'Speed Demon', 'lap under 0:30', (p) => Object.values(p.bestLap).some((t) => t < 30), 'red'],
+  ['race25', 'racing-car', 'Road Warrior', '25 races', (p) => p.races >= 25, 'cyan'],
+  ['win50', 'crown', 'Champion', '50 wins', (p) => p.wins >= 50, 'gold'],
+  ['clean', 'target', 'Perfect Run', 'win without crashing', (p) => p.cleanWin, 'cyan'],
+  ['maps5', 'globe', 'World Tour', 'race all 5 maps', (p) => Object.keys(p.maps).length >= 5, 'green'],
+  ['ghost1', 'ghost', 'Ghost Buster', 'beat a shared ghost', (p) => p.ghostWin, 'purple'],
+  ['daily1', 'calendar', 'Daily Driver', 'complete a daily', (p) => p.daily >= 1, 'green'],
+  ['mission3', 'ticket', 'Mission Pro', '3 missions done', (p) => p.misDone >= 3, 'green'],
+  ['lvl5', 'star', 'Rising Star', 'reach level 5', (p) => levelOf(p.xp) >= 5, 'gold'],
+  ['lvl10', 'sparkle', 'Veteran', 'reach level 10', (p) => levelOf(p.xp) >= 10, 'purple'],
 ];
 const MISSIONS = [
-  ['m_r3', '🏁 Complete 3 races', (p) => p.races, 3],
-  ['m_w2', '🏆 Win 2 races', (p) => p.wins, 2],
-  ['m_l40', '⚡ Lap under 0:40', (p) => (Object.values(p.bestLap).some((t) => t < 40) ? 1 : 0), 1],
-  ['m_p3', '🥇 3 podiums', (p) => p.pod, 3],
-  ['m_one5', '🛣️ 5 races on one map', (p) => Math.max(0, ...Object.values(p.maps).concat([0])), 5],
+  ['m_r3', 'race-flag', 'Complete 3 races', (p) => p.races, 3],
+  ['m_w2', 'trophy', 'Win 2 races', (p) => p.wins, 2],
+  ['m_l40', 'bolt', 'Lap under 0:40', (p) => (Object.values(p.bestLap).some((t) => t < 40) ? 1 : 0), 1],
+  ['m_p3', 'medal', '3 podiums', (p) => p.pod, 3],
+  ['m_one5', 'route', '5 races on one map', (p) => Math.max(0, ...Object.values(p.maps).concat([0])), 5],
 ];
 const UNLOCK_LVL = { trail: [1, 2, 4], decal: [1, 3, 6], wheels: [1, 5, 8] }; // value -> required level
 function cosUnlocked(k, v) { const arr = UNLOCK_LVL[k]; return v < arr.length && levelOf(Pget().xp) >= arr[v]; }
@@ -5118,20 +5127,28 @@ function renderProfile() {
   $('prof-title').textContent = 'Lv' + lv + ' ' + titleOf(p);
   const wr = p.races ? Math.round((p.wins / p.races) * 100) : 0;
   const favMap = Object.entries(p.maps).sort((a, b) => b[1] - a[1])[0];
+  const stat = (icon, tone, label, val) =>
+    '<span class="pstat">' + icoSpan(icon, tone) + '<i>' + label + '</i><b>' + val + '</b></span>';
   $('prof-grid').innerHTML =
-    '<span>🏎️ RACES <b>' + p.races + '</b></span><span>🏆 WINS <b>' + p.wins + '</b></span>' +
-    '<span>🥇 PODIUMS <b>' + p.pod + '</b></span><span>📈 WIN RATE <b>' + wr + '%</b></span>' +
-    '<span>🔥 STREAK <b>' + p.streak + '</b></span><span>🕹️ TIME <b>' + Math.round(p.play / 60) + 'm</b></span>' +
-    (favMap ? '<span>❤️ FAV <b>' + ((CORE.MAPS[favMap[0]] || {}).name || '').split(' ')[0] + '</b></span>' : '') +
-    '<span>📅 DAILIES <b>' + p.daily + '</b></span>';
+    stat('racing-car', 'ico-cyan', 'RACES', p.races) +
+    stat('trophy', 'ico-amber', 'WINS', p.wins) +
+    stat('medal', 'ico-amber', 'PODIUMS', p.pod) +
+    stat('trending-up', 'ico-green', 'WIN RATE', wr + '%') +
+    stat('flame', 'ico-flame', 'STREAK', p.streak) +
+    stat('stopwatch', 'ico-cyan', 'TIME', Math.round(p.play / 60) + 'm') +
+    (favMap ? stat('heart', 'ico-red', 'FAV', ((CORE.MAPS[favMap[0]] || {}).name || '').split(' ')[0]) : '') +
+    stat('calendar', 'ico-green', 'DAILIES', p.daily);
   const need = 100 * lv * lv, base = 100 * (lv - 1) * (lv - 1);
   const pct = Math.min(100, Math.round(((p.xp - base) / (need - base)) * 100));
   const xb = $('prof-xp'); xb.querySelector('i').style.width = pct + '%';
   $('prof-xp-txt').textContent = 'LEVEL ' + lv + ' · ' + p.xp + ' / ' + need + ' XP';
-  $('prof-ach').innerHTML = ACHV.map(([id, ic, nm, ds]) => '<span class="ach' + (p.ach[id] ? ' on' : '') + '" title="' + nm + ' — ' + ds + '">' + ic + '</span>').join('');
-  $('prof-mis').innerHTML = MISSIONS.map(([id, nm, fn, goal]) => {
+  $('prof-ach').innerHTML = ACHV.map(([id, ic, nm, ds, , tone]) =>
+    '<span class="ach' + (p.ach[id] ? ' on' : '') + '" data-ach="' + id + '" data-tone="' + (tone || 'gold') +
+    '" title="' + nm + ' — ' + ds + '">' + icoSpan(ic) + '</span>').join('');
+  $('prof-mis').innerHTML = MISSIONS.map(([id, ic, nm, fn, goal]) => {
     const cur = Math.min(goal, fn(p));
-    return '<div class="mis' + (p.mis[id] ? ' done' : '') + '">' + nm + ' <b>' + cur + '/' + goal + '</b>' + (p.mis[id] ? ' ✅' : '') + '</div>';
+    return '<div class="mis' + (p.mis[id] ? ' done' : '') + '">' + icoSpan(ic) + '<span>' + nm +
+      ' <b>' + cur + '/' + goal + '</b></span>' + (p.mis[id] ? '<span class="mis-tick">' + icoSpan('check') + '</span>' : '') + '</div>';
   }).join('');
   // weekly summary
   const wk = $('weekly-box');
@@ -5514,7 +5531,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v149';
+const BUILD = 'v150';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -6864,7 +6881,7 @@ function openProfile() {
     }
     if (achs && achs.length && window.SRProg) {
       html += '<div class="p-sub">ACHIEVEMENTS</div><div class="p-recs">';
-      achs.forEach((a) => { const def = SRProg.ACHIEVEMENTS.find((x) => x.id === a.ach); html += '<div class="p-rec"><span>' + (def ? def.icon : '🏅') + ' ' + escapeHtml(def ? def.name : a.ach) + '</span><i>' + new Date(a.unlocked_at).toLocaleDateString() + '</i></div>'; });
+      achs.forEach((a) => { const def = SRProg.ACHIEVEMENTS.find((x) => x.id === a.ach); html += '<div class="p-rec"><span>' + icoSpan(def ? def.icon : 'medal') + ' ' + escapeHtml(def ? def.name : a.ach) + '</span><i>' + new Date(a.unlocked_at).toLocaleDateString() + '</i></div>'; });
       html += '</div>';
     }
     if (!st.races) html += '<div class="p-empty">No settled races yet — your career starts at the next finish line. 🏁</div>';

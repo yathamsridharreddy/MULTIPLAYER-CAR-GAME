@@ -2596,6 +2596,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 .ico[data-i="weather-rain"] { -webkit-mask-image: url("../img/ico-mono/weather-rain.svg"); mask-image: url("../img/ico-mono/weather-rain.svg"); }
 .ico[data-i="weather-snow"] { -webkit-mask-image: url("../img/ico-mono/weather-snow.svg"); mask-image: url("../img/ico-mono/weather-snow.svg"); }
 .ico[data-i="weather-sun"] { -webkit-mask-image: url("../img/ico-mono/weather-sun.svg"); mask-image: url("../img/ico-mono/weather-sun.svg"); }
+.ico[data-i="moon"] { -webkit-mask-image: url("../img/ico-mono/moon.svg"); mask-image: url("../img/ico-mono/moon.svg"); }
+.ico[data-i="diamond"] { -webkit-mask-image: url("../img/ico-mono/diamond.svg"); mask-image: url("../img/ico-mono/diamond.svg"); }
+.ico[data-i="heart"] { -webkit-mask-image: url("../img/ico-mono/heart.svg"); mask-image: url("../img/ico-mono/heart.svg"); }
+.ico[data-i="trending-up"] { -webkit-mask-image: url("../img/ico-mono/trending-up.svg"); mask-image: url("../img/ico-mono/trending-up.svg"); }
 .ico[data-i="star"] { -webkit-mask-image: url("../img/ico-mono/star.svg"); mask-image: url("../img/ico-mono/star.svg"); }
 
 /* v149: the generic half of the icon set - Lucide geometry (ISC), re-emitted on the
@@ -3673,23 +3677,85 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
   margin-bottom: 10px;
 }
 
+/* ---- v149: the achievement tiles and mission rows -------------------------
+   These were text emoji: 20px glyphs handed to the device's emoji font, greyscaled
+   when locked (which is why the locked ones looked like grey blobs) and carrying a
+   gold border when earned. Two of the entries were even the same 🎯. They are real
+   icons now, drawn by the same mask system as the rest of the chrome, so each one
+   takes its own accent and the tile can be lit properly. */
 .ach, .mis {
-  font-size: 20px;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.05);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  filter: grayscale(1);
-  opacity: 0.4;
+  border-radius: 11px;
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.ach.on, .mis.done {
-  filter: grayscale(0);
-  opacity: 1;
-  border-color: var(--velocity-gold);
-  background: rgba(255, 212, 121, 0.15);
-  box-shadow: 0 0 10px rgba(255, 212, 121, 0.3);
+.ach .ico { font-size: 19px; color: #5d6b80; }
+.mis .ico { font-size: 15px; color: #7d8ba1; }
+.mis b { color: #ffffff; }
+.mis span { font-size: 12.5px; }
+
+/* locked: the glyph recedes, the tile stays legible */
+.ach:not(.on) .ico { opacity: 0.55; }
+.ach:not(.on) { opacity: 0.75; }
+
+/* earned: the tile lights up in its own accent instead of one shared gold */
+.ach.on {
+  border-color: rgba(var(--ach-rgb, 255, 212, 121), 0.55);
+  background: rgba(var(--ach-rgb, 255, 212, 121), 0.12);
+  box-shadow: 0 0 12px rgba(var(--ach-rgb, 255, 212, 121), 0.28);
 }
+.ach.on .ico { color: rgb(var(--ach-rgb, 255, 212, 121)); opacity: 1; }
+.ach[data-tone="red"]    { --ach-rgb: 255, 106, 77; }
+.ach[data-tone="cyan"]   { --ach-rgb: 79, 220, 255; }
+.ach[data-tone="green"]  { --ach-rgb: 61, 220, 132; }
+.ach[data-tone="purple"] { --ach-rgb: 176, 124, 255; }
+.ach[data-tone="gold"]   { --ach-rgb: 255, 212, 121; }
+
+.mis.done {
+  border-color: rgba(61, 220, 132, 0.5);
+  background: rgba(61, 220, 132, 0.1);
+  box-shadow: 0 0 12px rgba(61, 220, 132, 0.22);
+}
+.mis.done .ico { color: #3ddc84; opacity: 1; }
+
+/* the completion tick is a disc, not a green square from the emoji font */
+.mis-tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #25d366;
+  color: #04140a;
+}
+.mis-tick .ico { font-size: 12px; color: #04140a; opacity: 1; }
+
+/* the profile stat strip: icon, label, value on one line each */
+.pstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  font: 700 11px var(--font-tech);
+  letter-spacing: 0.6px;
+  color: #8fa2b8;
+}
+.pstat .ico { font-size: 15px; }
+.pstat i { font-style: normal; }
+.pstat b { color: #ffffff; font-weight: 800; }
+.pstat:hover { border-color: rgba(0, 240, 255, 0.32); }
+
+/* a club emblem that is still an emoji from before the picker changed */
+.badge-emoji { font-size: 1em; line-height: 1; }
 
 /* ============================================================================
    Tutorial & How To Play Overlay

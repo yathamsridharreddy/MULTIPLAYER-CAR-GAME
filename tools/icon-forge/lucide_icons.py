@@ -49,6 +49,10 @@ LUCIDE_MAP = {
     # chrome actions
     'bolt': ('zap', RED),
     'star': ('star', GOLD),
+    'moon': ('moon', PURPLE),
+    'heart': ('heart', RED),
+    'trending-up': ('trending-up', GREEN),
+    'diamond': ('gem', PURPLE),
     'exit': ('log-out', SLATE),
     'share': ('share-2', CYAN),
     'copy': ('copy', SLATE),

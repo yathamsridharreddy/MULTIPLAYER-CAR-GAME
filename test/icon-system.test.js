@@ -311,3 +311,71 @@ test('v149: the labels game.js writes into have somewhere to put them', () => {
       `#${id} is relabelled by the code, so it needs a .lbl or data-i18n label node`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// 6. the data-driven chrome: mission / achievement / bounty catalogues
+// ---------------------------------------------------------------------------
+
+const PROG = read('public/js/progression.js');
+
+test('v149: the catalogues carry icon names, not emoji', () => {
+  // These are rendered from DATA, so cleaning the markup was never going to reach
+  // them - the profile tiles, the mission rows and the badge cards all read their
+  // glyph out of these tables. One entry (challenger) carried a lone U+FE0F, an
+  // empty glyph that rendered as nothing at all.
+  const offenders = [];
+  for (const [file, src] of [['progression.js', PROG], ['game.js', GAME]]) {
+    for (const m of src.matchAll(/icon: '([^']*)'/g)) {
+      if (/[\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2B00-\u2BFF\uFE0F]/u.test(m[1])) {
+        offenders.push(`${file}: icon: '${m[1]}'`);
+      }
+    }
+  }
+  assert.deepStrictEqual(offenders, [], 'catalogues still carry emoji glyphs:\n  ' + offenders.join('\n  '));
+});
+
+// the text of a `const NAME = [` ... `\n];` array - slicing by indexOf alone is a
+// trap: evalAchievements is defined ABOVE ACHV, so the slice came back empty and
+// the test passed on nothing.
+function arrayBlock(src, name) {
+  const at = src.indexOf(`const ${name} = [`);
+  assert.ok(at !== -1, `${name} not found`);
+  const end = src.indexOf('\n];', at);
+  assert.ok(end !== -1, `${name} is not terminated`);
+  return src.slice(at, end);
+}
+
+test('v149: every icon a catalogue names exists', () => {
+  const names = new Set();
+  for (const src of [PROG, GAME]) {
+    for (const m of src.matchAll(/icon: '([a-z0-9-]+)'/g)) names.add(m[1]);
+  }
+  for (const name of ['ACHV', 'MISSIONS', 'ACH_DEFS']) {
+    for (const m of arrayBlock(GAME, name).matchAll(/'([a-z0-9-]+)',\s*'[A-Z]/g)) names.add(m[1]);
+  }
+  assert.ok(names.size >= 20, `the catalogues should name a real set, found ${names.size}`);
+  for (const n of names) {
+    assert.ok(exists(`public/img/ico-mono/${n}.svg`), `catalogue names "${n}" but there is no such icon`);
+    assert.match(CSS, new RegExp(`\\.ico\\[data-i="${n}"\\]`), `"${n}" has no mask rule`);
+  }
+});
+
+test('v149: the achievement tiles are all distinct', () => {
+  // two of the fourteen used to be the same 🎯 ("Perfect Run" and "Mission Pro"),
+  // which reads as a placeholder rather than an achievement
+  const icons = [...arrayBlock(GAME, 'ACHV').matchAll(/'([a-z0-9-]+)',\s*'[A-Z]/g)].map((m) => m[1]);
+  assert.ok(icons.length >= 14, `expected the 14 tiles, found ${icons.length}`);
+  assert.strictEqual(new Set(icons).size, icons.length,
+    `two achievements share an icon: ${icons.join(' ')}`);
+});
+
+test('v149: the club emblem still accepts what is already stored', () => {
+  // New clubs store an icon name. Clubs created before the picker changed stored a
+  // single emoji, and those rows are still in the database - the renderer has to
+  // handle both, and the server must not truncate a name to four characters.
+  assert.match(GAME, /function badgeMarkup\(badge, fallback\)/, 'the dual-mode renderer exists');
+  assert.match(GAME, /BADGE_ICONS\.includes\(b\) \? icoSpan\(b\)/, 'names render as icons');
+  assert.match(GAME, /badge-emoji/, 'and anything else still renders as text');
+  assert.match(read('server.js'), /\/\^\[a-z0-9-\]\{1,16\}\$\//,
+    'the server sanitiser must let an icon name through whole');
+});

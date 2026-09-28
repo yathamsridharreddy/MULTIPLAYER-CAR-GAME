@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Profile pane — v149 icon check</title>
+<!-- The REAL stylesheet, not a mock-up. The icon URLs inside it are relative to
+     public/css/, so serving this from the repository root resolves them to the
+     same files the site ships. -->
+<link rel="stylesheet" href="/public/css/style.css"/>
+<style>
+  body { background: #070b14; padding: 22px; font-family: var(--font-body, system-ui); }
+  .wrap { max-width: 780px; margin: 0 auto; }
+  .note { color: #6f819a; font-size: 12px; margin: 0 0 14px; letter-spacing: .3px; }
+  .sec { background: rgba(10,16,28,.72); border: 1px solid var(--border-subtle);
+         border-radius: 16px; padding: 16px 18px; margin-bottom: 18px; }
+  .hdr { font: 800 12px var(--font-tech); letter-spacing: 1.4px; color: #7f91a8;
+         margin: 0 0 12px; text-transform: uppercase; }
+  .lvlbar { height: 22px; border-radius: 999px; background: rgba(255,255,255,.06);
+            border: 1px solid var(--border-subtle); position: relative; overflow: hidden;
+            margin: 12px 0 16px; }
+  .lvlbar i { position: absolute; inset: 0 auto 0 0; width: 38%;
+              background: linear-gradient(90deg,#00e5ff,#3ddc84); }
+  .lvlbar span { position: absolute; inset: 0; display: flex; align-items: center;
+                 justify-content: center; font: 800 11px var(--font-tech); color: #fff; }
+  /* the two states side by side so the locked treatment can be compared */
+  .pair { display: flex; gap: 14px; flex-wrap: wrap; }
+  .pair > div { flex: 1 1 300px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="note">Rendered with <code>public/css/style.css</code> and the shipped
+  <code>public/img/ico-mono/*.svg</code> — nothing here is a mock-up. Left column is
+  the earned state, right is locked.</p>
+
+  <div class="sec">
+    <div class="hdr">Career</div>
+    <div class="prof-grid">
+      <span class="pstat"><span class="ico ico-cyan" data-i="racing-car" aria-hidden="true"></span><i>RACES</i><b>97</b></span>
+      <span class="pstat"><span class="ico ico-amber" data-i="trophy" aria-hidden="true"></span><i>WINS</i><b>64</b></span>
+      <span class="pstat"><span class="ico ico-amber" data-i="medal" aria-hidden="true"></span><i>PODIUMS</i><b>70</b></span>
+      <span class="pstat"><span class="ico ico-green" data-i="trending-up" aria-hidden="true"></span><i>WIN RATE</i><b>66%</b></span>
+      <span class="pstat"><span class="ico ico-flame" data-i="flame" aria-hidden="true"></span><i>STREAK</i><b>5</b></span>
+      <span class="pstat"><span class="ico ico-cyan" data-i="stopwatch" aria-hidden="true"></span><i>TIME</i><b>128m</b></span>
+      <span class="pstat"><span class="ico ico-red" data-i="heart" aria-hidden="true"></span><i>FAV</i><b>HIGHLAND</b></span>
+      <span class="pstat"><span class="ico ico-green" data-i="calendar" aria-hidden="true"></span><i>DAILIES</i><b>19</b></span>
+    </div>
+    <div class="lvlbar"><i></i><span>LEVEL 11 · 10205 / 12100 XP</span></div>
+  </div>
+
+  <div class="sec">
+    <div class="hdr">Achievements — 14 tiles, each with its own accent</div>
+    <div class="prof-ach">
+      <span class="ach on" data-tone="gold" title="First Race"><span class="ico" data-i="race-flag" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="gold" title="First Win"><span class="ico" data-i="trophy" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="gold" title="Podium Hunter"><span class="ico" data-i="medal" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="red" title="Hot Driver"><span class="ico" data-i="flame" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="red" title="Speed Demon"><span class="ico" data-i="bolt" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="cyan" title="Road Warrior"><span class="ico" data-i="racing-car" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="gold" title="Champion"><span class="ico" data-i="crown" aria-hidden="true"></span></span>
+      <span class="ach" data-tone="cyan" title="Perfect Run"><span class="ico" data-i="target" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="green" title="World Tour"><span class="ico" data-i="globe" aria-hidden="true"></span></span>
+      <span class="ach" data-tone="purple" title="Ghost Buster"><span class="ico" data-i="ghost" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="green" title="Daily Driver"><span class="ico" data-i="calendar" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="green" title="Mission Pro"><span class="ico" data-i="ticket" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="gold" title="Rising Star"><span class="ico" data-i="star" aria-hidden="true"></span></span>
+      <span class="ach" data-tone="purple" title="Veteran"><span class="ico" data-i="sparkle" aria-hidden="true"></span></span>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="hdr">Daily missions</div>
+    <div class="prof-mis">
+      <div class="mis done"><span class="ico" data-i="race-flag" aria-hidden="true"></span><span>Complete 3 races <b>3/3</b></span><span class="mis-tick"><span class="ico" data-i="check" aria-hidden="true"></span></span></div>
+      <div class="mis done"><span class="ico" data-i="trophy" aria-hidden="true"></span><span>Win 2 races <b>2/2</b></span><span class="mis-tick"><span class="ico" data-i="check" aria-hidden="true"></span></span></div>
+      <div class="mis done"><span class="ico" data-i="bolt" aria-hidden="true"></span><span>Lap under 0:40 <b>1/1</b></span><span class="mis-tick"><span class="ico" data-i="check" aria-hidden="true"></span></span></div>
+      <div class="mis done"><span class="ico" data-i="medal" aria-hidden="true"></span><span>3 podiums <b>3/3</b></span><span class="mis-tick"><span class="ico" data-i="check" aria-hidden="true"></span></span></div>
+      <div class="mis done"><span class="ico" data-i="route" aria-hidden="true"></span><span>5 races on one map <b>5/5</b></span><span class="mis-tick"><span class="ico" data-i="check" aria-hidden="true"></span></span></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="hdr">Club emblems — the picker's six, plus one legacy emoji</div>
+    <div class="prof-ach">
+      <span class="ach on" data-tone="cyan"><span class="ico" data-i="race-flag" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="red"><span class="ico" data-i="bolt" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="gold"><span class="ico" data-i="racing-car" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="purple"><span class="ico" data-i="wind" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="red"><span class="ico" data-i="flame" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="gold"><span class="ico" data-i="crown" aria-hidden="true"></span></span>
+      <span class="ach on" data-tone="gold" title="a club created before the picker changed"><span class="badge-emoji">🏁</span></span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

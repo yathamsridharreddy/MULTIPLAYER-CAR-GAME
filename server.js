@@ -1742,7 +1742,7 @@ const memCrews = new Map([
     tag: 'REDL',
     name: 'Redline Motorsport',
     motto: 'Push past the limit, hold the racing line',
-    badge: '🏁',
+    badge: 'race-flag',
     color: '#ff3344',
     leaderUid: null,
     members: [],
@@ -1756,7 +1756,7 @@ const memCrews = new Map([
     tag: 'AKNA',
     name: 'Akina SpeedStars',
     motto: 'Precision downhill touge apex mastery',
-    badge: '⚡',
+    badge: 'bolt',
     color: '#00e5ff',
     leaderUid: null,
     members: [],
@@ -1770,7 +1770,7 @@ const memCrews = new Map([
     tag: 'MDNT',
     name: 'Midnight Club Tokyo',
     motto: 'Rule the asphalt under city neon',
-    badge: '🌃',
+    badge: 'moon',
     color: '#b388ff',
     leaderUid: null,
     members: [],
@@ -1784,7 +1784,7 @@ const memCrews = new Map([
     tag: 'VLCX',
     name: 'Veloce Grand Prix',
     motto: 'Pure racing pedigree and unmatched speed',
-    badge: '🏎️',
+    badge: 'racing-car',
     color: '#ffd479',
     leaderUid: null,
     members: [],
@@ -1798,7 +1798,7 @@ const memCrews = new Map([
     tag: 'MNZA',
     name: 'Monza Oversteer Works',
     motto: 'Flat-out through every chicane',
-    badge: '🔥',
+    badge: 'flame',
     color: '#ff6d00',
     leaderUid: null,
     members: [],
@@ -2381,7 +2381,10 @@ app.post('/api/player/crew/create', async (req, res) => {
     tag: cleanTag,
     name: cleanName,
     motto: (motto && typeof motto === 'string') ? motto.slice(0, 60) : 'Apex Velocity Syndicate',
-    badge: (badge && typeof badge === 'string') ? badge.slice(0, 4) : '⚡',
+    // v149: new clubs store an icon name from the emblem picker ('race-flag'), clubs
+    // created before that stored a single emoji. Names need room; emoji do not.
+    badge: (badge && typeof badge === 'string' && /^[a-z0-9-]{1,16}$/.test(badge)) ? badge
+         : ((badge && typeof badge === 'string') ? badge.slice(0, 4) : 'bolt'),
     color: (color && typeof color === 'string') ? color : '#ff4444',
     leaderUid: uid,
     members: [{
@@ -4641,7 +4644,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v149', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v150', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
