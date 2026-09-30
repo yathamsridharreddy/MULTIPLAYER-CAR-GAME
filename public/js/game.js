@@ -2290,6 +2290,189 @@ function spawnFlame(x, y, z) {
   p.spr.scale.setScalar(0.5 + Math.random() * 0.5); p.spr.visible = true;
 }
 
+// ---------------------------------------------------------------------------
+// v152: tire fire - hot friction at the contact patch, replacing the old black
+// skid marks.
+//
+// One pool of additive sprites on the same softTex radial gradient every other
+// effect uses, so it needs no new texture, no new material type and no new
+// dependency. A sprite's colour is set per particle, which is what lets a single
+// pool serve all three layers at once:
+//
+//   flame  - short-lived, lifts and shrinks, white-yellow core into orange
+//   ember  - longer-lived, falls and bounces off the road, deep orange/red
+//   spark  - fast and thin, fired backwards along the slide, pale gold
+//
+// Spawning is round-robin over a fixed pool (O(1)), not pool.find() (O(n)) - the
+// existing pools scan for a free slot, which is fine at their rates but not when
+// six cars are each lighting four tires every frame.
+//
+// Cost control, in order:
+//   * emission is on a per-tire timer, so it does not scale with frame rate
+//   * only the tires that are actually slipping emit (rear axle first)
+//   * a remote car emits at a lower rate than the local car
+//   * a global live-particle budget sheds remote emitters when the field is
+//     saturated, so a six-car pile-up cannot outgrow the pool
+// ---------------------------------------------------------------------------
+// the wheel geometry the rig actually uses (see the per-car `wheels` specs, e.g.
+// `wheels: { r: 0.34, tx: 1.03, tz: 1.45 }`): half-track and half-wheelbase, so
+// the effect lands on the real contact patches. -tz is the rear axle.
+const WHEEL_TX = 1.03, WHEEL_TZ = 1.45, AXLES = [-1, 1];
+const TIRE_FIRE_POOL = 240;
+const TIRE_FIRE_BUDGET = 190;      // live particles before remote emitters shed
+const tireFirePool = [];
+let tireFireCursor = 0, tireFireLive = 0;
+for (let i = 0; i < TIRE_FIRE_POOL; i++) {
+  const mat = new THREE.SpriteMaterial({
+    map: softTex, transparent: true, opacity: 0, depthWrite: false,
+    blending: THREE.AdditiveBlending, color: 0xff9a2e
+  });
+  const spr = new THREE.Sprite(mat);
+  spr.visible = false; spr.renderOrder = 6;   // over the road, under the HUD
+  scene.add(spr);
+  tireFirePool.push({ spr, mat, life: 0, maxLife: 1, vx: 0, vy: 0, vz: 0, kind: 0, fade: 1, slot: 0 });
+}
+
+// hot-friction palette: the core burns pale, the fringes go red
+const FIRE_FLAME = [0xfff2c0, 0xffd166, 0xff9a2e, 0xff6a15];
+const FIRE_EMBER = [0xff7a1f, 0xff4d12, 0xe0300a];
+const FIRE_SPARK = [0xffe9a8, 0xffc25c];
+
+function _tireFireTake() {
+  // round-robin: when the pool is full the oldest particle is reused, which reads
+  // as the effect getting shorter rather than dropped
+  const p = tireFirePool[tireFireCursor];
+  tireFireCursor = (tireFireCursor + 1) % TIRE_FIRE_POOL;
+  if (p.life <= 0) tireFireLive++;
+  return p;
+}
+
+// kind: 0 flame, 1 ember, 2 spark
+function spawnTireFire(x, y, z, vx, vz, kind, scale, slot) {
+  const p = _tireFireTake();
+  p.kind = kind; p.slot = slot; p.fade = 1;
+  p.spr.position.set(x, y, z);
+  if (kind === 0) {                       // flame: lifts off the contact patch
+    p.life = p.maxLife = 0.16 + Math.random() * 0.13;
+    p.vx = vx * 0.16 + (Math.random() - 0.5) * 1.5;
+    p.vz = vz * 0.16 + (Math.random() - 0.5) * 1.5;
+    p.vy = 0.9 + Math.random() * 1.5;
+    p.mat.color.setHex(FIRE_FLAME[(Math.random() * FIRE_FLAME.length) | 0]);
+    p.spr.scale.setScalar((scale || 0.5) * (0.95 + Math.random() * 0.5));
+  } else if (kind === 1) {                // ember: tossed, then falls and settles
+    p.life = p.maxLife = 0.42 + Math.random() * 0.4;
+    p.vx = vx * 0.32 + (Math.random() - 0.5) * 4.2;
+    p.vz = vz * 0.32 + (Math.random() - 0.5) * 4.2;
+    p.vy = 1.8 + Math.random() * 2.6;
+    p.mat.color.setHex(FIRE_EMBER[(Math.random() * FIRE_EMBER.length) | 0]);
+    p.spr.scale.setScalar((scale || 0.5) * (0.22 + Math.random() * 0.26));
+  } else {                                // spark: fast, thin, short
+    p.life = p.maxLife = 0.22 + Math.random() * 0.26;
+    p.vx = vx * 0.42 + (Math.random() - 0.5) * 7.5;
+    p.vz = vz * 0.42 + (Math.random() - 0.5) * 7.5;
+    p.vy = 1.4 + Math.random() * 3.4;
+    p.mat.color.setHex(FIRE_SPARK[(Math.random() * FIRE_SPARK.length) | 0]);
+    p.spr.scale.setScalar((scale || 0.5) * (0.18 + Math.random() * 0.2));
+  }
+  p.spr.visible = true;
+}
+
+// When a tire stops sliding its fire has to go out at once, not linger. Every
+// particle carries the slot it came from, so the frame a car hooks up we clamp the
+// remaining life of that car's particles to a short tail - they fade out over
+// ~0.12s instead of burning down their full lifetime.
+function extinguishTireFire(slot) {
+  for (const p of tireFirePool) {
+    if (p.life > 0.12 && p.slot === slot) p.life = 0.12;
+  }
+}
+
+// per-car skid state: on/off thresholds are separated so a car sitting right on
+// the slip limit does not strobe the effect
+const tireFireState = new Map();
+function tireFire(slot, cs, v, dt) {
+  const st = tireFireState.get(slot) || { on: false, acc: 0 };
+  tireFireState.set(slot, st);
+  const sliding = Math.abs(cs.v) > 6 && cs.sl > 4.5;
+  const stillSliding = Math.abs(cs.v) > 5 && cs.sl > 3.6;
+  const wasOn = st.on;
+  st.on = sliding || (wasOn && stillSliding);
+  if (!st.on) {
+    if (wasOn) extinguishTireFire(slot);     // hooked up: cut the fire immediately
+    st.acc = 0;
+    return;
+  }
+  if (!wasOn) st.acc = 0.05;                 // light it the moment the slide starts
+
+  const isMine = slot === mySlot;
+  // the local car is the one the player is looking at, so it burns brightest;
+  // remote cars are throttled both by rate and by the global budget
+  const budgetLeft = TIRE_FIRE_BUDGET - tireFireLive;
+  const rate = isMine ? 0.030 : 0.055;       // seconds between emissions per tire
+  if (!isMine && tireFireLive > TIRE_FIRE_BUDGET * 0.8) {
+    if (budgetLeft <= 0) { st.acc = 0; return; }
+  }
+
+  const lite = prefs.quality === 'low';
+  st.acc += dt;
+  if (st.acc < rate) return;
+  const steps = Math.min(lite ? 1 : 3, Math.floor(st.acc / rate));
+  st.acc -= steps * rate;
+
+  const h = v.netH, fwdX = Math.sin(h), fwdZ = Math.cos(h);
+  const rgtX = Math.cos(h), rgtZ = -Math.sin(h);
+  const roadY = (curMap ? getSurfaceY(curMap, v.netX, v.netZ) : 0.035) + 0.06;
+  // how hard the slide is, 0..1 over the slip range - drives size and count
+  const heat = clamp((cs.sl - 4.5) / 14, 0, 1);
+  // The rear axle breaks traction first in this model (single body-level grip;
+  // the handbrake and the drift torque both act on the rear), so the rears always
+  // burn and the fronts only join in once the slide is deep enough to wash them
+  // out as well. Nothing here feeds back into the simulation.
+  const frontWash = clamp((cs.sl - 11) / 12, 0, 1);
+  const side = cs.st > 0 ? 1 : -1;           // the loaded side burns a little harder
+
+  for (let step = 0; step < steps; step++) {
+    for (const axle of AXLES) {
+      const front = axle > 0;
+      const strength = front ? frontWash : 1;
+      if (strength <= 0.02) continue;
+      for (const lat of [-1, 1]) {
+        const wx = v.netX + rgtX * lat * WHEEL_TX + fwdX * axle * WHEEL_TZ;
+        const wz = v.netZ + rgtZ * lat * WHEEL_TX + fwdZ * axle * WHEEL_TZ;
+        // the tire carries the car's velocity; the fire is thrown back off the
+        // contact patch along that motion, plus the sideways slide that lit it
+        const tvx = fwdX * cs.v + rgtX * cs.sl * 0.5 * side * lat;
+        const tvz = fwdZ * cs.v + rgtZ * cs.sl * 0.5 * side * lat;
+        // world-space size: a light slide still makes a flame you can see against
+        // the track, a deep one throws a real fire (the game's smoke puffs are 0.9-1.5)
+        const s = strength * (0.62 + heat * 0.3) * (lat === side ? 1 : 0.88);
+        spawnTireFire(wx, roadY, wz, -tvx, -tvz, 0, 1.25 * s, slot);
+        if (Math.random() < (lite ? 0.4 : 0.55 + heat * 0.4)) {
+          spawnTireFire(wx, roadY, wz, -tvx, -tvz, 1, 0.75 * s, slot);
+        }
+        if (heat > 0.18 && Math.random() < (lite ? 0.2 : 0.3 + heat * 0.5)) {
+          spawnTireFire(wx, roadY, wz, -tvx, -tvz, 2, 0.8 * s, slot);
+        }
+      }
+    }
+  }
+  // The smoke the friction makes stays the existing soft grey pool, so the fire
+  // reads as its source rather than as a second unrelated effect. Remote cars get
+  // fewer puffs - they are usually further away, and the smoke pool is shared with
+  // every other effect in the game.
+  const smokeChance = isMine ? 0.5 : 0.22;
+  if (Math.random() < smokeChance) {
+    for (const axle of AXLES) {
+      const front = axle > 0;
+      if (front && frontWash <= 0.25) continue;     // no smoke off a gripping front
+      for (const lat of [-1, 1]) {
+        const wx = v.netX + rgtX * lat * WHEEL_TX + fwdX * axle * WHEEL_TZ;
+        const wz = v.netZ + rgtZ * lat * WHEEL_TX + fwdZ * axle * WHEEL_TZ;
+        spawnSmoke(wx, wz, -fwdX * cs.v, -fwdZ * cs.v);
+      }
+    }
+  }
+}
 // v83 Weather particles: water spray, snow spray, falling rain, blizzard snow
 const waterSprayPool = [];
 for (let i = 0; i < 50; i++) {
@@ -2376,6 +2559,31 @@ function updateParticles(dt) {
     if (p.life <= 0) { p.spr.visible = false; p.mat.opacity = 0; continue; }
     p.mat.opacity = Math.min(1, p.life * 9);
   }
+  for (const p of tireFirePool) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.spr.visible = false; p.mat.opacity = 0; tireFireLive--; continue; }
+    p.spr.position.x += p.vx * dt; p.spr.position.y += p.vy * dt; p.spr.position.z += p.vz * dt;
+    if (p.kind === 0) {
+      // flame: rises, lifts off the road, shrinks as it dies
+      p.vy += 1.4 * dt;
+      p.vx *= (1 - 3.2 * dt); p.vz *= (1 - 3.2 * dt);
+      p.spr.scale.multiplyScalar(Math.max(0, 1 - dt * 2.4));
+      p.mat.opacity = Math.min(0.95, p.life * 7);
+    } else if (p.kind === 1) {
+      // ember: gravity, a small bounce, then it lies there and cools
+      p.vy -= 13 * dt;
+      const gy = (curMap ? getSurfaceY(curMap, p.spr.position.x, p.spr.position.z) : 0) + 0.04;
+      if (p.spr.position.y < gy) { p.spr.position.y = gy; p.vy *= -0.32; p.vx *= 0.6; p.vz *= 0.6; }
+      p.mat.opacity = Math.min(1, p.life * 3.4);
+    } else {
+      // spark: fast and ballistic, dies quickly
+      p.vy -= 20 * dt;
+      const gy = (curMap ? getSurfaceY(curMap, p.spr.position.x, p.spr.position.z) : 0) + 0.04;
+      if (p.spr.position.y < gy) { p.spr.position.y = gy; p.vy *= -0.35; }
+      p.mat.opacity = Math.min(1, p.life * 5.5);
+    }
+  }
   for (const p of waterSprayPool) {
     if (p.life <= 0) continue;
     p.life -= dt;
@@ -2432,29 +2640,16 @@ function updateParticles(dt) {
     snowParticles.visible = false;
   }
 }
-const SKID_MAX = 1000;
-const skidGeo = new THREE.PlaneGeometry(0.26, 0.95); skidGeo.rotateX(-Math.PI / 2);
-const skidMesh = new THREE.InstancedMesh(skidGeo, new THREE.MeshBasicMaterial({ color: 0x0c0d10, transparent: true, opacity: 0.5, depthWrite: false }), SKID_MAX);
-skidMesh.count = 0; scene.add(skidMesh);
-let skidIdx = 0;
-const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sup = new THREE.Vector3(0, 1, 0), _spos = new THREE.Vector3(), _sone = new THREE.Vector3(1, 1, 1);
-function spawnSkid(x, z, heading) {
-  let latDist = 0;
-  if (curMap && curMap.type === 'spline' && curMap.nearest) {
-    latDist = Math.abs(curMap.nearest(x, z).d);
-  } else {
-    latDist = Math.abs(CORE.radialDistToTrack(x, z, A, B).d);
-  }
-  if (latDist > RH + 0.5) return;
-  const roadY = curMap ? getSurfaceY(curMap, x, z) : 0.035;
-  _sq.setFromAxisAngle(_sup, heading);
-  _spos.set(x, roadY + 0.02 + (skidIdx % 4) * 0.0015, z);
-  _sm.compose(_spos, _sq, _sone);
-  skidMesh.setMatrixAt(skidIdx % SKID_MAX, _sm);
-  skidIdx++;
-  skidMesh.count = Math.min(SKID_MAX, skidIdx);
-  skidMesh.instanceMatrix.needsUpdate = true;
-}
+// ---------------------------------------------------------------------------
+// v152: the black skid marks are gone.
+//
+// This was a 1000-instance InstancedMesh of near-black quads (0x0c0d10 at 0.5
+// opacity) laid on the road for as long as the car slid - so a drift left two
+// long black stripes under the tires. It has been replaced by the tire-fire
+// effect further down (see tireFire()), which shows the friction itself: flames,
+// embers, sparks and a little smoke at the contact patch while the tire is
+// actually slipping, and nothing at all once the car hooks up again.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // v2: identity, settings, ping, FPS, leaderboard
@@ -5531,7 +5726,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v151';
+const BUILD = 'v152';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -6618,14 +6813,12 @@ function placeCar(slot, cs, dt) {
       }
     }
   }
-  if (cs.sl > 4.5 && Math.abs(cs.v) > 6) {
-    for (const side of [-0.98, 0.98]) {
-      const wx = v.netX + side * Math.cos(v.netH) - 1.45 * Math.sin(v.netH);
-      const wz = v.netZ - side * Math.sin(v.netH) - 1.45 * Math.cos(v.netH);
-      if (Math.random() < 0.5) spawnSmoke(wx, wz, Math.sin(cs.h) * cs.v, Math.cos(cs.h) * cs.v);
-      spawnSkid(wx, wz, cs.h);
-    }
-  }
+  // v152: tire fire replaces the black skid marks. Same trigger the marks used
+  // (cs.sl / cs.v - the physics' own slip, replicated for every car), so it
+  // appears exactly when the car is actually sliding and never otherwise. The
+  // smoke now comes out of tireFire() with the fire, so the two stay together
+  // instead of smoking while the flames are already out.
+  tireFire(slot, cs, v, dt);
   // v83 Weather tire spray (rain water spray / blizzard snow kickup)
   if (Math.abs(cs.v) > 7) {
     if (currentWeather === 'wet' && Math.random() < 0.6) {
