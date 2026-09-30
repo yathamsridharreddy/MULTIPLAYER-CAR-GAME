@@ -2294,14 +2294,17 @@ function spawnFlame(x, y, z) {
 // v152: tire fire - hot friction at the contact patch, replacing the old black
 // skid marks.
 //
-// One pool of additive sprites on the same softTex radial gradient every other
-// effect uses, so it needs no new texture, no new material type and no new
-// dependency. A sprite's colour is set per particle, which is what lets a single
-// pool serve all three layers at once:
+// One pool of additive sprites on one canvas texture, so it needs no new dependency
+// and no new material type. A sprite's colour is set per particle, which is what lets
+// a single pool serve all three layers at once:
 //
-//   flame  - short-lived, lifts and shrinks, white-yellow core into orange
-//   ember  - longer-lived, falls and bounces off the road, deep orange/red
-//   spark  - fast and thin, fired backwards along the slide, pale gold
+//   flame  - the trail itself: long, low, clinging to the road, pale gold into amber
+//   ember  - thrown off it, falls and bounces, deep orange/red
+//   spark  - fast and thin, smeared along its own flight, pale gold
+//
+// Every particle is a streak and is drawn stretched along the direction it is really
+// travelling, so the tire lays a continuous smear down the road rather than a row of
+// dots. See the texture and orientStreak() below.
 //
 // Spawning is round-robin over a fixed pool (O(1)), not pool.find() (O(n)) - the
 // existing pools scan for a free slot, which is fine at their rates but not when
@@ -2320,23 +2323,73 @@ function spawnFlame(x, y, z) {
 const WHEEL_TX = 1.03, WHEEL_TZ = 1.45, AXLES = [-1, 1];
 const TIRE_FIRE_POOL = 240;
 const TIRE_FIRE_BUDGET = 190;      // live particles before remote emitters shed
+
+// A smear, not a puff. A sliding tire lays a streak down the road, so every particle
+// is drawn as a comet - hot core with a long soft tail along +u - and then stretched
+// along the direction it is travelling (see orientStreak below). Round blobs read as
+// a row of dots; this reads as one continuous trail, which is what the real thing
+// looks like. White texture, colour from the per-particle material, same canvas
+// approach as the grass / asphalt / lamp-glow textures.
+function fireStreakTexture() {
+  const W = 128, H = 64;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const imgData = g.createImageData(W, H);
+  const buf = new Uint32Array(imgData.data.buffer);
+  const HEAD = 0.40;                  // where along the streak the hot core sits
+  for (let y = 0; y < H; y++) {
+    const v = (y + 0.5) / H;
+    const lat = Math.pow(Math.max(0, 1 - Math.abs(v - 0.5) * 2), 1.8);   // soft across the streak
+    for (let x = 0; x < W; x++) {
+      const u = (x + 0.5) / W;
+      const lon = u <= HEAD
+        ? Math.pow(u / HEAD, 0.7)                          // tight leading edge, at the tire
+        : Math.pow(1 - (u - HEAD) / (1 - HEAD), 1.45);     // the tail thins out behind
+      const a = (Math.min(1, lon * lat) * 255) | 0;
+      buf[y * W + x] = (a << 24) | (255 << 16) | (255 << 8) | 255;
+    }
+  }
+  g.putImageData(imgData, 0, 0);
+  return new THREE.CanvasTexture(c);
+}
+const fireStreakTex = fireStreakTexture();
+
 const tireFirePool = [];
 let tireFireCursor = 0, tireFireLive = 0;
 for (let i = 0; i < TIRE_FIRE_POOL; i++) {
   const mat = new THREE.SpriteMaterial({
-    map: softTex, transparent: true, opacity: 0, depthWrite: false,
+    map: fireStreakTex, transparent: true, opacity: 0, depthWrite: false,
     blending: THREE.AdditiveBlending, color: 0xff9a2e
   });
   const spr = new THREE.Sprite(mat);
   spr.visible = false; spr.renderOrder = 6;   // over the road, under the HUD
   scene.add(spr);
-  tireFirePool.push({ spr, mat, life: 0, maxLife: 1, vx: 0, vy: 0, vz: 0, kind: 0, fade: 1, slot: 0 });
+  tireFirePool.push({ spr, mat, life: 0, maxLife: 1, vx: 0, vy: 0, vz: 0, kind: 0, fade: 1, slot: 0, dx: 1, dz: 0 });
 }
 
 // hot-friction palette: the core burns pale, the fringes go red
-const FIRE_FLAME = [0xfff2c0, 0xffd166, 0xff9a2e, 0xff6a15];
+const FIRE_FLAME = [0xfff6dd, 0xffdd82, 0xffa939, 0xff7d1f];
 const FIRE_EMBER = [0xff7a1f, 0xff4d12, 0xe0300a];
 const FIRE_SPARK = [0xffe9a8, 0xffc25c];
+
+// Streaks are billboards, so their length lies in the camera's screen plane:
+// material.rotation spins the quad about the view axis, and the texture's +u ends up
+// along whatever world direction the particle carries. The camera's right/up axes are
+// cached for the frame, so orienting a particle is two dot products - which matters
+// when all 240 of them are live.
+let _camRX = 1, _camRY = 0, _camRZ = 0, _camUX = 0, _camUY = 1, _camUZ = 0;
+function updateStreakBasis() {
+  // the frame's render has not happened yet, so the camera's world matrix is still
+  // last frame's - recomposing it here is one matrix, and it keeps a rotating chase
+  // camera from leaving every streak pointing where it used to
+  camera.updateMatrixWorld();
+  const e = camera.matrixWorld.elements;
+  _camRX = e[0]; _camRY = e[1]; _camRZ = e[2];
+  _camUX = e[4]; _camUY = e[5]; _camUZ = e[6];
+}
+function orientStreak(p) {
+  p.mat.rotation = Math.atan2(p.dx * _camUX + p.dz * _camUZ, p.dx * _camRX + p.dz * _camRZ);
+}
 
 function _tireFireTake() {
   // round-robin: when the pool is full the oldest particle is reused, which reads
@@ -2348,31 +2401,43 @@ function _tireFireTake() {
 }
 
 // kind: 0 flame, 1 ember, 2 spark
-function spawnTireFire(x, y, z, vx, vz, kind, scale, slot) {
+// kind 0 flame, 1 ember, 2 spark. `dx,dz` is the world direction the streak runs: for
+// a flame that is straight back along the tire's own travel, so the fire is smeared
+// down the road behind the wheel; embers and sparks are given their own flight
+// direction instead, because that is what they are actually smearing along.
+function spawnTireFire(x, y, z, vx, vz, dx, dz, kind, len, wid, slot) {
   const p = _tireFireTake();
   p.kind = kind; p.slot = slot; p.fade = 1;
   p.spr.position.set(x, y, z);
-  if (kind === 0) {                       // flame: lifts off the contact patch
-    p.life = p.maxLife = 0.16 + Math.random() * 0.13;
-    p.vx = vx * 0.16 + (Math.random() - 0.5) * 1.5;
-    p.vz = vz * 0.16 + (Math.random() - 0.5) * 1.5;
-    p.vy = 0.9 + Math.random() * 1.5;
+  p.dx = dx; p.dz = dz;
+  const jitter = 0.85 + Math.random() * 0.3;
+  if (kind === 0) {                       // flame: the trail itself - long, low, hot
+    p.life = p.maxLife = 0.2 + Math.random() * 0.16;
+    p.vx = vx * 0.12 + (Math.random() - 0.5) * 1.1;
+    p.vz = vz * 0.12 + (Math.random() - 0.5) * 1.1;
+    p.vy = 0.2 + Math.random() * 0.7;     // it clings to the road, as the real thing does
     p.mat.color.setHex(FIRE_FLAME[(Math.random() * FIRE_FLAME.length) | 0]);
-    p.spr.scale.setScalar((scale || 0.5) * (0.95 + Math.random() * 0.5));
+    p.spr.scale.set(len * jitter, wid * jitter, 1);   // len/wid are already world units
   } else if (kind === 1) {                // ember: tossed, then falls and settles
     p.life = p.maxLife = 0.42 + Math.random() * 0.4;
     p.vx = vx * 0.32 + (Math.random() - 0.5) * 4.2;
     p.vz = vz * 0.32 + (Math.random() - 0.5) * 4.2;
     p.vy = 1.8 + Math.random() * 2.6;
     p.mat.color.setHex(FIRE_EMBER[(Math.random() * FIRE_EMBER.length) | 0]);
-    p.spr.scale.setScalar((scale || 0.5) * (0.22 + Math.random() * 0.26));
+    p.spr.scale.set(len * jitter, wid * jitter, 1);
   } else {                                // spark: fast, thin, short
     p.life = p.maxLife = 0.22 + Math.random() * 0.26;
     p.vx = vx * 0.42 + (Math.random() - 0.5) * 7.5;
     p.vz = vz * 0.42 + (Math.random() - 0.5) * 7.5;
     p.vy = 1.4 + Math.random() * 3.4;
     p.mat.color.setHex(FIRE_SPARK[(Math.random() * FIRE_SPARK.length) | 0]);
-    p.spr.scale.setScalar((scale || 0.5) * (0.18 + Math.random() * 0.2));
+    p.spr.scale.set(len * jitter, wid * jitter, 1);
+  }
+  // a thrown spark is a streak along its own path, which is a lot faster than the
+  // tire is moving - so it smears along its own flight, not along the car's
+  if (kind !== 0) {
+    const sl = Math.hypot(p.vx, p.vz) || 1;
+    p.dx = p.vx / sl; p.dz = p.vz / sl;
   }
   p.spr.visible = true;
 }
@@ -2431,6 +2496,13 @@ function tireFire(slot, cs, v, dt) {
   const frontWash = clamp((cs.sl - 11) / 12, 0, 1);
   const side = cs.st > 0 ? 1 : -1;           // the loaded side burns a little harder
 
+  // how far the fire is smeared down the road. Speed is most of it - this is motion
+  // blur, so a tire carrying 26 m/s trails much further than one carrying 8 - with
+  // the slide severity adding to it. The width is the tire's own contact patch.
+  const spd = Math.abs(cs.v);
+  const len = clamp(0.9 + heat * 1.3 + spd * 0.055, 1.0, 4.0);
+  const wid = clamp(0.36 + heat * 0.24, 0.36, 0.6);
+
   for (let step = 0; step < steps; step++) {
     for (const axle of AXLES) {
       const front = axle > 0;
@@ -2443,15 +2515,22 @@ function tireFire(slot, cs, v, dt) {
         // contact patch along that motion, plus the sideways slide that lit it
         const tvx = fwdX * cs.v + rgtX * cs.sl * 0.5 * side * lat;
         const tvz = fwdZ * cs.v + rgtZ * cs.sl * 0.5 * side * lat;
-        // world-space size: a light slide still makes a flame you can see against
-        // the track, a deep one throws a real fire (the game's smoke puffs are 0.9-1.5)
-        const s = strength * (0.62 + heat * 0.3) * (lat === side ? 1 : 0.88);
-        spawnTireFire(wx, roadY, wz, -tvx, -tvz, 0, 1.25 * s, slot);
+        // the streak runs straight back along the tire's travel, splayed a few
+        // degrees outward: a lit-up car drags two trails that part company behind it
+        const tl = Math.hypot(tvx, tvz) || 1;
+        let bdx = -tvx / tl + rgtX * lat * 0.17, bdz = -tvz / tl + rgtZ * lat * 0.17;
+        const bl = Math.hypot(bdx, bdz) || 1; bdx /= bl; bdz /= bl;
+        // Strength scales the LENGTH, never the width, and floored: a light slide, or a
+        // front tire that is only just washing out, leaves a shorter smear - never a dot.
+        // Every floor here exists because a particle that shrinks to nothing reads as a
+        // speck of noise rather than as fire, which is the one failure this must not have.
+        const s = (0.55 + 0.45 * strength) * (0.62 + heat * 0.3) * (lat === side ? 1 : 0.88);
+        spawnTireFire(wx, roadY, wz, -tvx, -tvz, bdx, bdz, 0, Math.max(0.95, len * s), wid, slot);
         if (Math.random() < (lite ? 0.4 : 0.55 + heat * 0.4)) {
-          spawnTireFire(wx, roadY, wz, -tvx, -tvz, 1, 0.75 * s, slot);
+          spawnTireFire(wx, roadY, wz, -tvx, -tvz, bdx, bdz, 1, Math.max(0.34, len * s * 0.3), wid * 0.5, slot);
         }
         if (heat > 0.18 && Math.random() < (lite ? 0.2 : 0.3 + heat * 0.5)) {
-          spawnTireFire(wx, roadY, wz, -tvx, -tvz, 2, 0.8 * s, slot);
+          spawnTireFire(wx, roadY, wz, -tvx, -tvz, bdx, bdz, 2, Math.max(0.3, len * s * 0.34), wid * 0.28, slot);
         }
       }
     }
@@ -2559,17 +2638,21 @@ function updateParticles(dt) {
     if (p.life <= 0) { p.spr.visible = false; p.mat.opacity = 0; continue; }
     p.mat.opacity = Math.min(1, p.life * 9);
   }
+  if (tireFireLive > 0) updateStreakBasis();
   for (const p of tireFirePool) {
     if (p.life <= 0) continue;
     p.life -= dt;
     if (p.life <= 0) { p.spr.visible = false; p.mat.opacity = 0; tireFireLive--; continue; }
+    orientStreak(p);   // re-aim the smear as the camera swings
     p.spr.position.x += p.vx * dt; p.spr.position.y += p.vy * dt; p.spr.position.z += p.vz * dt;
     if (p.kind === 0) {
-      // flame: rises, lifts off the road, shrinks as it dies
-      p.vy += 1.4 * dt;
-      p.vx *= (1 - 3.2 * dt); p.vz *= (1 - 3.2 * dt);
-      p.spr.scale.multiplyScalar(Math.max(0, 1 - dt * 2.4));
-      p.mat.opacity = Math.min(0.95, p.life * 7);
+      // flame: stays on the road and fades. The length IS the smear, so it holds its
+      // length and narrows instead of shrinking to a dot - a flame that shrinks
+      // uniformly reads as a particle dying, not as a streak losing its heat
+      p.vy += 0.5 * dt;
+      p.vx *= (1 - 2.2 * dt); p.vz *= (1 - 2.2 * dt);
+      p.spr.scale.y *= Math.max(0, 1 - dt * 1.5);
+      p.mat.opacity = Math.min(0.42, p.life * 3.2);
     } else if (p.kind === 1) {
       // ember: gravity, a small bounce, then it lies there and cools
       p.vy -= 13 * dt;
@@ -5726,7 +5809,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v152';
+const BUILD = 'v153';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

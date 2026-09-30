@@ -42,12 +42,16 @@ const SCRIPTS = [
 // purpose, and asserting against it would fail on the explanation of the removal
 const bare = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-// The tire-fire palette (flames, embers, sparks), minus its palest flame colour:
-// 0xfff2c0 is also the warm headlight glow, and those sprites hang just ahead of a
-// car's nose. The remaining eight colours belong to the fire and nothing else - the
-// nitro flames are blue, the smoke is grey, the weather spray is blue or white - so
-// matching on colour isolates the effect in a scene holding every other pool too.
-const FIRE = [0xffd166, 0xff9a2e, 0xff6a15, 0xff7a1f, 0xff4d12, 0xe0300a, 0xffe9a8, 0xffc25c];
+// The tire-fire palette (flames, embers, sparks). Every one of these belongs to the
+// fire and to nothing else - the nitro flames are blue, the smoke is grey, the
+// weather spray is blue or white, the headlights are 0xfff2c0/0xff2020 - so matching
+// on colour isolates the effect in a scene that also holds every other pool.
+const FIRE = [0xfff6dd, 0xffdd82, 0xffa939, 0xff7d1f, 0xff7a1f, 0xff4d12, 0xe0300a, 0xffe9a8, 0xffc25c];
+// the three kinds use disjoint palettes, so a particle's colour says exactly which
+// layer it belongs to - no guessing from size or position
+const FLAME_COLS = [0xfff6dd, 0xffdd82, 0xffa939, 0xff7d1f];
+const EMBER_COLS = [0xff7a1f, 0xff4d12, 0xe0300a];
+const SPARK_COLS = [0xffe9a8, 0xffc25c];
 
 // The renderer stand-in. `render(scene)` keeps a handle on the scene so a test can
 // inspect what the client actually built - that is the whole point here.
@@ -66,7 +70,7 @@ const FAKE_RENDERER = `
     this.setSize = function (w, h) { this._w = w; this._h = h; };
     this.getSize = function () { return { x: this._w, y: this._h }; };
     this.getDrawingBufferSize = function () { return { x: this._w, y: this._h }; };
-    this.render = function (scene) { this.draws++; this.scene = scene; window.__capScene = scene; };
+    this.render = function (scene, camera) { this.draws++; this.scene = scene; window.__capScene = scene; window.__capCamera = camera; };
     this.getContext = function () { return { getExtension: function () { return null; } }; };
     this.setAnimationLoop = function () {};
     ['clear','compile','dispose','forceContextLoss','setRenderTarget','setViewport','setScissor',
@@ -228,7 +232,11 @@ function fireSprites(window) {
   const out = [];
   scene.traverse((o) => {
     if (o.isSprite && o.visible && o.material && o.material.opacity > 0.01 && FIRE.includes(o.material.color.getHex())) {
-      out.push({ x: o.position.x, y: o.position.y, z: o.position.z, s: o.scale.x });
+      out.push({
+        x: o.position.x, y: o.position.y, z: o.position.z,
+        len: o.scale.x, wid: o.scale.y, rot: o.material.rotation,
+        col: o.material.color.getHex()
+      });
     }
   });
   return out;
@@ -356,15 +364,26 @@ test('v152: a sliding car lights its own rear tires (single player)', { skip: SK
   assert.strictEqual(carRig(window, LOCAL_COL).wheels.filter((w) => !w.front).length, 2, 'two rear wheels');
   assert.strictEqual(axleFire(window, REMOTE_COL, false), 0, 'a gripping car must not burn');
 
-  // Size guard. The whole point of this effect is that it is VISIBLE, and the
-  // failure mode that keeps coming back on this project is particles so small they
-  // read as dots. A sprite is a world-space square, so these are metres: the game's
-  // own smoke puffs are 0.9-1.5 and read well on screen. The flames have to be in
-  // that company, and nothing may be so big it becomes a blob over the car.
-  const sizes = fireSprites(window).map((p) => p.s).sort((a, b) => b - a);
-  assert.ok(sizes[0] >= 0.8, `the biggest flame is only ${sizes[0].toFixed(2)} units - too small to read`);
-  assert.ok(sizes.filter((v) => v >= 0.7).length >= 4, 'only a couple of visible flames on the tires');
-  assert.ok(sizes[0] <= 2.5, `a ${sizes[0].toFixed(2)} unit sprite is a blob, not a flame`);
+  // Streak guard. Two failure modes matter here and they pull in opposite directions:
+  // particles too small to read (the bug this project keeps rediscovering), and round
+  // puffs instead of the smears a sliding tire actually leaves. A sprite's scale is in
+  // world units, so these are metres - the game's own smoke puffs are 0.9-1.5 across.
+  const flames = flamesOf(window);
+  assert.ok(fireSprites(window).length >= 4, 'the sliding car produced particles');
+  const widths = flames.map((p) => p.wid).sort((a, b) => a - b);
+  const lens = flames.map((p) => p.len).sort((a, b) => b - a);
+  assert.ok(flames.length, 'no flame-layer particles at all');
+  assert.ok(widths[widths.length - 1] >= 0.2, `the widest streak is only ${widths[widths.length - 1].toFixed(2)} units wide`);
+  assert.ok(lens[0] >= 1.2, `the longest streak is only ${lens[0].toFixed(2)} units - too short to read as motion`);
+  assert.ok(lens[0] <= 5, `a ${lens[0].toFixed(2)} unit streak is a wall of light, not a trail`);
+  // and the SHORTEST one, which is the regression this project has hit before: a
+  // particle scaled down until it is a speck of noise rather than a smear of fire.
+  // Even a front tire that is only just washing out has to leave a visible trail.
+  assert.ok(lens[lens.length - 1] >= 0.9,
+    `the shortest streak is ${lens[lens.length - 1].toFixed(2)} units - that is a dot, not a streak`);
+  const ratios = flames.map((p) => p.len / p.wid).sort((a, b) => a - b);
+  const median = ratios[ratios.length >> 1];
+  assert.ok(median >= 3, `the median flame is ${median.toFixed(1)}x longer than it is wide - barely a smear`);
 });
 
 test('v152: a sliding REMOTE car lights its own rear tires (multiplayer)', { skip: SKIP }, async (t) => {
@@ -418,6 +437,66 @@ test('v152: the fire goes out when the slide ends, it does not burn down slowly'
   let byTheCar = 0;
   for (const w of rig.wheels) byTheCar += nearWheel(sprites, w, 2.4).length;
   assert.ok(byTheCar <= 2, `the fire should be out, ${byTheCar} particles still on the tires`);
+});
+
+// The flames are the trail: long, low, and always on the tire. Embers and sparks are
+// thrown off it and are small, so length and aiming are judged on the flames alone.
+const flamesOf = (window) => fireSprites(window).filter((p) => FLAME_COLS.includes(p.col));
+const medianOf = (a) => { const v = a.slice().sort((x, y) => x - y); return v.length ? v[v.length >> 1] : NaN; };
+
+test('v152: the streaks are aimed down the car\'s own travel', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  // the car drives straight down +z and slides: heading 0 means its forward is +z, so
+  // every streak it leaves has to run back along -z, projected into the camera's plane
+  await drive(window, sockets, 20, [
+    { s: 1, x: 0, z: 0, v: 26, sl: 8, col: LOCAL_COL },
+    { s: 2, x: 60, z: 0, v: 26, sl: 0.4, col: REMOTE_COL }
+  ]);
+  assert.deepStrictEqual(errors, [], 'stream errors: ' + errors.join(' | '));
+  const cam = window.__capCamera;
+  assert.ok(cam && cam.matrixWorld, 'the client rendered through a real camera');
+  // the streak is a billboard: material.rotation spins it about the view axis, so its
+  // long axis ends up along (cos rot * cameraRight + sin rot * cameraUp) in the world.
+  // Reconstructing that from the camera's own matrix is an independent check of the
+  // aiming - a rotation left at zero would put the streak across the car, not behind it.
+  const e = cam.matrixWorld.elements;
+  const rgt = [e[0], e[1], e[2]], up = [e[4], e[5], e[6]];
+  const back = [0, 0, -1];                      // heading 0 -> forward is +z
+  const expected = Math.atan2(
+    back[0] * up[0] + back[1] * up[1] + back[2] * up[2],
+    back[0] * rgt[0] + back[1] * rgt[1] + back[2] * rgt[2]
+  );
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const errs = flamesOf(window).map((p) => Math.abs(wrap(p.rot - expected)));
+  assert.ok(errs.length >= 4, `not enough flames to judge (${errs.length})`);
+  const close = errs.filter((v) => v < 0.4).length;
+  assert.ok(close / errs.length >= 0.85,
+    `only ${close}/${errs.length} streaks point down the car's travel (median error ${medianOf(errs).toFixed(2)} rad)`);
+  assert.ok(medianOf(errs) < 0.25, `median aiming error ${medianOf(errs).toFixed(2)} rad`);
+});
+
+test('v152: the smear lengthens with speed', { skip: SKIP }, async (t) => {
+  // a motion smear has to scale with the speed the tire is carrying, otherwise it is
+  // a decal rather than motion. Same slide in both runs, only the speed differs.
+  const slow = boot();
+  t.after(() => { slow.dom.window.close(); });
+  await drive(slow.window, slow.sockets, 20, [
+    { s: 1, x: 0, z: 0, v: 8, sl: 8, col: LOCAL_COL },
+    { s: 2, x: 60, z: 0, v: 8, sl: 0.4, col: REMOTE_COL }
+  ]);
+  const fast = boot();
+  t.after(() => { fast.dom.window.close(); });
+  await drive(fast.window, fast.sockets, 20, [
+    { s: 1, x: 0, z: 0, v: 30, sl: 8, col: LOCAL_COL },
+    { s: 2, x: 60, z: 0, v: 30, sl: 0.4, col: REMOTE_COL }
+  ]);
+  assert.deepStrictEqual(slow.errors, [], 'slow run: ' + slow.errors.join(' | '));
+  assert.deepStrictEqual(fast.errors, [], 'fast run: ' + fast.errors.join(' | '));
+  const a = medianOf(flamesOf(slow.window).map((p) => p.len));
+  const b = medianOf(flamesOf(fast.window).map((p) => p.len));
+  assert.ok(isFinite(a) && isFinite(b), `lengths missing (${a}, ${b})`);
+  assert.ok(b > a * 1.25, `smear barely grew with speed: ${a.toFixed(2)} at 8 m/s vs ${b.toFixed(2)} at 30 m/s`);
 });
 
 test('v152: the whole field can drift without the pool running away', { skip: SKIP }, async (t) => {
