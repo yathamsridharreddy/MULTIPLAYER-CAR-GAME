@@ -46,12 +46,14 @@ const bare = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/
 // fire and to nothing else - the nitro flames are blue, the smoke is grey, the
 // weather spray is blue or white, the headlights are 0xfff2c0/0xff2020 - so matching
 // on colour isolates the effect in a scene that also holds every other pool.
-const FIRE = [0xfff6dd, 0xffdd82, 0xffa939, 0xff7d1f, 0xff7a1f, 0xff4d12, 0xe0300a, 0xffe9a8, 0xffc25c];
+const FIRE = [0xfff6dd, 0xffdd82, 0xffa939, 0xff7d1f, 0xfff8e7, 0xffe6a8, 0xff7a1f, 0xff4d12, 0xe0300a, 0xffe9a8, 0xffc25c];
 // the three kinds use disjoint palettes, so a particle's colour says exactly which
 // layer it belongs to - no guessing from size or position
 const FLAME_COLS = [0xfff6dd, 0xffdd82, 0xffa939, 0xff7d1f];
+const CORE_COLS = [0xfff8e7, 0xffe6a8];
 const EMBER_COLS = [0xff7a1f, 0xff4d12, 0xe0300a];
 const SPARK_COLS = [0xffe9a8, 0xffc25c];
+const SMOKE_COLS = [0xd6dade, 0xffd9a8];
 
 // The renderer stand-in. `render(scene)` keeps a handle on the scene so a test can
 // inspect what the client actually built - that is the whole point here.
@@ -225,7 +227,33 @@ const mkCar = (s, extra) => Object.assign({
 
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// the flat glow quads lying on the road under the tires
+function glowQuads(window) {
+  const scene = window.__capScene;
+  if (!scene) return [];
+  const out = [];
+  scene.traverse((o) => {
+    if (o.name === 'tireGlow' && o.visible && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material.opacity > 0.01) {
+      out.push({ x: o.position.x, y: o.position.y, z: o.position.z, opacity: o.material.opacity, mesh: o });
+    }
+  });
+  return out;
+}
+
 // every live particle sprite the client is currently drawing
+function allSprites(window) {
+  const scene = window.__capScene;
+  if (!scene) return [];
+  const out = [];
+  scene.traverse((o) => {
+    if (o.isSprite && o.visible && o.material && o.material.opacity > 0.01) {
+      out.push({ x: o.position.x, y: o.position.y, z: o.position.z, col: o.material.color.getHex() });
+    }
+  });
+  return out;
+}
+const smokeSprites = (window) => allSprites(window).filter((p) => SMOKE_COLS.includes(p.col));
+
 function fireSprites(window) {
   const scene = window.__capScene;
   if (!scene) return [];
@@ -263,7 +291,7 @@ function carRig(window, color) {
     const wheels = pivots.map((p) => {
       const wp = new window.THREE.Vector3();
       p.getWorldPosition(wp);
-      return { x: wp.x, z: wp.z, front: p.position.z > 0 };   // local +z is the car's nose
+      return { x: wp.x, y: wp.y, z: wp.z, front: p.position.z > 0 };   // local +z is the car's nose
     });
     found = { wheels, group: g };
   });
@@ -320,7 +348,7 @@ test('v152: the black skid-mark system is gone', () => {
 test('v152: the effect is driven by the existing physics slip, per car', () => {
   const GAME = bare(read('public/js/game.js'));
   const at = GAME.indexOf('function tireFire(slot, cs, v, dt)');
-  const body = GAME.slice(at, at + 1400);
+  const body = GAME.slice(at, at + 2600);   // the whole function, whatever it grows to
   // the same signal the skid marks used, so it lights up exactly when the car slides
   assert.match(body, /cs\.sl > 4\.5/, 'uses the physics slip threshold');
   assert.match(body, /Math\.abs\(cs\.v\) > 6/, 'and the speed gate');
@@ -344,7 +372,7 @@ test('v152: nothing about the physics or the wire protocol changed', () => {
   }
   // and the fire writes nothing back into the car state it reads
   const at = GAME.indexOf('function tireFire(slot, cs, v, dt)');
-  const body = GAME.slice(at, at + 2600);
+  const body = GAME.slice(at, GAME.indexOf('\n}', at));
   for (const bad of [/cs\.sl\s*=/, /cs\.v\s*=/, /cs\.h\s*=/, /cs\.x\s*=/, /cs\.z\s*=/]) {
     assert.ok(!bad.test(body), 'the effect must not write back to the car state: ' + bad);
   }
@@ -443,6 +471,115 @@ test('v152: the fire goes out when the slide ends, it does not burn down slowly'
 // thrown off it and are small, so length and aiming are judged on the flames alone.
 const flamesOf = (window) => fireSprites(window).filter((p) => FLAME_COLS.includes(p.col));
 const medianOf = (a) => { const v = a.slice().sort((x, y) => x - y); return v.length ? v[v.length >> 1] : NaN; };
+
+test('v154: the trail has a white-hot core inside a longer amber body', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  await drive(window, sockets, 20, [
+    { s: 1, x: 0, z: 0, v: 26, sl: 13, col: LOCAL_COL },
+    { s: 2, x: 60, z: 0, v: 26, sl: 0.4, col: REMOTE_COL }
+  ]);
+  assert.deepStrictEqual(errors, [], 'stream errors: ' + errors.join(' | '));
+  const all = fireSprites(window);
+  const core = all.filter((p) => CORE_COLS.includes(p.col));
+  const body = all.filter((p) => FLAME_COLS.includes(p.col));
+  // fire burns hot in the middle and orange at the edges, and that is exactly what
+  // makes it read as fire rather than as a coloured smear: it needs both layers
+  assert.ok(core.length >= 2, `no white-hot core on the trail (${core.length})`);
+  assert.ok(body.length >= 4, `no amber body around it (${body.length})`);
+  // and the core is the *narrower* one: it rides inside the body, it does not cover it
+  assert.ok(medianOf(core.map((p) => p.wid)) < medianOf(body.map((p) => p.wid)),
+    'the core should be narrower than the body it sits in');
+});
+
+test('v154: the road itself lights up under a sliding tire', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  await drive(window, sockets, 20, [
+    { s: 1, x: 0, z: 0, v: 26, sl: 13, col: LOCAL_COL },
+    { s: 2, x: 60, z: 0, v: 26, sl: 0.4, col: REMOTE_COL }
+  ]);
+  assert.deepStrictEqual(errors, [], 'stream errors: ' + errors.join(' | '));
+  const rig = carRig(window, LOCAL_COL);
+  const rear = rig.wheels.filter((w) => !w.front);
+  const glows = glowQuads(window);
+  assert.ok(glows.length >= 2, `only ${glows.length} glow quads lit under a hard drift`);
+  // It has to lie FLAT ON THE ROAD: the quad's own geometry is rotated into the XZ
+  // plane, so its bounding box has essentially no height. That is the difference
+  // between a reflection on the asphalt and another billboard in the air - and it is
+  // what makes the effect readable from a low chase angle, where a thin trail is
+  // edge-on. A glow standing up would be a bright wall across the screen.
+  // The quad is yawed to follow the trail, so its world bounding box is not its shape -
+  // measure the quad itself. A plane rotated into the XZ plane has no height at all in
+  // its own geometry, which is exactly the point: it lies on the asphalt.
+  const w0 = rear[0];
+  const own = glows.filter((g) => Math.hypot(g.x - w0.x, g.z - w0.z) < 3.5);
+  assert.ok(own.length, 'the rear tire has no glow of its own');
+  const mesh = own[0].mesh;
+  if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+  const bb = mesh.geometry.boundingBox;
+  assert.ok((bb.max.y - bb.min.y) < 0.01, `the glow quad is ${(bb.max.y - bb.min.y).toFixed(3)} units thick - not flat on the road`);
+  assert.ok(Math.abs(mesh.rotation.x) < 1e-6 && Math.abs(mesh.rotation.z) < 1e-6,
+    'the glow is tilted up out of the road plane');
+  assert.ok(mesh.scale.x > mesh.scale.z * 1.5,
+    `the glow is ${mesh.scale.x.toFixed(2)} long x ${mesh.scale.z.toFixed(2)} wide - not a streak`);
+  // at road level under that wheel: the pivot sits one wheel-radius up, the quad just
+  // above the asphalt
+  assert.ok(Math.abs(mesh.position.y - (w0.y - 0.3)) < 0.4,
+    `the glow is at ${mesh.position.y.toFixed(2)} but its wheel's contact patch is at about ${(w0.y - 0.3).toFixed(2)}`);
+  // and it belongs to the sliding car, at its rear tires, not floating somewhere
+  for (const w of rear) {
+    assert.ok(glows.some((g) => Math.hypot(g.x - w.x, g.z - w.z) < 3.5),
+      'a sliding rear tire has no glow under it');
+  }
+  assert.ok(glows.length <= 8, `${glows.length} glow quads lit for one sliding car`);
+  assert.strictEqual(glowQuads(window).filter((g) => Math.hypot(g.x - 60, g.z) < 8).length, 0,
+    'the gripping car lit the road up too');
+});
+
+test('v154: a drift smokes, and the smoke is not fire', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  await drive(window, sockets, 20, [
+    { s: 1, x: 0, z: 0, v: 26, sl: 13, col: LOCAL_COL },
+    { s: 2, x: 60, z: 0, v: 26, sl: 0.4, col: REMOTE_COL }
+  ]);
+  assert.deepStrictEqual(errors, [], 'stream errors: ' + errors.join(' | '));
+  const smoke = smokeSprites(window).filter((p) => Math.hypot(p.x, p.z) < 14);
+  assert.ok(smoke.length >= 3, `only ${smoke.length} puffs of tire smoke behind the drift`);
+  // a real drift is fire AND smoke; the smoke must not be a fire colour, or the two
+  // layers just merge into one orange smear
+  for (const p of smoke) assert.ok(!FIRE.includes(p.col), 'smoke is drawn as fire');
+});
+
+test('v154: the trail runs behind the tire, not through it', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  // The car drives down +z at heading 0, so "behind the tire" is -z. The slide is kept
+  // below the front-wash threshold on purpose: a front tire lit up here would throw its
+  // fire backwards into the rear wheels' footprint and there would be no way to tell
+  // the two trails apart in the measurement.
+  await drive(window, sockets, 20, [
+    { s: 1, x: 0, z: 0, v: 26, sl: 8, col: LOCAL_COL },
+    { s: 2, x: 60, z: 0, v: 26, sl: 0.4, col: REMOTE_COL }
+  ]);
+  assert.deepStrictEqual(errors, [], 'stream errors: ' + errors.join(' | '));
+  const rig = carRig(window, LOCAL_COL);
+  const rear = rig.wheels.filter((w) => !w.front);
+  const flames = flamesOf(window);
+  // Which side of the tire the trail sits on. A streak is drawn around its centre, so
+  // without the spawn offset half of it would poke out in front of the wheel, where
+  // there is no fire at all. Only each rear wheel's OWN trail is judged - a front tire
+  // on a slide this deep is washing out too, and its fire drifts back into the car's
+  // footprint, which would otherwise be counted against the rear wheels.
+  for (const w of rear) {
+    const own = flames.filter((p) => Math.abs(p.x - w.x) < 1.2 && Math.abs(p.z - w.z) < 2.0);
+    assert.ok(own.length >= 3, `only ${own.length} particles in the rear tire's own trail`);
+    const ahead = own.filter((p) => p.z > w.z).length;
+    assert.ok(ahead / own.length <= 0.25,
+      `${ahead}/${own.length} of the trail is in front of the tire instead of behind it`);
+  }
+});
 
 test('v152: the streaks are aimed down the car\'s own travel', { skip: SKIP }, async (t) => {
   const { window, errors, sockets, dom } = boot();

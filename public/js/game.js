@@ -2242,19 +2242,32 @@ function radialTexture() {
 }
 const softTex = radialTexture();
 
+// Tire smoke. It is the same pool the old black skid marks used for their puffs -
+// that was its only caller, and it is this effect's caller now - but it is tuned for
+// a drifting tire instead of a stamp: it grows as it rises, fades in and back out
+// rather than snapping on, and lives long enough to hang in the air behind the car
+// after the fire has gone. While the tire is on fire the smoke is lit from below
+// (amber); once the slide is over it is plain grey. Smoke drawn additively would just
+// be fog, so this pool stays normal-blended.
+const SMOKE_POOL_SIZE = 110;
 const smokePool = [];
-for (let i = 0; i < 80; i++) {
+for (let i = 0; i < SMOKE_POOL_SIZE; i++) {
   const mat = new THREE.SpriteMaterial({ map: softTex, transparent: true, opacity: 0, depthWrite: false });
   const spr = new THREE.Sprite(mat); spr.visible = false; scene.add(spr);
   smokePool.push({ spr, mat, life: 0, maxLife: 1, vx: 0, vy: 0, vz: 0 });
 }
-function spawnSmoke(x, z, vx, vz) {
+// heat 0..1 how hard the slide is, lit true while the tire is actually burning
+function spawnSmoke(x, y, z, vx, vz, heat, lit) {
   const p = smokePool.find((q) => q.life <= 0); if (!p) return;
-  p.life = p.maxLife = 0.7 + Math.random() * 0.5;
-  const py = (curMap ? CORE.getTerrainHeight(curMap, x, z) : 0) + 0.3; p.spr.position.set(x + (Math.random() - 0.5) * 0.4, py, z + (Math.random() - 0.5) * 0.4);
-  p.vx = vx * 0.22 + (Math.random() - 0.5) * 1.6; p.vz = vz * 0.22 + (Math.random() - 0.5) * 1.6;
-  p.vy = 0.8 + Math.random() * 1.2;
-  p.spr.scale.setScalar(0.9 + Math.random() * 0.6); p.spr.visible = true;
+  p.life = p.maxLife = 0.75 + Math.random() * 0.55 + heat * 0.75;
+  p.spr.position.set(x + (Math.random() - 0.5) * 0.5, y + 0.16, z + (Math.random() - 0.5) * 0.5);
+  p.vx = vx * 0.2 + (Math.random() - 0.5) * 1.7;
+  p.vz = vz * 0.2 + (Math.random() - 0.5) * 1.7;
+  p.vy = 0.9 + Math.random() * 1.4;
+  p.grow = 1.6 + heat * 2.2;                 // world units per second
+  p.mat.color.setHex(lit ? 0xffd9a8 : 0xd6dade);
+  p.spr.scale.setScalar(0.72 + Math.random() * 0.5 + heat * 0.55);
+  p.spr.visible = true;
 }
 const sparkPool = [];
 for (let i = 0; i < 60; i++) {
@@ -2299,12 +2312,15 @@ function spawnFlame(x, y, z) {
 // a single pool serve all three layers at once:
 //
 //   flame  - the trail itself: long, low, clinging to the road, pale gold into amber
+//   core   - the white-hot centre running down the middle of that trail
 //   ember  - thrown off it, falls and bounces, deep orange/red
 //   spark  - fast and thin, smeared along its own flight, pale gold
 //
 // Every particle is a streak and is drawn stretched along the direction it is really
 // travelling, so the tire lays a continuous smear down the road rather than a row of
-// dots. See the texture and orientStreak() below.
+// dots. See the texture and orientStreak() below. The same trail is also drawn flat on
+// the asphalt as a glow (see the glow pool), which is what keeps it reading as
+// something the car is doing to the road rather than as sprites in the air.
 //
 // Spawning is round-robin over a fixed pool (O(1)), not pool.find() (O(n)) - the
 // existing pools scan for a free slot, which is fine at their rates but not when
@@ -2367,8 +2383,63 @@ for (let i = 0; i < TIRE_FIRE_POOL; i++) {
   tireFirePool.push({ spr, mat, life: 0, maxLife: 1, vx: 0, vy: 0, vz: 0, kind: 0, fade: 1, slot: 0, dx: 1, dz: 0 });
 }
 
+// ---- glow on the road ------------------------------------------------------
+// The fire is not only a plume, it is also a light: a long soft reflection lying flat
+// on the asphalt under the tires. That flat patch is what makes the effect read as
+// something happening ON the road rather than as sprites floating above it, and it is
+// the one part that stays visible from a low chase angle, where a thin plume is
+// edge-on and nearly invisible.
+//
+// One flat quad per tire of every car (6 slots x 4), reused every frame: while a tire
+// is sliding the emitter stamps a position, a direction and a size onto its quad and
+// marks it wanted; a quad that is not stamped this frame eases down and disappears, so
+// the glow forms, follows, stretches with speed and goes out with the slide - driven
+// entirely by the emitter rather than by its own state.
+const TIRE_GLOW_POOL = 24;
+const tireGlowPool = [];
+const tireGlowGeo = new THREE.PlaneGeometry(1, 1);
+tireGlowGeo.rotateX(-Math.PI / 2);          // baked flat: local +X is the quad's length
+for (let i = 0; i < TIRE_GLOW_POOL; i++) {
+  const mat = new THREE.MeshBasicMaterial({
+    map: fireStreakTex, transparent: true, opacity: 0, depthWrite: false,
+    blending: THREE.AdditiveBlending, color: 0xff9a2e
+  });
+  const mesh = new THREE.Mesh(tireGlowGeo, mat);
+  mesh.name = 'tireGlow';
+  mesh.visible = false; mesh.renderOrder = 5;   // on the road, under the flames
+  scene.add(mesh);
+  tireGlowPool.push({ mesh, mat, level: 0, want: false });
+}
+function tireGlow(slot, tire) {
+  const i = (slot - 1) * 4 + tire;
+  return (i >= 0 && i < TIRE_GLOW_POOL) ? tireGlowPool[i] : null;
+}
+// dx,dz: the direction the smear runs. len/wid: should match the flames above it.
+function touchTireGlow(g, x, y, z, dx, dz, len, wid) {
+  g.want = true;
+  // same offset as the flames above it, so the glow lies under the trail rather than
+  // centred on the tire
+  g.mesh.position.set(x + dx * len * 0.46, y, z + dz * len * 0.46);
+  g.mesh.rotation.y = Math.atan2(-dz, dx);
+  g.mesh.scale.set(len * 1.05, 1, wid * 2.1);
+}
+function updateTireGlow(dt) {
+  for (const g of tireGlowPool) {
+    const target = g.want ? 1 : 0;
+    g.level += (target - g.level) * Math.min(1, dt * (g.want ? 8 : 12));
+    if (!g.want && g.level < 0.02) {
+      if (g.mesh.visible) { g.level = 0; g.mesh.visible = false; g.mat.opacity = 0; }
+      continue;
+    }
+    g.mesh.visible = true;
+    g.mat.opacity = 0.42 * g.level;
+    g.want = false;      // the emitter has to stamp it again next frame to keep it lit
+  }
+}
+
 // hot-friction palette: the core burns pale, the fringes go red
 const FIRE_FLAME = [0xfff6dd, 0xffdd82, 0xffa939, 0xff7d1f];
+const FIRE_CORE = [0xfff8e7, 0xffe6a8];      // the white-hot centre of the trail
 const FIRE_EMBER = [0xff7a1f, 0xff4d12, 0xe0300a];
 const FIRE_SPARK = [0xffe9a8, 0xffc25c];
 
@@ -2401,13 +2472,18 @@ function _tireFireTake() {
 }
 
 // kind: 0 flame, 1 ember, 2 spark
-// kind 0 flame, 1 ember, 2 spark. `dx,dz` is the world direction the streak runs: for
+// kind 0 flame, 1 ember, 2 spark, 3 core. `dx,dz` is the world direction the streak runs: for
 // a flame that is straight back along the tire's own travel, so the fire is smeared
 // down the road behind the wheel; embers and sparks are given their own flight
 // direction instead, because that is what they are actually smearing along.
 function spawnTireFire(x, y, z, vx, vz, dx, dz, kind, len, wid, slot) {
   const p = _tireFireTake();
   p.kind = kind; p.slot = slot; p.fade = 1;
+  // A streak is drawn around its centre, so half of it would poke out in front of the
+  // tire. Slide it back by a third of its own length and the hot end lands on the
+  // contact patch with the whole tail trailing behind, which is how the real one sits.
+  // Embers and sparks are thrown clear of the tire, so they stay where they are.
+  if (kind === 0 || kind === 3) { x += dx * len * 0.33; z += dz * len * 0.33; }
   p.spr.position.set(x, y, z);
   p.dx = dx; p.dz = dz;
   const jitter = 0.85 + Math.random() * 0.3;
@@ -2425,12 +2501,19 @@ function spawnTireFire(x, y, z, vx, vz, dx, dz, kind, len, wid, slot) {
     p.vy = 1.8 + Math.random() * 2.6;
     p.mat.color.setHex(FIRE_EMBER[(Math.random() * FIRE_EMBER.length) | 0]);
     p.spr.scale.set(len * jitter, wid * jitter, 1);
-  } else {                                // spark: fast, thin, short
+  } else if (kind === 2) {                // spark: fast, thin, short
     p.life = p.maxLife = 0.22 + Math.random() * 0.26;
     p.vx = vx * 0.42 + (Math.random() - 0.5) * 7.5;
     p.vz = vz * 0.42 + (Math.random() - 0.5) * 7.5;
     p.vy = 1.4 + Math.random() * 3.4;
     p.mat.color.setHex(FIRE_SPARK[(Math.random() * FIRE_SPARK.length) | 0]);
+    p.spr.scale.set(len * jitter, wid * jitter, 1);
+  } else {                                // core: the white-hot centre of the trail
+    p.life = p.maxLife = 0.15 + Math.random() * 0.12;
+    p.vx = vx * 0.09 + (Math.random() - 0.5) * 0.7;
+    p.vz = vz * 0.09 + (Math.random() - 0.5) * 0.7;
+    p.vy = 0.1 + Math.random() * 0.35;
+    p.mat.color.setHex(FIRE_CORE[(Math.random() * FIRE_CORE.length) | 0]);
     p.spr.scale.set(len * jitter, wid * jitter, 1);
   }
   // a thrown spark is a streak along its own path, which is a lot faster than the
@@ -2463,7 +2546,23 @@ function tireFire(slot, cs, v, dt) {
   const wasOn = st.on;
   st.on = sliding || (wasOn && stillSliding);
   if (!st.on) {
-    if (wasOn) extinguishTireFire(slot);     // hooked up: cut the fire immediately
+    if (wasOn) {
+      extinguishTireFire(slot);              // hooked up: cut the fire immediately
+      // ...but the smoke keeps rolling: the puffs already in the air are hottest and
+      // thickest right as the slide ends, and they hang there after the flames are out
+      const h = v.netH, fx = Math.sin(h), fz = Math.cos(h);
+      const rx = Math.cos(h), rz = -Math.sin(h);
+      const y = (curMap ? getSurfaceY(curMap, v.netX, v.netZ) : 0.035) + 0.06;
+      for (const axle of AXLES) {
+        for (const lat of [-1, 1]) {
+          if (Math.random() < (slot === mySlot ? 0.7 : 0.35)) {
+            spawnSmoke(v.netX + rx * lat * WHEEL_TX + fx * axle * WHEEL_TZ, y,
+              v.netZ + rz * lat * WHEEL_TX + fz * axle * WHEEL_TZ,
+              -fx * cs.v, -fz * cs.v, 0.7, true);
+          }
+        }
+      }
+    }
     st.acc = 0;
     return;
   }
@@ -2525,29 +2624,24 @@ function tireFire(slot, cs, v, dt) {
         // Every floor here exists because a particle that shrinks to nothing reads as a
         // speck of noise rather than as fire, which is the one failure this must not have.
         const s = (0.55 + 0.45 * strength) * (0.62 + heat * 0.3) * (lat === side ? 1 : 0.88);
-        spawnTireFire(wx, roadY, wz, -tvx, -tvz, bdx, bdz, 0, Math.max(0.95, len * s), wid, slot);
+        const flen = Math.max(0.95, len * s);
+        // the trail itself, then the white-hot centre running down the middle of it,
+        // then what it throws off, then what it lights up on the road
+        spawnTireFire(wx, roadY, wz, -tvx, -tvz, bdx, bdz, 0, flen, wid, slot);
+        spawnTireFire(wx, roadY, wz, -tvx, -tvz, bdx, bdz, 3, Math.max(0.7, flen * 0.52), wid * 0.42, slot);
         if (Math.random() < (lite ? 0.4 : 0.55 + heat * 0.4)) {
-          spawnTireFire(wx, roadY, wz, -tvx, -tvz, bdx, bdz, 1, Math.max(0.34, len * s * 0.3), wid * 0.5, slot);
+          spawnTireFire(wx, roadY, wz, -tvx, -tvz, bdx, bdz, 1, Math.max(0.34, flen * 0.3), wid * 0.5, slot);
         }
         if (heat > 0.18 && Math.random() < (lite ? 0.2 : 0.3 + heat * 0.5)) {
-          spawnTireFire(wx, roadY, wz, -tvx, -tvz, bdx, bdz, 2, Math.max(0.3, len * s * 0.34), wid * 0.28, slot);
+          spawnTireFire(wx, roadY, wz, -tvx, -tvz, bdx, bdz, 2, Math.max(0.3, flen * 0.34), wid * 0.28, slot);
         }
-      }
-    }
-  }
-  // The smoke the friction makes stays the existing soft grey pool, so the fire
-  // reads as its source rather than as a second unrelated effect. Remote cars get
-  // fewer puffs - they are usually further away, and the smoke pool is shared with
-  // every other effect in the game.
-  const smokeChance = isMine ? 0.5 : 0.22;
-  if (Math.random() < smokeChance) {
-    for (const axle of AXLES) {
-      const front = axle > 0;
-      if (front && frontWash <= 0.25) continue;     // no smoke off a gripping front
-      for (const lat of [-1, 1]) {
-        const wx = v.netX + rgtX * lat * WHEEL_TX + fwdX * axle * WHEEL_TZ;
-        const wz = v.netZ + rgtZ * lat * WHEEL_TX + fwdZ * axle * WHEEL_TZ;
-        spawnSmoke(wx, wz, -fwdX * cs.v, -fwdZ * cs.v);
+        // the road lights up under it too. tire index: 0/1 front, 2/3 rear, x left/right
+        const glow = tireGlow(slot, (axle > 0 ? 2 : 0) + (lat > 0 ? 1 : 0));
+        if (glow) touchTireGlow(glow, wx, roadY - 0.02, wz, bdx, bdz, flen, wid);
+        // the smoke off a burning tire is lit from below; coarse and modulated by heat,
+        // because the pools are shared with every other effect in the game
+        const smokeChance = (isMine ? 0.5 : 0.22) * (0.45 + heat * 0.9) * strength;
+        if (Math.random() < smokeChance) spawnSmoke(wx, roadY, wz, -tvx, -tvz, heat, true);
       }
     }
   }
@@ -2619,9 +2713,10 @@ function updateParticles(dt) {
     p.life -= dt;
     if (p.life <= 0) { p.spr.visible = false; p.mat.opacity = 0; continue; }
     p.spr.position.x += p.vx * dt; p.spr.position.y += p.vy * dt; p.spr.position.z += p.vz * dt;
-    p.vx *= (1 - 1.6 * dt); p.vz *= (1 - 1.6 * dt);
-    p.spr.scale.addScalar(dt * 3.2);
-    p.mat.opacity = 0.34 * (p.life / p.maxLife);
+    p.vx *= (1 - 1.1 * dt); p.vz *= (1 - 1.1 * dt);
+    p.spr.scale.addScalar(dt * (p.grow || 2.4));
+    const t = p.life / p.maxLife;            // 1 at birth -> 0 at death
+    p.mat.opacity = 0.4 * Math.min(1, (1 - t) * 5) * t;
   }
   for (const p of sparkPool) {
     if (p.life <= 0) continue;
@@ -2638,6 +2733,7 @@ function updateParticles(dt) {
     if (p.life <= 0) { p.spr.visible = false; p.mat.opacity = 0; continue; }
     p.mat.opacity = Math.min(1, p.life * 9);
   }
+  updateTireGlow(dt);
   if (tireFireLive > 0) updateStreakBasis();
   for (const p of tireFirePool) {
     if (p.life <= 0) continue;
@@ -5809,7 +5905,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v153';
+const BUILD = 'v154';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
