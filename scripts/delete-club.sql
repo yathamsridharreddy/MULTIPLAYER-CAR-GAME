@@ -9,7 +9,14 @@
 --    club that was never finished.
 --
 --  HOW TO USE (Supabase dashboard -> SQL Editor -> New query)
---    1. Paste this WHOLE file and Run. It only creates the function.
+--    1. Paste this WHOLE file and Run - every line, from the first one to the
+--       last comment. That is what creates the function. Nothing else happens:
+--       no club is looked at and nothing is changed. Running only one of the two
+--       calls further down answers with
+--           ERROR: 42883: function public.sr_delete_club(unknown, boolean) does not exist
+--       and that just means the file has not been run yet. (In the Supabase SQL
+--       Editor, if any text is highlighted, Run executes ONLY the highlighted
+--       text - click in the editor and press Ctrl+A before you paste.)
 --    2. Look first - nothing is changed by this line:
 --
 --         select public.sr_delete_club('B.Tech Badithulu', true);
@@ -200,6 +207,15 @@ begin
   end if;
 end $$;
 
+
+-- ============================================================================
+--  IN ORDER
+--    1. Run this WHOLE FILE once - the function above is created and nothing
+--       else happens. If a call below answers with error 42883, the file has
+--       not been run yet (or only one highlighted line was run).
+--    2. LOOK with the `true` call below - nothing is changed by it.
+--    3. DELETE with the same call, without the `true`.
+-- ============================================================================
 
 -- ============================================================================
 --  STEP 2 - LOOK (nothing is changed)

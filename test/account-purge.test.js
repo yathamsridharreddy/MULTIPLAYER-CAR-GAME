@@ -951,6 +951,9 @@ describe('v158.8 — deleting a club is the leader\'s own action', () => {
     assert.match(TOOL, /to_regclass\('public\.crew_members'\)/, 'a database without the roster table still runs');
     assert.match(TOOL, /revoke all on function public\.sr_delete_club\(text, boolean\) from anon/, 'service role only');
     assert.match(TOOL, /keeps showing it until it restarts/, 'and the operator is told what a running server does afterwards');
+    assert.match(TOOL, /42883/, 'the file names the error a lone call gives before the function exists');
+    assert.match(TOOL, /Ctrl\+A/, 'and tells the operator to select the whole file before pasting');
+    assert.match(TOOL, /Run this WHOLE FILE once/, 'the run order is spelled out');
   });
 
   test('the in-game button is the leader\'s, and it warns before it deletes', () => {
