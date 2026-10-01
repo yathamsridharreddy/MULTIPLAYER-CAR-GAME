@@ -174,7 +174,7 @@ function boot(opts) {
     const url = String(u), opt = o || {};
     calls.push({ url, method: opt.method || 'GET', body: opt.body, headers: opt.headers });
     const answer = opts.fetchStub ? opts.fetchStub(url, opt) : null;
-    if (answer) return Promise.resolve({ ok: answer.status < 400, status: answer.status, json: () => Promise.resolve(answer.json), text: () => Promise.resolve(answer.text || '') });
+    if (answer) return Promise.resolve({ ok: answer.status < 400, status: answer.status, json: () => (answer.throwJson ? Promise.reject(new Error('not json')) : Promise.resolve(answer.json)), text: () => Promise.resolve(answer.text || '') });
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ build: 'v159', tickmap: 0 }), text: () => Promise.resolve('') });
   };
   window.navigator.vibrate = () => true;
@@ -424,6 +424,37 @@ test('v160: a deleted device racer is re-minted, and the browser adopts the new 
   assert.ok(read && read.url.includes('pid=' + NEW_PID), 'the next request carries the new identity: ' + (read && read.url));
   assert.ok(!/polddevice1/.test(read ? read.url : ''), 'and never the erased one');
   assert.match(toast(window), /starts? fresh|old racer was deleted/i, 'and the racer is told their old racer is gone');
+});
+
+test('v161: a server that is not answering still says so - a click never ends in silence', { skip: SKIP }, async (t) => {
+  // A cold Render instance answers 502 with an HTML body, so r.json() rejects and
+  // the old catch said "check your connection" - a wrong answer to the wrong
+  // question, and "nothing happened" is what "I cannot join the club" looks like.
+  const { window, dom } = boot({ fetchStub: (url) => {
+    const u = String(url);
+    if (u.includes('/api/player/crew/join')) return { status: 502, throwJson: true, text: '<html>502 Bad Gateway</html>' };
+    if (u.includes('/api/player/crew')) return { status: 200, json: { ok: true, hasCrew: false, crew: null, presets: [] } };
+    if (u.includes('/api/crews/')) return { status: 200, json: { ok: true, crew: MINE(false).crew } };
+    if (u.includes('/api/crews')) return { status: 200, json: { ok: true, crews: [CLUB] } };
+    return { status: 200, json: [] };
+  } });
+  t.after(() => dom.window.close());
+  window.eval("prefs.name = 'SRIDHAR'; prefs.pid = 'pdev1';");
+  const btn = await openJoinTab(window);
+  btn.click();
+  await settle(200);
+  assert.match(toast(window), /502|waking up|HTTP/i, 'the status is said out loud: ' + toast(window));
+  assert.ok(!/check your connection/i.test(toast(window)), "and a wake-up is not blamed on the racer's connection");
+});
+
+test('v161: join, create and delete all read their answer through the one reader', { skip: SKIP }, async () => {
+  const src = fs.readFileSync(path.join(ROOT, 'public', 'js', 'game.js'), 'utf8');
+  assert.match(src, /async function clubJson\(/, 'there is one reader');
+  assert.match(src, /function clubHttpText\(/, 'and one way to say what an HTTP status means');
+  const posts = src.match(/clubJson\(`\$\{httpBase\(\)\}\/api\/player\/crew\/(join|create|delete)`/g) || [];
+  assert.equal(posts.length, 3, 'every club POST goes through it: ' + posts.length);
+  assert.ok(!/\.then\(r => r\.json\(\)\)[\s\S]{0,400}?Joined \[/.test(src),
+    'no club POST answer is still read with a bare .json()');
 });
 
 test("v158.8: DELETE THIS CLUB is the leader's button, asks first, and posts", { skip: SKIP }, async (t) => {

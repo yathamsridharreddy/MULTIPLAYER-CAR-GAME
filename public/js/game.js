@@ -5505,23 +5505,43 @@ function crewJoinErrorText(res) {
   return 'The club did not answer - try again in a moment.';
 }
 
+// v161: ONE reader for every club call, so no click can end in silence. Every
+// answer used to be read with .then(r => r.json()); a cold Render instance (502),
+// a proxy error page, or an empty body made that throw, and the catch told the
+// racer to "check your connection" - a true answer to the wrong question, and
+// "nothing happened" is exactly what "I cannot join the club" looks like. This
+// returns the status and whatever body arrived, and never throws.
+async function clubJson(url, opts) {
+  try {
+    const r = await fetch(url, opts);
+    let body = null;
+    try { body = await r.json(); } catch (e) { body = null; }
+    return { status: r.status, ok: !!r.ok, body };
+  } catch (e) {
+    return { status: 0, ok: false, body: null };
+  }
+}
+function clubHttpText(status) {
+  if (!status) return 'Could not reach the game server - check your connection and try again.';
+  if (status === 502 || status === 503 || status === 504) return 'The club server is waking up (HTTP ' + status + ') - wait a few seconds, then try again.';
+  return 'The club server answered HTTP ' + status + ' - try again in a moment.';
+}
+
 window.joinCrewAction = async function(crewId) {
   const ci = crewIdentity(); // v90 club sync
   const name = prefs.name || 'RACER';
-  let res = null;
-  try {
-    res = await fetch(`${httpBase()}/api/player/crew/join`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({}, ci, { name, crewId }))
-    }).then(r => r.json());
-  } catch (e) {
-    // a network failure is not the club's fault, and saying so is the difference
-    // between "try again" and "the game is broken"
-    toast('Could not reach the game server - check your connection and try again.');
+  const r = await clubJson(`${httpBase()}/api/player/crew/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({}, ci, { name, crewId }))
+  });
+  // v161: a refusal names its reason; anything else (a cold server, an error
+  // page, a body that is not JSON) names the status. Never nothing at all.
+  if (!r.body || !r.body.ok) {
+    toast(r.body && r.body.error ? crewJoinErrorText(r.body) : clubHttpText(r.status));
     return;
   }
-  if (!res || !res.ok) { toast(crewJoinErrorText(res)); return; }
+  const res = r.body;
   // v160: an erased device identity was replaced by a fresh one - say so, because
   // this racer starts with nothing: that is what erasing the old one means.
   const reset = adoptServerIdentity(res);
@@ -5565,17 +5585,17 @@ window.deleteCrewAction = async function(crewId) {
   const n = crew && Array.isArray(crew.members) ? crew.members.length : 0;
   const q = `Delete ${label}?\n\n${n} racer${n === 1 ? '' : 's'} will be removed from the club and the club is gone for good.\nTheir own cars, stats and race history are not touched.\n\nThis cannot be undone.`;
   if (!confirm(q)) return;
-  let res = null;
-  try {
-    res = await fetch(`${httpBase()}/api/player/crew/delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({}, ci, { crewId }))
-    }).then(r => r.json());
-  } catch (e) {
-    toast('Could not reach the game server - the club was not deleted.');
+  const del = await clubJson(`${httpBase()}/api/player/crew/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({}, ci, { crewId }))
+  });
+  if (!del.body || !del.body.ok) {
+    toast(del.body && del.body.error ? crewDeleteErrorText(del.body)
+      : clubHttpText(del.status) + ' Nothing was deleted.');
     return;
   }
+  const res = del.body;
   if (res && res.ok) {
     toast(`🗑️ Club [${res.tag}] ${res.name} deleted.`);
     openCrewModal('join'); // the board without it is the proof it went
@@ -5597,12 +5617,13 @@ window.handleCreateCrewSubmit = async function(e) {
   const color = $('cf-color').value;
 
   try {
-    const res = await fetch(`${httpBase()}/api/player/crew/create`, {
+    const r = await clubJson(`${httpBase()}/api/player/crew/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Object.assign({}, ci, { name, crewName, tag, motto, badge, color }))
-    }).then(r => r.json());
-    if (res && res.ok) {
+    });
+    const res = r.body || {};
+    if (res.ok) {
       const fresh = adoptServerIdentity(res);
       toast(fresh
         ? `🏁 Club [${res.crew.tag}] ${res.crew.name} created - this device's old racer was deleted, so you start fresh.`
@@ -5614,7 +5635,7 @@ window.handleCreateCrewSubmit = async function(e) {
         if (res.error === 'tag_taken') errEl.innerHTML = icoSpan('x', 'ico-red') + ' Club Tag is already taken by another syndicate!';
         else if (res.error === 'invalid_crew_name') errEl.innerHTML = icoSpan('x', 'ico-red') + ' Club Name must be 3-32 characters (letters, numbers, spaces, and punctuation)!';
         else if (res.error === 'invalid_crew_tag') errEl.innerHTML = icoSpan('x', 'ico-red') + ' Club Tag must be 2-5 letters/numbers (e.g. APEX, F1, SPEED)!';
-        else errEl.innerHTML = icoSpan('x', 'ico-red') + ' ' + (res.error || 'Validation error');
+        else errEl.innerHTML = icoSpan('x', 'ico-red') + ' ' + (res.error || clubHttpText(r.status));
       }
     }
   } catch (e) {
@@ -6255,7 +6276,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v160';
+const BUILD = 'v161';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
