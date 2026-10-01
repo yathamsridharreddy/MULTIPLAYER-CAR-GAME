@@ -426,7 +426,7 @@ test('v160: a deleted device racer is re-minted, and the browser adopts the new 
   assert.match(toast(window), /starts? fresh|old racer was deleted/i, 'and the racer is told their old racer is gone');
 });
 
-test('v161: a server that is not answering still says so - a click never ends in silence', { skip: SKIP }, async (t) => {
+test('v162: a server that is not answering still says so - a click never ends in silence', { skip: SKIP }, async (t) => {
   // A cold Render instance answers 502 with an HTML body, so r.json() rejects and
   // the old catch said "check your connection" - a wrong answer to the wrong
   // question, and "nothing happened" is what "I cannot join the club" looks like.
@@ -445,9 +445,58 @@ test('v161: a server that is not answering still says so - a click never ends in
   await settle(200);
   assert.match(toast(window), /502|waking up|HTTP/i, 'the status is said out loud: ' + toast(window));
   assert.ok(!/check your connection/i.test(toast(window)), "and a wake-up is not blamed on the racer's connection");
+  // ...and the tab keeps it after the toast has faded, because "I clicked and I
+  // cannot join" is not reportable if the only trace disappears in four seconds.
+  const note = dom.window.document.getElementById('crew-join-status');
+  assert.ok(note && /502|waking up/i.test(note.textContent), 'the join tab keeps the reason: ' + (note && note.textContent));
 });
 
-test('v161: join, create and delete all read their answer through the one reader', { skip: SKIP }, async () => {
+test('v162: a refused join is written on the join tab, not only in a toast', { skip: SKIP }, async (t) => {
+  const { window, dom } = boot({ fetchStub: (url) => {
+    const u = String(url);
+    if (u.includes('/api/player/crew/join')) return { status: 403, json: { ok: false, error: 'racer_erased' } };
+    if (u.includes('/api/player/crew')) return { status: 200, json: { ok: true, hasCrew: false, crew: null, presets: [] } };
+    if (u.includes('/api/crews/')) return { status: 200, json: { ok: true, crew: MINE(false).crew } };
+    if (u.includes('/api/crews')) return { status: 200, json: { ok: true, crews: [CLUB] } };
+    return { status: 200, json: [] };
+  } });
+  t.after(() => dom.window.close());
+  window.eval("prefs.name = 'SRIDHAR'; prefs.pid = 'pdev1';");
+  const btn = await openJoinTab(window);
+  btn.click();
+  await settle(200);
+  const note = dom.window.document.getElementById('crew-join-status');
+  assert.ok(note, 'the join tab carries a status line');
+  assert.match(note.textContent, /deleted|sign out|reload/i, 'naming the refusal: ' + note.textContent);
+  // and it survives closing and reopening the dialog
+  window.eval("openCrewModal('join')");
+  await settle(120);
+  const again = dom.window.document.getElementById('crew-join-status');
+  assert.ok(again && /deleted|sign out|reload/i.test(again.textContent), 'it is still there when the dialog is reopened');
+});
+
+test('v162: a join that lands is written on the tab too', { skip: SKIP }, async (t) => {
+  const { window, dom } = boot({ fetchStub: (url) => {
+    const u = String(url);
+    if (u.includes('/api/player/crew/join')) return { status: 200, json: { ok: true, crewId: CLUB.id, tag: CLUB.tag, name: CLUB.name, member: { uid: 'pdev1' }, durable: true, stored: true, pending: false } };
+    if (u.includes('/api/player/crew')) return { status: 200, json: MINE(false) };
+    if (u.includes('/api/crews/')) return { status: 200, json: { ok: true, crew: MINE(false).crew } };
+    if (u.includes('/api/crews')) return { status: 200, json: { ok: true, crews: [CLUB] } };
+    return { status: 200, json: [] };
+  } });
+  t.after(() => dom.window.close());
+  window.eval("prefs.name = 'SRIDHAR'; prefs.pid = 'pdev1';");
+  const btn = await openJoinTab(window);
+  btn.click();
+  await settle(200);
+  window.eval("prefs.name = 'SRIDHAR';");
+  window.eval("openCrewModal('join')");
+  await settle(120);
+  const note = dom.window.document.getElementById('crew-join-status');
+  assert.ok(note && /joined \[BHAI\] as SRIDHAR/i.test(note.textContent), 'the tab says which club took them: ' + (note && note.textContent));
+});
+
+test('v162: join, create and delete all read their answer through the one reader', { skip: SKIP }, async () => {
   const src = fs.readFileSync(path.join(ROOT, 'public', 'js', 'game.js'), 'utf8');
   assert.match(src, /async function clubJson\(/, 'there is one reader');
   assert.match(src, /function clubHttpText\(/, 'and one way to say what an HTTP status means');

@@ -5359,6 +5359,7 @@ async function openCrewModal(tab = 'my') {
       const res = await fetch(`${httpBase()}/api/crews`).then(r => r.json());
       const crews = (res && res.crews) || [];
       body.innerHTML = `
+        ${joinNoteMarkup()}
         <div style="margin-bottom:12px; font:700 12px Orbitron; color:#7ee7ff;">${tI18n('selectClubJoin') || 'SELECT A MOTORSPORT CLUB TO JOIN:'}</div>
         <div class="crew-preset-grid">
           ${crews.map(cr => `
@@ -5505,7 +5506,7 @@ function crewJoinErrorText(res) {
   return 'The club did not answer - try again in a moment.';
 }
 
-// v161: ONE reader for every club call, so no click can end in silence. Every
+// v162: ONE reader for every club call, so no click can end in silence. Every
 // answer used to be read with .then(r => r.json()); a cold Render instance (502),
 // a proxy error page, or an empty body made that throw, and the catch told the
 // racer to "check your connection" - a true answer to the wrong question, and
@@ -5521,6 +5522,36 @@ async function clubJson(url, opts) {
     return { status: 0, ok: false, body: null };
   }
 }
+// v162: the toast fades and the reason goes with it, so the join tab keeps the
+// last attempt on screen in words. "I clicked and I cannot join" becomes a line
+// that names the club, the code and what the server said.
+let lastJoinNote = null;
+function setJoinNote(text, kind) {
+  lastJoinNote = text ? { text, kind: kind || 'bad' } : null;
+  let el = typeof $ === 'function' ? $('crew-join-status') : null;
+  if (!el) {
+    // the tab was rendered before this attempt, so there is nothing to write into
+    // yet: put the line at the top of the join list now.
+    const body = typeof $ === 'function' ? $('crew-body') : null;
+    const dlg = typeof $ === 'function' ? $('crew-dlg') : null;
+    if (!body || !dlg || dlg.hidden || crewModalTab !== 'join' || !lastJoinNote) return;
+    el = document.createElement('div');
+    el.id = 'crew-join-status';
+    body.insertBefore(el, body.firstChild);
+  }
+  const ok = lastJoinNote && lastJoinNote.kind === 'ok';
+  el.style.display = lastJoinNote ? 'block' : 'none';
+  el.textContent = lastJoinNote ? lastJoinNote.text : '';
+  el.style.color = ok ? '#7ee7ff' : '#ff9d9d';
+  el.style.borderLeft = '2px solid ' + (ok ? '#7ee7ff' : '#ff5252');
+}
+function joinNoteMarkup() {
+  if (!lastJoinNote) return '';
+  const ok = lastJoinNote.kind === 'ok';
+  return '<div id="crew-join-status" style="margin-bottom:12px; padding:7px 10px; border-radius:6px; font:600 11.5px/1.45 Orbitron; letter-spacing:.2px; ' +
+    'background:' + (ok ? 'rgba(126,231,255,0.07)' : 'rgba(255,82,82,0.08)') + '; border-left:2px solid ' + (ok ? '#7ee7ff' : '#ff5252') + '; color:' + (ok ? '#7ee7ff' : '#ff9d9d') + ';">' +
+    escapeHtml(lastJoinNote.text) + '</div>';
+}
 function clubHttpText(status) {
   if (!status) return 'Could not reach the game server - check your connection and try again.';
   if (status === 502 || status === 503 || status === 504) return 'The club server is waking up (HTTP ' + status + ') - wait a few seconds, then try again.';
@@ -5535,10 +5566,12 @@ window.joinCrewAction = async function(crewId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(Object.assign({}, ci, { name, crewId }))
   });
-  // v161: a refusal names its reason; anything else (a cold server, an error
+  // v162: a refusal names its reason; anything else (a cold server, an error
   // page, a body that is not JSON) names the status. Never nothing at all.
   if (!r.body || !r.body.ok) {
-    toast(r.body && r.body.error ? crewJoinErrorText(r.body) : clubHttpText(r.status));
+    const why = (r.body && r.body.error) ? crewJoinErrorText(r.body) : clubHttpText(r.status);
+    setJoinNote('LAST ATTEMPT - ' + why);
+    toast(why);
     return;
   }
   const res = r.body;
@@ -5549,12 +5582,15 @@ window.joinCrewAction = async function(crewId) {
   // roster row that never landed is what made a club look joined for one session
   // and vanish on the next reload.
   if (res.durable && !res.stored && !res.pending) {
+    setJoinNote('LAST ATTEMPT - joined [' + res.tag + '], but the club could not save you to its roster. Reload and try again.');
     toast(`🏁 Joined [${res.tag}] - but the club could not save you to its roster. Reload and try again.`);
   } else if (res.pending) {
     toast(`🏁 Joined [${res.tag}] - still saving you to the roster…`);
   } else if (reset) {
+    setJoinNote('LAST ATTEMPT - joined [' + res.tag + '] as ' + name + '. This device\'s old racer was deleted, so you start fresh.', 'ok');
     toast(`🏁 Joined [${res.tag}] ${res.name} - this device's old racer was deleted, so you start fresh.`);
   } else {
+    setJoinNote('LAST ATTEMPT - joined [' + res.tag + '] as ' + name + '.', 'ok');
     toast(`🏁 Joined [${res.tag}] ${res.name}!`);
   }
   openCrewModal('my');
@@ -6276,7 +6312,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v161';
+const BUILD = 'v162';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

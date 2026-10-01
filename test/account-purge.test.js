@@ -895,6 +895,37 @@ describe('v158.7 — a name tombstone must not erase the racer who is still here
     assert.ok(!JSON.stringify(write.json).includes('polddevice1'), 'and never names the erased device');
   });
 
+  test('a racer whose ONLY identity is a tombstoned driver name gets a device key too', async () => {
+    // The shape a browser has with no device key at all (cleared storage, a private
+    // window): uid falls back to the name and pid is empty, so the roster row would
+    // be keyed on the name - and a tombstoned name drops that row for EVERY club.
+    // This is the second way the user's "I cannot join ANY club" is reachable.
+    noteTombstones([{ key: DEAD, names: [NAME2], purged_at: new Date().toISOString() }]);
+    const ids = { uid: NAME2, pid: '', sbUid: '', name: NAME2 };
+    const verdict = S.healErasedGuestIdentity(ids);
+    assert.equal(verdict.erased, true, 'the name is tombstoned');
+    assert.equal(verdict.account, false, 'a name is not an account');
+    assert.match(verdict.freshPid, /^p[a-z0-9]+$/, 'a device key is minted for them');
+    assert.equal(ids.uid, verdict.freshPid, 'and the request goes on keyed on it, not on the bare name');
+
+    const res = await post('/api/player/crew/join', { uid: NAME2, pid: '', sbUid: '', name: NAME2, crewId: 'jointest' });
+    assert.equal(res.status, 200, 'the join is accepted instead of writing nothing');
+    assert.equal(res.json.reset, true);
+    const write = calls.find((x) => x.method === 'POST' && x.url.includes('/crew_members'));
+    assert.ok(write, 'the roster row is written instead of being dropped for naming a tombstoned name');
+    assert.equal(write.json[0].member_key, res.json.newPid);
+    assert.ok(!(write.json[0].aliases || []).includes('sridhar'), 'and no alias names it');
+  });
+
+  test('a name no tombstone names is left as the key', () => {
+    noteTombstones([{ key: DEAD, names: [NAME2], purged_at: new Date().toISOString() }]);
+    const ids = { uid: 'SOMEONEELSE', pid: '', sbUid: '', name: 'SOMEONEELSE' };
+    const verdict = S.healErasedGuestIdentity(ids);
+    assert.equal(verdict.erased, false);
+    assert.equal(verdict.freshPid, '');
+    assert.equal(ids.uid, 'SOMEONEELSE', 'nothing is invented for a living name');
+  });
+
   test('the client says why, and never hides it behind "Failed to join crew"', () => {
     assert.match(GAME, /function crewJoinErrorText/, 'the reason is turned into words');
     assert.match(GAME, /code === 'invalid_uid'/, 'an identity that never arrived says so');

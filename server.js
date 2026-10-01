@@ -2435,7 +2435,16 @@ function healErasedGuestIdentity(ids) {
   const out = { erased: false, account: false, freshPid: '', identity: '' };
   const sbUid = normCrewKey(ids && ids.sbUid);
   const liveAccount = !!sbUid && !isPurgedKey(sbUid);
-  const erased = crewStrongKeys(ids).filter((k) => isPurgedKey(k));
+  const keys = crewStrongKeys(ids);
+  const erased = keys.filter((k) => isPurgedKey(k));
+  // v162: an identity that is NOTHING BUT a display name a purge tombstoned is in
+  // the same trap as an erased device key - every row keyed on it is dropped, so
+  // every club answered "could not save you to its roster" and the racer was
+  // outside every club they clicked. This is the shape a browser has when it has
+  // no device key at all (cleared storage, a private window): uid falls back to
+  // the name and pid is empty. A name is not an account either.
+  const nameKey = purgeNameOf(ids && ids.name);
+  const nameIsAll = !!nameKey && keys.length > 0 && keys.every((k) => k === nameKey) && isPurgedName(ids.name);
   const usable = (v) => { const k = normCrewKey(v); return !!k && !isPurgedKey(k); };
   if (liveAccount) {
     out.erased = erased.length > 0;
@@ -2446,7 +2455,7 @@ function healErasedGuestIdentity(ids) {
     if (!usable(ids.pid)) ids.pid = 'sb:' + sbUid;
     return out;
   }
-  if (!erased.length) return out;
+  if (!erased.length && !nameIsAll) return out;
   if (erased.some((k) => UUID_RE.test(k))) { out.erased = true; out.account = true; return out; }
   const freshPid = freshGuestPid();
   ids.uid = freshPid;
@@ -5479,7 +5488,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v161', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v162', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
