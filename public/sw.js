@@ -9,17 +9,17 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v158';
+const CACHE = 'sridhar-rush-v159';
 
 const CORE = [
   '/', '/controller', '/auth.html',
-  '/css/style.css?v=158', '/css/controller.css?v=158',
-  '/js/game-core.js?v=158', '/js/progression.js?v=158', '/js/net.js?v=158', '/js/game.js?v=158', '/js/controller.js?v=158', '/js/account.js?v=158', '/js/i18n.js?v=158', '/js/auth.js?v=158',
+  '/css/style.css?v=159', '/css/controller.css?v=159',
+  '/js/game-core.js?v=159', '/js/progression.js?v=159', '/js/net.js?v=159', '/js/game.js?v=159', '/js/controller.js?v=159', '/js/account.js?v=159', '/js/i18n.js?v=159', '/js/auth.js?v=159',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
   '/js/vendor/post/RenderPass.js', '/js/vendor/post/UnrealBloomPass.js',
-  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=158',
+  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=159',
   '/icon.svg', '/img/icon-192.png', '/img/icon-512.png', '/img/icon-512-maskable.png', '/img/apple-touch-icon.png',
   // v147: the four weather-condition pictures (dry tarmac, rain, neon night, snow)
   '/img/weather/dry.webp', '/img/weather/wet.webp', '/img/weather/night.webp', '/img/weather/blizzard.webp',

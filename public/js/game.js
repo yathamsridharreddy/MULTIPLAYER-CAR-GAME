@@ -5301,7 +5301,7 @@ async function openCrewModal(tab = 'my') {
             </div>
             <div class="cmt-bar-wrap"><div class="cmt-bar-fill" style="width:${c.progressPct}%;"></div></div>
             <div class="cmt-list">
-              ${c.milestones.map(m => `
+              ${(c.milestones || []).map(m => `
                 <div class="cmt-item ${m.completed ? 'completed' : ''}">
                   <b>T${m.tier} · ${m.reqKm}km</b>
                   <span>+${m.reward.xp} XP · +${m.reward.coins} 🪙</span>
@@ -5312,11 +5312,11 @@ async function openCrewModal(tab = 'my') {
           </div>
 
           <div style="margin-top:16px;">
-            <div style="font:800 12px Orbitron; color:#fff; margin-bottom:8px;">${tI18n('crewRoster', { count: c.members.length }) || `👥 CREW ROSTER (${c.members.length} RACERS)`}</div>
+            <div style="font:800 12px Orbitron; color:#fff; margin-bottom:8px;">${tI18n('crewRoster', { count: (c.members || []).length }) || `👥 CREW ROSTER (${(c.members || []).length} RACERS)`}</div>
             <table class="crew-lb-table">
               <thead><tr><th>${tI18n('racerTh') || 'RACER'}</th><th>${tI18n('roleTh') || 'ROLE'}</th><th>${tI18n('weeklyDistTh') || 'WEEKLY DISTANCE'}</th><th>${tI18n('pointsTh') || 'POINTS'}</th></tr></thead>
               <tbody>
-                ${c.members.map(m => `
+                ${(c.members || []).map(m => `
                   <tr>
                     <td><b>${escapeHtml(m.name)}</b> ${crewRowIsMe(m, ci) ? '<span style="color:#00e5ff;">(YOU)</span>' : ''}</td>
                     <td><span style="color:${m.role === 'leader' ? '#ffd479' : '#8b93a8'}; font-weight:700;">${m.role.toUpperCase()}</span></td>
@@ -6228,7 +6228,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v158';
+const BUILD = 'v159';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -8200,6 +8200,37 @@ document.addEventListener('visibilitychange', () => {
     try { if (net && !net.isOpen()) { net.delay = 800; sendHello(); } } catch (e) {}
   }
 });
+
+// ---------------------------------------------------------------------------
+// v159 FIX — THE CLUB BUTTONS MUST NOT WAIT FOR A ROOM SNAPSHOT.
+//
+// Every club control (CLUBS, the four tabs, the join buttons inside them) is
+// wired by wireLobbyV2(), and the only call to it was the last line of
+// updateLobby() — i.e. after the first state frame from the server, and after
+// roughly fifty DOM operations that can throw on the way there. So a racer who
+// had not entered a room yet, or whose lobby render bailed out before that last
+// line, had a CLUBS button with no click handler: clicking it did nothing at
+// all. That reads exactly like "I click JOIN CLUB and I cannot join the club".
+//
+// wireLobbyV2() is safe to call from boot: v96 put every block inside it in its
+// own try/catch, the guest features (clubs among them) are wired first, and the
+// only state it reads (latest) is read with a guard. The call from updateLobby()
+// stays where it is, as a safety net for a page that boots through some other
+// path; `lobbyWired` keeps both to a single run.
+if (typeof document !== 'undefined') {
+  const wireLobbyAtBoot = () => {
+    if (lobbyWired) return;
+    lobbyWired = true;
+    try { wireLobbyV2(); } catch (e) { console.warn('[lobby] wiring failed', e); }
+  };
+  // game.js ships as a deferred script, so the markup is already parsed and the
+  // call here is the one that wires the buttons. The listener stays as a safety
+  // net for any other boot order - `lobbyWired` keeps it to a single run, and it
+  // must never be the ONLY path: a document that never fires the event (an
+  // injected script, a restored page) would leave CLUBS dead again.
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireLobbyAtBoot);
+  wireLobbyAtBoot();
+}
 
 let bootHidden = false;
 document.addEventListener('click', (e) => {

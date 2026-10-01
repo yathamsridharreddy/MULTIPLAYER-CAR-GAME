@@ -526,8 +526,12 @@ test('scope buttons and track pills update shared state, not a dead local copy',
 
 test('wiring is idempotent and self-healing: reopening LEADERBOARDS never double-attaches', () => {
   const g = bootGame();
-  g.eval('wireLobbyV2()');                    // the lazy lobby wiring, as the page runs it
-  assert.strictEqual(g.listenerCount('ltab-rank', 'click'), 1, 'LEADERBOARDS tab must be clickable');
+  // v159: the page wires the lobby at boot now - the hub, CLUBS and the club tabs
+  // used to wait for the first room snapshot (and for every DOM operation before
+  // the last line of updateLobby() to survive). So this is the state a fresh page
+  // is already in, and calling wireLobbyV2() a second time here would be a second
+  // wiring that production never does.
+  assert.strictEqual(g.listenerCount('ltab-rank', 'click'), 1, 'LEADERBOARDS tab must be clickable straight after boot');
   const before = g.listenerCount('board-tab-time', 'click');
   g.eval('window.__compWired = false;');      // pretend the first wiring never happened
   g.click('ltab-rank');                       // the racer opens the panel
