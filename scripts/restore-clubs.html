@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>SRIDHAR RUSH — club restore</title>
+<!--
+  ============================================================================
+  v158 RECOVERY, no tools needed: reads a RUNNING game server's public club API
+  and prints the SQL that puts the clubs and their rosters back into the
+  database. The server's memory is the only copy of what a purge deleted, so run
+  this BEFORE the server restarts.
+
+  Open this file in a browser (double-click it), paste your game server's URL,
+  press Read. Nothing is sent anywhere except to your own server; the SQL is
+  built in this page and never leaves it.
+  ============================================================================
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 28px 18px 60px; background: #07080d; color: #e8ecf5;
+         font: 15px/1.55 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 4px; letter-spacing: .02em; }
+  p.sub { color: #93a0b8; margin: 0 0 22px; }
+  ol { color: #b9c3d6; padding-left: 22px; }
+  ol li { margin-bottom: 6px; }
+  label { display: block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #8b98b0; margin: 20px 0 6px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  input[type=url] { flex: 1 1 340px; padding: 11px 13px; border-radius: 10px; border: 1px solid #263046;
+                    background: #0d1120; color: #e8ecf5; font: inherit; }
+  button { padding: 11px 18px; border-radius: 10px; border: 1px solid #2b7cff; background: #17458f;
+           color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button[disabled] { opacity: .5; cursor: default; }
+  button.ghost { background: #131a2c; border-color: #2a3550; }
+  #status { margin: 16px 0 6px; min-height: 22px; color: #9fb0cc; white-space: pre-wrap; }
+  #status.err { color: #ff8f8f; }
+  #status.ok { color: #6ee7a8; }
+  textarea { width: 100%; height: 340px; margin-top: 8px; padding: 13px; border-radius: 12px;
+             border: 1px solid #263046; background: #0b0f1b; color: #cfe3ff;
+             font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; }
+  .note { margin-top: 18px; padding: 12px 14px; border-radius: 12px; background: #12182a;
+          border: 1px solid #22304d; color: #a9b6cd; font-size: 13.5px; }
+  .note b { color: #ffd479; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Club restore</h1>
+  <p class="sub">Reads a running SRIDHAR RUSH server's memory and prints the SQL that rebuilds your clubs.</p>
+
+  <ol>
+    <li>Leave the game server alone — do not redeploy or restart it. Its memory is the copy we are reading.</li>
+    <li>Paste your game server's address below (the one the site talks to).</li>
+    <li>Press <b>Read the live server</b>, then <b>Copy the SQL</b>.</li>
+    <li>Paste that SQL into the Supabase SQL Editor and press Run.</li>
+  </ol>
+
+  <label for="base">Game server address</label>
+  <div class="row">
+    <input id="base" type="url" spellcheck="false" placeholder="https://your-server-host" value=""/>
+    <button id="go">Read the live server</button>
+    <button id="copy" class="ghost" disabled>Copy the SQL</button>
+  </div>
+  <div id="status"></div>
+  <textarea id="out" spellcheck="false" placeholder="the generated SQL appears here"></textarea>
+
+  <div class="note">
+    <b>What comes back:</b> each club's name, tag, motto, badge, colour, weekly and lifetime
+    metres and points — exactly. Each member's own distance comes back to the nearest 0.1 km,
+    keyed by the display name the roster shows (the public API never exposes account ids), and
+    the game re-attaches real identities the next time each racer joins or races.
+    <br/><br/>
+    <b>If the list you get back has only the game's own clubs</b> (Redline Motorsport, Akina
+    SpeedStars, Midnight Club Tokyo, Veloce Grand Prix, Monza Oversteer Works), the server has
+    restarted since the purge and its memory no longer holds your clubs — stop here and use a
+    Supabase backup instead.
+  </div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  // The five clubs the server seeds itself (shared/progression.js CREW_PRESETS).
+  // They must stay flagged seeded or a later purge repair treats them as user-made.
+  var SEEDED = ['apex', 'drift', 'viper', 'titan', 'ghost'];
+
+  var baseEl = document.getElementById('base');
+  var goEl = document.getElementById('go');
+  var copyEl = document.getElementById('copy');
+  var statusEl = document.getElementById('status');
+  var outEl = document.getElementById('out');
+
+  // the page is opened from disk, so remember the address between visits
+  try { var saved = localStorage.getItem('sr_restore_base'); if (saved && !baseEl.value) baseEl.value = saved; } catch (e) {}
+
+  function setStatus(msg, kind) {
+    statusEl.className = kind || '';
+    statusEl.textContent = msg || '';
+  }
+
+  var q = function (v) {
+    if (v === null || v === undefined || v === '') return 'null';
+    if (typeof v === 'number' && isFinite(v)) return String(Math.round(v));
+    return "'" + String(v).replace(/'/g, "''").replace(/[\u0000-\u001f]/g, ' ').slice(0, 200) + "'";
+  };
+  // the server's normCrewKey(): trim, drop an 'sb:' prefix, lowercase, cap at 64
+  function memberKey(name) {
+    return String(name === null || name === undefined ? '' : name).trim().replace(/^sb:/i, '').toLowerCase().slice(0, 64);
+  }
+  function getJSON(url) {
+    return fetch(url, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' from ' + url);
+      return r.json();
+    });
+  }
+
+  function buildSql(list, rosters) {
+    var out = [];
+    var weekKey = list.weekKey || '';
+    out.push('-- ============================================================================');
+    out.push('-- SRIDHAR RUSH - club restore (generated ' + new Date().toISOString() + ')');
+    out.push('-- from ' + baseEl.value.trim().replace(/\/+$/, ''));
+    out.push('-- ' + (list.crews || []).length + ' club(s), week ' + (weekKey || 'unknown'));
+    out.push('-- Idempotent: re-running it updates the same rows.');
+    out.push('-- ============================================================================');
+    out.push('');
+    out.push('begin;');
+    out.push('');
+    for (var i = 0; i < rosters.length; i++) {
+      var crew = rosters[i].crew, detail = rosters[i].detail;
+      if (!crew || !crew.id) continue;
+      var id = String(crew.id);
+      var seeded = SEEDED.indexOf(id) >= 0;
+      out.push('-- ' + (crew.name || id) + ' [' + (crew.tag || '') + ']' + (seeded ? ' (built-in)' : ''));
+      out.push('insert into public.crews (id, tag, name, motto, badge, color, weekly_meters, total_meters, weekly_points, week_key, seeded, created_at) values (' +
+        [q(id), q(crew.tag), q(crew.name), q(crew.motto), q(crew.badge), q(crew.color),
+          q(Number(crew.weeklyMeters) || 0), q(Number(crew.totalMeters) || 0), q(Number(crew.weeklyPoints) || 0),
+          q(weekKey), seeded ? 'true' : 'false', 'now()'].join(', ') + ')');
+      out.push('  on conflict (id) do update set');
+      out.push('    tag = excluded.tag, name = excluded.name, motto = excluded.motto, badge = excluded.badge,');
+      out.push('    color = excluded.color, weekly_meters = excluded.weekly_meters,');
+      out.push('    total_meters = excluded.total_meters, weekly_points = excluded.weekly_points,');
+      out.push('    seeded = excluded.seeded;');
+
+      var members = (detail && detail.members) || [];
+      var leader = null;
+      for (var j = 0; j < members.length; j++) {
+        var m = members[j];
+        var key = memberKey(m.name);
+        if (!key) continue;
+        if (m.role === 'leader') leader = key;
+        out.push('insert into public.crew_members (crew_id, member_key, name, role, aliases, weekly_meters, total_meters, weekly_points, week_key, joined_at) values (' +
+          [q(id), q(key), q(String(m.name || 'RACER').slice(0, 16)), m.role === 'leader' ? "'leader'" : "'member'", "'{}'",
+            q(Math.round((Number(m.weeklyKm) || 0) * 1000)), q(Math.round((Number(m.totalKm) || 0) * 1000)),
+            q(Number(m.weeklyPoints) || 0), q(weekKey), m.joinedAt ? q(m.joinedAt) : 'now()'].join(', ') + ')');
+        out.push('  on conflict (crew_id, member_key) do update set');
+        out.push('    name = excluded.name, role = excluded.role, weekly_meters = excluded.weekly_meters,');
+        out.push('    total_meters = excluded.total_meters, weekly_points = excluded.weekly_points,');
+        out.push('    week_key = excluded.week_key;');
+      }
+      if (leader) out.push('update public.crews set leader_uid = ' + q(leader) + ' where id = ' + q(id) + ';');
+      if (members.length) out.push('-- ' + members.length + ' member(s) restored for ' + id);
+      out.push('');
+    }
+    out.push('commit;');
+    out.push('');
+    out.push('-- verify:');
+    out.push('--   select c.id, c.name, c.weekly_meters, c.total_meters, count(m.*) as members');
+    out.push('--     from public.crews c left join public.crew_members m on m.crew_id = c.id');
+    out.push('--    group by c.id, c.name, c.weekly_meters, c.total_meters order by c.id;');
+    out.push('');
+    return out.join('\n');
+  }
+
+  goEl.addEventListener('click', function () {
+    var base = String(baseEl.value || '').trim().replace(/\/+$/, '');
+    if (!base) { setStatus('Paste your game server address first.', 'err'); return; }
+    if (!/^https?:\/\//i.test(base)) base = 'https://' + base;
+    try { localStorage.setItem('sr_restore_base', base); } catch (e) {}
+    goEl.disabled = true; copyEl.disabled = true;
+    setStatus('Reading ' + base + ' …');
+    getJSON(base + '/api/crews')
+      .then(function (list) {
+        var crews = (list && list.crews) || [];
+        if (!crews.length) throw new Error('the server returned no clubs at all');
+        setStatus('Found ' + crews.length + ' club(s). Reading the rosters …');
+        // one request per club, in order, so a slow club cannot lose the rest
+        var rosters = [];
+        return crews.reduce(function (chain, crew) {
+          return chain.then(function () {
+            return getJSON(base + '/api/crews/' + encodeURIComponent(crew.id))
+              .then(function (one) { rosters.push({ crew: crew, detail: one && one.crew }); })
+              .catch(function () { rosters.push({ crew: crew, detail: null }); });
+          });
+        }, Promise.resolve()).then(function () { return { list: list, rosters: rosters }; });
+      })
+      .then(function (res) {
+        var sql = buildSql(res.list, res.rosters);
+        outEl.value = sql;
+        var noRoster = res.rosters.filter(function (r) { return !r.detail; }).length;
+        var members = res.rosters.reduce(function (n, r) { return n + ((r.detail && r.detail.members) || []).length; }, 0);
+        copyEl.disabled = false;
+        // if only the game's own five clubs came back, the memory we are reading is empty
+        var custom = res.rosters.filter(function (r) { return SEEDED.indexOf(String(r.crew.id)) < 0; }).length;
+        setStatus('Read ' + res.rosters.length + ' club(s) and ' + members + ' members' +
+          (noRoster ? ' — ' + noRoster + ' club(s) could not be read, see the note' : '') +
+          (custom ? '' : '\n\nOnly the game\'s own clubs came back — the server looks restarted.') +
+          '.\nNow press "Copy the SQL" and run it in the Supabase SQL Editor.', custom ? 'ok' : 'err');
+      })
+      .catch(function (e) {
+        setStatus('Could not read the server: ' + e.message +
+          '\n\nCheck the address, and that the game server is up. If the page cannot reach it,\n' +
+          'open it in the same tab as the game (the API allows any origin) or use the\n' +
+          'Node version: node scripts/restore-clubs.js <server-url> > restore-clubs.sql', 'err');
+      })
+      .then(function () { goEl.disabled = false; });
+  });
+
+  copyEl.addEventListener('click', function () {
+    if (!outEl.value) return;
+    var done = function () { setStatus('SQL copied — paste it into the Supabase SQL Editor.', 'ok'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(outEl.value).then(done, function () { outEl.select(); document.execCommand('copy'); done(); });
+    } else { outEl.select(); document.execCommand('copy'); done(); }
+  });
+
+  if (baseEl.value) setStatus('Address remembered. Press "Read the live server".');
+})();
+</script>
+</body>
+</html>

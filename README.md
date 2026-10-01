@@ -207,8 +207,8 @@ precached), so first load pays once and every later race is instant.
 │   ├── vercel-build.js          writes public/js/config.js from env vars
 │   ├── sql-lint.js              parses every .sql against the Postgres grammar
 │   ├── live-probe.js            probes a deployed server's /health
-│   └── restore-clubs.js         prints SQL that rebuilds the club tables from a
-│                                running server's memory (v158 recovery)
+│   └── restore-clubs.*          prints SQL that rebuilds the club tables from a
+│                                running server's memory (.js = Node, .html = browser)
 ├── supabase-setup.sql           canonical schema for a NEW database
 ├── supabase-migration-v98.sql   ONE re-runnable script that converges ANY database
 ├── supabase-migration-v99.sql   converges `challenges` for the revenge flow
