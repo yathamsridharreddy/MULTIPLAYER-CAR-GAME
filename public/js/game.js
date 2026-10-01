@@ -1243,10 +1243,10 @@ function buildRoadsideInfrastructure(map, T, W) {
   {
     const concreteMat = new THREE.MeshStandardMaterial({ color: 0x2b303c, roughness: 0.9 });
     const seatR = new THREE.MeshStandardMaterial({ color: 0xc9302c, roughness: 0.7 });
-    const seatB = new THREE.MeshStandardMaterial({ color: 0x0a84ff, roughness: 0.7 });
+    const seatB = new THREE.MeshStandardMaterial({ color: 0x0d47c8, roughness: 0.7 });
     const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a1e26, roughness: 0.5, metalness: 0.5 });
     const pillarMat = new THREE.MeshStandardMaterial({ color: 0xb0b6c2, metalness: 0.85, roughness: 0.25 });
-    const bannerMat = new THREE.MeshStandardMaterial({ color: 0x0a84ff, emissive: 0x064d99, emissiveIntensity: 0.4 });
+    const bannerMat = new THREE.MeshStandardMaterial({ color: 0x0d47c8, emissive: 0x0a2f80, emissiveIntensity: 0.4 });
 
     const makeTracksideGrandstand = (uAlong) => {
       const gGrp = new THREE.Group();
@@ -1958,10 +1958,10 @@ function createCar(paintColor, num, accent, shellId) {
 }
 
 const carVisuals = {}; // v76: lazy up to 6
-const SLOT_HEX = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7];
+const SLOT_HEX = [0xe10600, 0x0d47c8, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7];
 // v118: visual identity follows the selected car, not the race class.
 const SHELL_BY_HEX = {
-  0xe10600: 'ghost', 0x0a84ff: 'ghost', 0xffd400: 'ghost', 0x00a651: 'ghost',
+  0xe10600: 'ghost', 0x0d47c8: 'ghost', 0xffd400: 'ghost', 0x00a651: 'ghost',
   0xff6a00: 'ghost', 0x7b2ff7: 'ghost', 0xffffff: 'ghost', 0x111111: 'ghost'
 };
 function shellForHex(h) { return SHELL_BY_HEX[h | 0] || 'ghost'; } // v136: all procedural fallback = ghost shape (same as GLB) to avoid damaged look
@@ -2904,7 +2904,7 @@ function revengeQuery(uid) {
 let viewMode = 'race';
 let lastResults = null;
 
-const CAR_COLORS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
+const CAR_COLORS = [0xe10600, 0x0d47c8, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
 const CAR_NAMES = [
   { e: '🔴', n: 'FURY' }, { e: '🔵', n: 'STORM' }, { e: '🟡', n: 'VOLT' }, { e: '🟢', n: 'VIPER' },
   { e: '🟠', n: 'BLAZE' }, { e: '🟣', n: 'PHANTOM' }, { e: '⚪', n: 'GHOST' }, { e: '⚫', n: 'REAPER' }
@@ -4289,7 +4289,7 @@ function showResults(order) {
   order.forEach((c, i) => {
     const div = document.createElement('div');
     div.className = 'rrow' + (i === 0 ? ' win' : '');
-    const colHex = '#' + (c.color != null ? c.color : (c.slot === 1 ? 0xe10600 : 0x0a84ff)).toString(16).padStart(6, '0');
+    const colHex = '#' + (c.color != null ? c.color : (c.slot === 1 ? 0xe10600 : 0x0d47c8)).toString(16).padStart(6, '0');
     div.innerHTML = `<span class="medal">${medals[i] || ''}</span>` +
       `<span class="rname" style="color:${colHex}">${escapeHtml(c.name || ('PLAYER ' + c.slot))}</span>` +
       `<span class="rtime">${c.finished ? fmtTime(c.t) : 'DNF'}</span>` +
@@ -6142,7 +6142,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v156';
+const BUILD = 'v157';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

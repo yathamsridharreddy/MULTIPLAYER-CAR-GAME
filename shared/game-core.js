@@ -125,12 +125,12 @@
   ];
 
   // car classes: stat trade-offs (top speed / acceleration / grip+steer)
-  const SLOT_COLS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7]; // v76
+  const SLOT_COLS = [0xe10600, 0x0d47c8, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7]; // v76 · v157: the blue is a DEEP blue, not the light azure it was
   // v155: every car the wizard offers, in the order the cards are drawn. The seat
   // defaults above are the first six of it. Exported so the server can hand out a
   // free car when the one a joiner asked for is already on the grid, without the
   // two sides ever disagreeing about what the list is.
-  const CAR_PALETTE = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
+  const CAR_PALETTE = [0xe10600, 0x0d47c8, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
   const CAR_CLASSES = {
     velocity:    { name: 'VELOCITY',    top: 1.12, acc: 0.95, grip: 0.95, steer: 0.95 },
     accelerator: { name: 'ACCELERATOR', top: 0.97, acc: 1.22, grip: 1.0,  steer: 1.0 },
@@ -300,7 +300,7 @@
       this.driftScore = 0; this.eliminated = false;
       this.participating = slot === 1;
       this.name = 'PLAYER ' + slot;
-      this.color = slot === 1 ? 0xe10600 : 0x0a84ff;
+      this.color = slot === 1 ? 0xe10600 : 0x0d47c8;
       this.sens = 1; // v92 per-driver steering sensitivity, 0.5-1.5, applied in the authoritative sim
       this.resetState(0);
     }
@@ -611,7 +611,7 @@
         if (c._bot) {
           const BOT_NAMES = ['REDLINE_ACE', 'TAKUMI_86', 'PHANTOM_GT', 'VORTEX_99', 'SHADOW_PILOT', 'STORM_VALKYRIE', 'APEX_HUNTER'];
           const botName = BOT_NAMES[(c.slot - 1) % BOT_NAMES.length];
-          c.setMeta(botName, 0x0a84ff);
+          c.setMeta(botName, 0x0d47c8);
           c.setSens(1); // v92 bots never inherit a human's sensitivity
         }
       }

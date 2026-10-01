@@ -353,7 +353,7 @@ test('v140: a room handshake plus a snapshot stream is ingested without throwing
   const mkCar = (i) => ({
     s: i, x: -40 + i * 3, z: 5 + i, h: 0.1 * i, v: 22 + i, sl: 0.4, st: 0.2 * i, th: 1,
     n: 0, m: 0, lap: 1, ll: 12, best: 20, fin: 0, ft: null, p: 1, pr: 0.2 * i,
-    drift: 0, elim: 0, col: [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7][i - 1],
+    drift: 0, elim: 0, col: [0xe10600, 0x0d47c8, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7][i - 1],
     dc: 0, wh: 0, tr: 0, b: 1, nm: 'RACER ' + i
   });
   // a waiting frame rebuilds the lobby, then a real race stream drives

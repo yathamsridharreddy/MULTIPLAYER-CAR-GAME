@@ -80,11 +80,11 @@ describe('v155 — one car, one racer', () => {
   test('changing into a car somebody else is driving is refused', () => {
     const entry = newRoom('race', 0, 6);
     const a = seat(entry, 'p-a', { color: 0xe10600 });
-    const b = seat(entry, 'p-b', { color: 0x0a84ff });
-    assert.equal(carOf(entry, b).color, 0x0a84ff);
+    const b = seat(entry, 'p-b', { color: 0x0d47c8 });
+    assert.equal(carOf(entry, b).color, 0x0d47c8);
 
     handleMessage(b, { type: 'meta', name: 'B', color: 0xe10600 });
-    assert.equal(carOf(entry, b).color, 0x0a84ff, 'the taken car is not handed over');
+    assert.equal(carOf(entry, b).color, 0x0d47c8, 'the taken car is not handed over');
     const refused = b.ws.errors('car-taken');
     assert.equal(refused.length, 1, 'and the racer is told');
     assert.equal(refused[0].slot, 1, 'with the seat that has it');
@@ -97,7 +97,7 @@ describe('v155 — one car, one racer', () => {
   test('an unclaimed car is anybody\'s to take, and a racer keeps their own', () => {
     const entry = newRoom('race', 0, 6);
     const a = seat(entry, 'p-a', { color: 0xe10600 });
-    const b = seat(entry, 'p-b', { color: 0x0a84ff });
+    const b = seat(entry, 'p-b', { color: 0x0d47c8 });
 
     handleMessage(b, { type: 'meta', name: 'B', color: 0x00a651 });
     assert.equal(carOf(entry, b).color, 0x00a651, 'a free car can be taken');
@@ -113,7 +113,7 @@ describe('v155 — one car, one racer', () => {
   test('a seat that leaves frees its car for the next racer', () => {
     const entry = newRoom('race', 0, 6);
     const a = seat(entry, 'p-a', { color: 0xe10600 });
-    const b = seat(entry, 'p-b', { color: 0x0a84ff });
+    const b = seat(entry, 'p-b', { color: 0x0d47c8 });
     assert.equal(b.slot, 2);
     // A leaves: drop their seat the way the relay does
     entry.slotByWs.delete(a.ws);
@@ -125,7 +125,7 @@ describe('v155 — one car, one racer', () => {
   test('a car that changes hands is rebroadcast, so no browser shows a stale grid', () => {
     const entry = newRoom('race', 0, 6);
     const a = seat(entry, 'p-a', { color: 0xe10600 });
-    const b = seat(entry, 'p-b', { color: 0x0a84ff });
+    const b = seat(entry, 'p-b', { color: 0x0d47c8 });
     a.ws.sent.length = 0; b.ws.sent.length = 0;
 
     // B moves into a free car: everyone's roster has to follow, or A's card list would
@@ -149,7 +149,7 @@ describe('v155 — one car, one racer', () => {
 
     // the joiner arrives with their own saved setup. The relay must ignore it: the room
     // is already running the host's choices, and a hello is not a settings change.
-    seat(entry, 'p-join', { color: 0x0a84ff, weather: 'blizzard', laps: 1, bot: false, botSkill: 1, map: 3 });
+    seat(entry, 'p-join', { color: 0x0d47c8, weather: 'blizzard', laps: 1, bot: false, botSkill: 1, map: 3 });
     assert.equal(entry.room.weather, 'wet', 'a joiner cannot change the weather');
     assert.equal(entry.room.laps, 5, 'a joiner cannot change the race length');
     assert.equal(entry.room.bot, true, 'a joiner cannot change the AI rival');
@@ -158,14 +158,14 @@ describe('v155 — one car, one racer', () => {
 
     // ...and the joiner is still seated in the car they asked for
     const joiner = entry.room.cars[1];
-    assert.equal(joiner.color, 0x0a84ff, 'the joiner is still given their own car');
+    assert.equal(joiner.color, 0x0d47c8, 'the joiner is still given their own car');
     assert.equal(joiner.name, 'p-join', 'and their own name');
   });
 
   test('the lobby roster carries every racer\'s car, so the cards can show it', () => {
     const entry = newRoom('race', 0, 6);
     const a = seat(entry, 'p-a', { color: 0xe10600 });
-    const b = seat(entry, 'p-b', { color: 0x0a84ff });
+    const b = seat(entry, 'p-b', { color: 0x0d47c8 });
     const lobby = a.ws.findSent('lobby').pop();
     assert.ok(lobby, 'the lobby is broadcast');
     for (const p of lobby.players) {

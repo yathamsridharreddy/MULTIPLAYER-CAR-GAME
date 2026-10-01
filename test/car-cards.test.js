@@ -25,7 +25,7 @@ const vm = require('vm');
 const ROOT = path.join(__dirname, '..');
 const SRC = fs.readFileSync(path.join(ROOT, 'public', 'js', 'game.js'), 'utf8');
 const CAR_IDS = ['fury', 'storm', 'volt', 'viper', 'blaze', 'phantom', 'ghost', 'reaper'];
-const HEX2ID = { 0xe10600: 'fury', 0x0a84ff: 'storm', 0xffd400: 'volt', 0x00a651: 'viper',
+const HEX2ID = { 0xe10600: 'fury', 0x0d47c8: 'storm', 0xffd400: 'volt', 0x00a651: 'viper',
   0xff6a00: 'blaze', 0x7b2ff7: 'phantom', 0xffffff: 'ghost', 0x111111: 'reaper' };
 
 // pull the real card block out of game.js and run it with a tiny fake DOM, so the
@@ -83,11 +83,11 @@ function loadCardBuilder(opts) {
     document: doc,
     window: {},
     CarModels: { idForHex: (h) => HEX2ID[h | 0] || null },
-    prefs: { quality: 'high', color: 0x0a84ff },
+    prefs: { quality: 'high', color: 0x0d47c8 },
     savePrefs() {}, applyMyColor() {}, sendMeta() {}, toast() {},
     $: (id) => (id === 'car-cards' ? wrap : null)
   };
-  sandbox.CAR_COLORS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
+  sandbox.CAR_COLORS = [0xe10600, 0x0d47c8, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
   sandbox.CAR_NAMES = [
     { e: '🔴', n: 'FURY' }, { e: '🔵', n: 'STORM' }, { e: '🟡', n: 'VOLT' }, { e: '🟢', n: 'VIPER' },
     { e: '🟠', n: 'BLAZE' }, { e: '🟣', n: 'PHANTOM' }, { e: '⚪', n: 'GHOST' }, { e: '⚫', n: 'REAPER' }
@@ -151,7 +151,7 @@ test('v155: every free car stays free, and my own car is marked as mine', () => 
     const h = loadWithRoster([[0xe10600, { slot: 2, name: 'RIVAL_92' }]]);
     h.sandbox.__state.setSeated(true);          // seated in a room: cars have owners
     h.build();
-    const mine = h.wrap.children.find((c) => c.dataset.color === '#0a84ff');   // the pref colour
+    const mine = h.wrap.children.find((c) => c.dataset.color === '#0d47c8');   // the pref colour
     assert.match(mine.className, /active/, 'the saved choice is still marked');
     const tag = mine.children.find((c) => c.className === 'car-tag');
     assert.equal(tag.textContent, 'YOUR CAR', 'and says it is yours');
@@ -207,7 +207,7 @@ test('v145: each card shows ITS OWN car, in the order the game lists them', () =
     const src = wrap.children[i].children.find((c) => c.className === 'car-thumb').src;
     assert.strictEqual(src, `img/cars/${id}.webp`, `card ${i} shows ${id}`);
   });
-  function sandboxHex(i) { return [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111][i]; }
+  function sandboxHex(i) { return [0xe10600, 0x0d47c8, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111][i]; }
 });
 
 test('v145: a picture that FAILS to load degrades to the drawn car, never an empty box', () => {
@@ -247,7 +247,7 @@ test('v145: each fallback swatch uses ITS OWN car colour', () => {
   const { build, wrap, sandbox } = loadCardBuilder();
   sandbox.CarModels.idForHex = () => null;
   build();
-  const expected = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111]
+  const expected = [0xe10600, 0x0d47c8, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111]
     .map((h) => '#' + h.toString(16).padStart(6, '0'));
   wrap.children.forEach((card, i) => {
     assert.ok(pictureOf(card).innerHTML.includes(expected[i]), `card ${i} paints ${expected[i]}`);
@@ -271,7 +271,7 @@ test('v145: hexCss converts a paint number to a usable CSS colour', () => {
   const { sandbox } = loadCardBuilder();
   const f = sandbox.hexCss;
   assert.strictEqual(f(0xe10600), '#e10600');
-  assert.strictEqual(f(0x0a84ff), '#0a84ff');
+  assert.strictEqual(f(0x0d47c8), '#0d47c8');
   assert.strictEqual(f(0xffffff), '#ffffff');
   assert.strictEqual(f(0x000000), '#000000');
   assert.strictEqual(f(null), '#ffffff');

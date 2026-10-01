@@ -34,7 +34,7 @@
 
   const PAINTS = [
     { id: 0, name: 'CRIMSON',  hex: 0xe10600, unlock: { t: 'free' } },
-    { id: 1, name: 'AZURE',    hex: 0x0a84ff, unlock: { t: 'free' } },
+    { id: 1, name: 'AZURE',    hex: 0x0d47c8, unlock: { t: 'free' } },
     { id: 2, name: 'SUN',      hex: 0xffd400, unlock: { t: 'free' } },
     { id: 3, name: 'JADE',     hex: 0x00a651, unlock: { t: 'level', v: 3 } },
     { id: 4, name: 'EMBER',    hex: 0xff6a00, unlock: { t: 'level', v: 4 } },

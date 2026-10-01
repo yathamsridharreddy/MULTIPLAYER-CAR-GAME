@@ -39,7 +39,7 @@
   // The 8 selectable cars keep their existing ids; the wire still carries only
   // the paint hex (cs.col), so the server/network layer stays model-agnostic.
   const HEX2ID = {
-    0xe10600: 'fury', 0x0a84ff: 'storm', 0xffd400: 'volt', 0x00a651: 'viper',
+    0xe10600: 'fury', 0x0d47c8: 'storm', 0xffd400: 'volt', 0x00a651: 'viper',
     0xff6a00: 'blaze', 0x7b2ff7: 'phantom', 0xffffff: 'ghost', 0x111111: 'reaper'
   };
 

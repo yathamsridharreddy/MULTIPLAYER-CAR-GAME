@@ -24,7 +24,7 @@ const ROOT = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 const HEX_IDS = {
-  0xe10600: 'fury', 0x0a84ff: 'storm', 0xffd400: 'volt', 0x00a651: 'viper',
+  0xe10600: 'fury', 0x0d47c8: 'storm', 0xffd400: 'volt', 0x00a651: 'viper',
   0xff6a00: 'blaze', 0x7b2ff7: 'phantom', 0xffffff: 'ghost', 0x111111: 'reaper'
 };
 
@@ -133,7 +133,7 @@ test('v118: eight distinct silhouettes, one per selectable car id', () => {
     seen.add(profiles[id]);
   }
   // v136: procedural fallback all ghost to avoid damaged distinct shapes when GLB fails — all 8 share ghost shape, colours differ
-  const HEXLIT = { fury: '0xe10600', storm: '0x0a84ff', volt: '0xffd400', viper: '0x00a651', blaze: '0xff6a00', phantom: '0x7b2ff7', ghost: '0xffffff', reaper: '0x111111' };
+  const HEXLIT = { fury: '0xe10600', storm: '0x0d47c8', volt: '0xffd400', viper: '0x00a651', blaze: '0xff6a00', phantom: '0x7b2ff7', ghost: '0xffffff', reaper: '0x111111' };
   for (const [id, lit] of Object.entries(HEXLIT)) {
     assert.ok(g.includes(lit + ": 'ghost'"), 'SHELL_BY_HEX ' + id + ' should be ghost (v136)');
   }

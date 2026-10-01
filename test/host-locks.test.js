@@ -68,7 +68,7 @@ function boot(opts) {
   const { document } = dom.window;
   const sandbox = {
     document, window: dom.window, console,
-    prefs: { laps: 3, bot: false, color: 0x0a84ff },
+    prefs: { laps: 3, bot: false, color: 0x0d47c8 },
     mySlot: 1,
     savePrefs() {}, applyMyColor() {}, paintLaps() {}, paintBotToggle() {},
     applyWeather() {}, buildCarCards() {}
@@ -147,7 +147,7 @@ test('v155: leaving the room hands the controls back', () => {
 test('v155: the taken-car list comes from the room roster, and never holds my own car', () => {
   const { t } = boot();
   t.roster([
-    { slot: 1, name: 'ME', color: 0x0a84ff, host: true },
+    { slot: 1, name: 'ME', color: 0x0d47c8, host: true },
     { slot: 2, name: 'RIVAL_92', color: 0xe10600, host: false }
   ], 6, { laps: 5, bot: true, weather: 'wet' });
   // (the entry is created inside the vm, so compare its fields, not its prototype chain)
@@ -155,7 +155,7 @@ test('v155: the taken-car list comes from the room roster, and never holds my ow
   assert.ok(rival, 'somebody else\'s car is marked as theirs');
   assert.equal(rival.name, 'RIVAL_92', 'by name');
   assert.equal(rival.slot, 2, 'and by seat');
-  assert.equal(t.taken(0x0a84ff), null, 'my own car is never marked taken against me');
+  assert.equal(t.taken(0x0d47c8), null, 'my own car is never marked taken against me');
   assert.equal(t.taken(0x00a651), null, 'and a free car is free');
   assert.equal(t.cars.size, 1, 'the legend holds one entry per taken car');
 });
@@ -187,7 +187,7 @@ test('v155: a roster with no host on it hands nobody the host powers', () => {
   // carries never flags a host, the safe direction is to leave every setting locked -
   // never to make a racer a host by accident.
   t.seat(true, true, 'ME');                    // seated, and believing we are the host
-  t.roster([{ slot: 1, name: 'ME', color: 0x0a84ff }], 6, {});
+  t.roster([{ slot: 1, name: 'ME', color: 0x0d47c8 }], 6, {});
   assert.equal(t.isSeated(), true, 'we are still in the room');
   assert.equal(t.isHost(), false, 'but a roster with no host flag makes nobody the host');
   t.locks();
