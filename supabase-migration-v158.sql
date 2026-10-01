@@ -66,6 +66,41 @@ alter table public.sr_purged_players enable row level security;
 
 
 -- ----------------------------------------------------------------------------
+-- 1b. clubs learn when their WORDING changed
+-- ----------------------------------------------------------------------------
+-- The game server caches every club in memory and, until now, only re-read one
+-- when a restart happened. A club renamed in this SQL editor therefore kept its
+-- old name on the board for as long as the process lived. This column is bumped
+-- by the trigger below ONLY when the wording changes - a counter moving is not a
+-- rename - and the server polls for bumps, so a rename appears within seconds.
+
+alter table if exists public.crews
+  add column if not exists updated_at timestamptz not null default now();
+
+create or replace function public.sr_crews_touch()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.name is distinct from old.name
+     or new.tag is distinct from old.tag
+     or new.motto is distinct from old.motto
+     or new.badge is distinct from old.badge
+     or new.color is distinct from old.color then
+    new.updated_at := now();
+  else
+    new.updated_at := old.updated_at;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists sr_crews_touch on public.crews;
+create trigger sr_crews_touch
+  before update on public.crews
+  for each row execute function public.sr_crews_touch();
+
+
+-- ----------------------------------------------------------------------------
 -- 2. ghosts gain an owner key
 -- ----------------------------------------------------------------------------
 -- A ghost row is a shared racing line: id, map, name and the frames. It had no

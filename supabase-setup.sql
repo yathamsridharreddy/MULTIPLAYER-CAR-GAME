@@ -425,8 +425,34 @@ create table if not exists public.crews (
   weekly_points int              not null default 0,
   week_key      text,                                -- 'YYYY-Www' the weekly counters belong to
   seeded        boolean          not null default false,  -- one of the five built-in clubs
-  created_at    timestamptz      not null default now()
+  created_at    timestamptz      not null default now(),
+  -- v158.6: last time the WORDING changed (name/tag/motto/badge/colour). The game
+  -- server caches clubs in memory and reads this to notice a rename made in the
+  -- SQL editor, without a restart.
+  updated_at    timestamptz      not null default now()
 );
+
+create or replace function public.sr_crews_touch()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.name is distinct from old.name
+     or new.tag is distinct from old.tag
+     or new.motto is distinct from old.motto
+     or new.badge is distinct from old.badge
+     or new.color is distinct from old.color then
+    new.updated_at := now();
+  else
+    new.updated_at := old.updated_at;   -- a counter moving is not a rename
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists sr_crews_touch on public.crews;
+create trigger sr_crews_touch
+  before update on public.crews
+  for each row execute function public.sr_crews_touch();
 
 create table if not exists public.crew_members (
   crew_id       text not null references public.crews(id) on delete cascade,

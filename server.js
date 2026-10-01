@@ -2214,7 +2214,8 @@ async function mergeRacerIdentity(fromKey, toKey) {
 
 app.get(['/api/crews', '/api/crews/leaderboard'], async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  await touchPurges(); // v158.5: a deletion made a second ago is not still on the board
+  await touchPurges();     // v158.5: a deletion made a second ago is not still on the board
+  await touchCrewNames();  // v158.6: nor is a rename made a second ago
   // v95: the board lists EVERY club, so it needs the user-created ones too -
   // after a restart memory holds only the five seeded presets.
   await hydrateAllCrews();
@@ -2257,7 +2258,8 @@ app.get(['/api/crews', '/api/crews/leaderboard'], async (req, res) => {
 // pid or the alias list the settlement path uses.
 app.get('/api/crews/:id', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  await touchPurges(); // v158.5: the roster is where a purged racer would show up
+  await touchPurges();    // v158.5: the roster is where a purged racer would show up
+  await touchCrewNames(); // v158.6: and where a renamed club shows its new name
   const cid = String(req.params.id || '').trim().toLowerCase();
   if (!cid) return res.status(400).json({ ok: false, error: 'invalid_crew' });
   // v158.5: hydrate even when the club IS in memory. The five built-in clubs are
@@ -2914,6 +2916,42 @@ async function touchPurges() {
   if (now - lastPurgeTouch < PURGE_TOUCH_MS) return 0;
   lastPurgeTouch = now;
   try { return await refreshPurges(); } catch (e) { return 0; }
+}
+
+// v158.6: called by the same reads. A club whose WORDING changed in the database -
+// a rename in the SQL editor, a tag fix, a new motto - is re-read here, so the
+// board and the roster show it within seconds instead of at the next restart.
+// `crews.updated_at` is bumped by the sr_crews_touch trigger ONLY for wording
+// changes, so the ordinary settlement writes never show up in this query.
+let crewTouchCursor = null;
+let lastCrewTouch = 0;
+async function touchCrewNames() {
+  if (!sbOn()) return 0;
+  const now = Date.now();
+  if (now - lastCrewTouch < PURGE_TOUCH_MS) return 0;
+  lastCrewTouch = now;
+  if (!crewTouchCursor) { crewTouchCursor = new Date().toISOString(); return 0; }
+  let rows = null;
+  try {
+    rows = await sbSelect('crews', 'updated_at=gt.' + encodeURIComponent(crewTouchCursor) +
+      '&order=updated_at.asc&limit=50&select=id,updated_at');
+  } catch (e) { return 0; }
+  if (!Array.isArray(rows) || !rows.length) return 0;
+  let changed = 0;
+  for (const r of rows) {
+    const id = String((r && r.id) || '');
+    if (!id) continue;
+    if (r.updated_at && String(r.updated_at) > crewTouchCursor) crewTouchCursor = String(r.updated_at);
+    if (!memCrews.has(id)) continue;
+    // forget the hydration claim so the club row is actually read again, and the
+    // roster too - applyCrewRow overwrites a user-created club's wording
+    forgetHydration('crew|' + id);
+    hydrated.delete('crew|' + id);
+    await hydrateCrew(id);
+    changed++;
+  }
+  if (changed) console.log('[v158.6] re-read ' + changed + ' renamed club(s)');
+  return changed;
 }
 
 async function sbRpc(fn, body) {
@@ -5313,6 +5351,8 @@ module.exports = {
   hydrated,
   claimHydration,
   forgetHydration,
+  touchPurges,
+  touchCrewNames,
   lbAdd,
   // v158 account deletion - exported so the tests can drive the real sweepers
   purgedKeys,

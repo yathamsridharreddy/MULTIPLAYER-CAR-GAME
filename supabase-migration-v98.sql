@@ -486,6 +486,32 @@ create table if not exists public.crews (
   created_at    timestamptz      not null default now()
 );
 
+-- v158.6: one purpose - say WHEN a club's wording last changed. The game server
+-- caches clubs in memory, so a rename made here in the SQL editor would otherwise
+-- only appear after a restart. A counter moving is not a rename and must not bump
+-- this, or every settlement would make the server re-read every club.
+create or replace function public.sr_crews_touch()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.name is distinct from old.name
+     or new.tag is distinct from old.tag
+     or new.motto is distinct from old.motto
+     or new.badge is distinct from old.badge
+     or new.color is distinct from old.color then
+    new.updated_at := now();
+  else
+    new.updated_at := old.updated_at;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists sr_crews_touch on public.crews;
+create trigger sr_crews_touch
+  before update on public.crews
+  for each row execute function public.sr_crews_touch();
+
 create table if not exists public.crew_members (
   crew_id       text not null references public.crews(id) on delete cascade,
   member_key    text not null,                       -- normalized identity that owns this roster row
@@ -704,6 +730,10 @@ begin
     ($$crews$$, $$week_key$$, $$alter table public.crews add column if not exists week_key text$$, $$alter table public.crews add column if not exists week_key text$$),
     ($$crews$$, $$seeded$$, $$alter table public.crews add column if not exists seeded boolean not null default false$$, $$alter table public.crews add column if not exists seeded boolean default false$$),
     ($$crews$$, $$created_at$$, $$alter table public.crews add column if not exists created_at timestamptz not null default now()$$, $$alter table public.crews add column if not exists created_at timestamptz default now()$$),
+    -- v158.6: bumped ONLY when a club's wording changes (name, tag, motto, badge,
+    -- colour) - counters moving is not a rename. The game server reads it to pick
+    -- up a rename made in the SQL editor without a restart.
+    ($$crews$$, $$updated_at$$, $$alter table public.crews add column if not exists updated_at timestamptz not null default now()$$, $$alter table public.crews add column if not exists updated_at timestamptz default now()$$),
     ($$crew_members$$, $$crew_id$$, $$alter table public.crew_members add column if not exists crew_id text not null references public.crews(id) on delete cascade$$, $$alter table public.crew_members add column if not exists crew_id text references public.crews(id) on delete cascade$$),
     ($$crew_members$$, $$member_key$$, $$alter table public.crew_members add column if not exists member_key text not null$$, $$alter table public.crew_members add column if not exists member_key text$$),
     ($$crew_members$$, $$name$$, $$alter table public.crew_members add column if not exists name text$$, $$alter table public.crew_members add column if not exists name text$$),

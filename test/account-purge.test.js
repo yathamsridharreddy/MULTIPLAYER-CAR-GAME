@@ -46,7 +46,7 @@ const {
   memPlayerMissions, memEquippedBadges, memRevengeTargets,
   purgedKeys, purgedNames, isPurgedKey, isPurgedName, isPurgedRacer,
   noteTombstones, evictPurged, dropRacerMemory, refreshPurges,
-  lbAdd, sbUpsert, hydrateMissions, hydrated, claimHydration
+  lbAdd, sbUpsert, hydrateMissions, hydrated, claimHydration, forgetHydration
 } = S;
 
 const U = '11111111-2222-4333-8444-555555555555';   // the account being deleted
@@ -57,6 +57,7 @@ const PID = 'device-pid-abc123';                     // the same account's devic
 
 const ROOT = path.resolve(__dirname, '..');
 const SQL = fs.readFileSync(path.join(ROOT, 'supabase-migration-v158.sql'), 'utf8');
+const SERVER_SRC = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
 
 // the same seeding the shipped client does, so the sweepers see real shapes
 function seedCaches() {
@@ -605,6 +606,75 @@ describe('v158.5 — the club a purge touches is fixed on the spot, not on the n
     assert.ok(names.includes('SURVIVOR'), 'and the racer beside them still is');
     assert.ok(calls.some((c) => c.url.includes('sr_purged_players')),
       'the read consulted the tombstone table');
+  });
+});
+
+describe('v158.6 — a club renamed in the SQL editor appears without a restart', () => {
+  const http = require('node:http');
+  const TOOL = fs.readFileSync(path.join(ROOT, 'scripts', 'rename-club.sql'), 'utf8');
+  let srv, base;
+  before(async () => {
+    await new Promise((r) => { srv = http.createServer(S.app); srv.listen(0, '127.0.0.1', () => { base = 'http://127.0.0.1:' + srv.address().port; r(); }); });
+  });
+  after(async () => { if (srv) await new Promise((r) => srv.close(r)); });
+
+  test('the wording timestamp only moves for wording, and the server polls it', () => {
+    // The trigger is what makes a rename visible to a running server, and the
+    // thing that keeps it cheap is that a counter moving is NOT a rename: if it
+    // bumped on every settlement, every club read would re-read every club.
+    assert.match(SQL, /create or replace function public\.sr_crews_touch\(\)/,
+      'the wording trigger exists in the migration');
+    const fn = SQL.slice(SQL.indexOf('create or replace function public.sr_crews_touch'), SQL.indexOf('drop trigger if exists sr_crews_touch'));
+    assert.match(fn, /new\.name is distinct from old\.name/, 'a name change bumps it');
+    assert.match(fn, /new\.tag is distinct from old\.tag/, 'so does a tag change');
+    assert.match(fn, /new\.updated_at := old\.updated_at;/, 'and anything else does not');
+    assert.match(SQL, /alter table if exists public\.crews\s*\n\s*add column if not exists updated_at timestamptz not null default now\(\)/,
+      'the column is added by the same file, for a database that predates it');
+    // the read path the client actually uses
+    const roster = SERVER_SRC.slice(SERVER_SRC.indexOf("app.get('/api/crews/:id'"), SERVER_SRC.indexOf("app.get('/api/player/crew'"));
+    assert.match(roster, /await touchCrewNames\(\)/, 'opening a club checks for renames');
+    const board = SERVER_SRC.slice(SERVER_SRC.indexOf("app.get(['/api/crews'"), SERVER_SRC.indexOf("app.get('/api/crews/:id'"));
+    assert.match(board, /await touchCrewNames\(\)/, 'and so does the board');
+  });
+
+  test('a renamed row replaces the wording the server already held', async () => {
+    // a user-created club: the database owns ITS wording. The five built-in
+    // clubs keep the game's own wording (and the rename tool refuses them).
+    const id = 'renametest';
+    memCrews.set(id, { id, tag: 'OLD', name: 'Old Name', motto: 'old motto', badge: 'bolt', color: '#fff', leaderUid: null, members: [], weeklyMeters: 0, totalMeters: 0, weeklyPoints: 0 });
+    forgetHydration('crew|' + id);
+    hydrated.delete('crew|' + id);
+    responder = async (u) => {
+      if (u.startsWith(SB + '/rest/v1/crews?')) {
+        return { ok: true, status: 200, json: async () => [{ id, tag: 'NEWT', name: 'New Name', motto: 'new motto', badge: 'bolt', color: '#fff', weekly_meters: 0, total_meters: 0, weekly_points: 0, week_key: '2026-W40', seeded: false }] };
+      }
+      return { ok: true, status: 200, json: async () => [] };
+    };
+    await S.hydrateCrew(id);
+    assert.equal(memCrews.get(id).name, 'New Name', 'the row owns the wording, not the cache');
+    assert.equal(memCrews.get(id).tag, 'NEWT');
+    assert.equal(memCrews.get(id).motto, 'new motto');
+    memCrews.delete(id);
+  });
+
+  test('the rename tool validates with the game\'s own rules and never touches members', () => {
+    assert.match(TOOL, /'error', 'built_in_club'/, 'the game\'s own clubs cannot be renamed');
+    assert.match(TOOL, /'error', 'tag_taken'/, 'a tag another club uses is refused');
+    assert.match(TOOL, /'error', 'invalid_crew_name'/);
+    assert.match(TOOL, /'error', 'invalid_crew_tag'/);
+    assert.match(TOOL, /'error', 'club_not_found'/, 'an unknown club reports, never guesses');
+    assert.match(TOOL, /'error', 'nothing_to_change'/, 'and so does a no-op');
+    const from = TOOL.indexOf('update public.crews c');
+    const upd = TOOL.slice(from, TOOL.indexOf('select jsonb_build_object', from));
+    assert.match(upd, /set name = v_name, tag = v_tag, motto = v_motto, badge = v_badge, color = v_color/,
+      'only the wording columns are written');
+    assert.ok(!/crew_members|delete from/.test(upd), 'no member row and no delete anywhere near it');
+    assert.match(TOOL, /p_dry_run/, 'a preview exists');
+    assert.ok(TOOL.indexOf('if p_dry_run then') < TOOL.indexOf('update public.crews c'), 'and stops before the write');
+    assert.match(TOOL, /revoke all on function public\.sr_rename_club\(text, text, boolean, text, text, text, text\) from anon/,
+      'service role only');
+    assert.match(TOOL, /The board and the club page pick it up by themselves/,
+      'and the operator is told the running server will pick it up without a restart');
   });
 });
 

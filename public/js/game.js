@@ -5376,15 +5376,19 @@ async function openCrewModal(tab = 'my') {
       <form class="crew-form" id="crew-create-form" onsubmit="handleCreateCrewSubmit(event)">
         <label>
           CLUB NAME (3-20 characters):
-          <input id="cf-name" class="name-input" maxlength="20" placeholder="e.g. Redline Pro Racing" required />
+          <!-- v158.6: autocomplete off. A browser may pre-fill a text field with a
+               value from elsewhere (a saved form entry, a password manager's "name"),
+               and that text then rides along into the club's name - which is how a
+               name nobody typed ended up in front of a real one. -->
+          <input id="cf-name" class="name-input" maxlength="20" placeholder="e.g. Redline Pro Racing" autocomplete="off" spellcheck="false" required />
         </label>
         <label>
           CLUB TAG (2-5 uppercase letters/numbers):
-          <input id="cf-tag" class="name-input" maxlength="5" placeholder="e.g. REDL" style="text-transform:uppercase;" required />
+          <input id="cf-tag" class="name-input" maxlength="5" placeholder="e.g. REDL" style="text-transform:uppercase;" autocomplete="off" spellcheck="false" required />
         </label>
         <label>
           MOTTO / SLOGAN:
-          <input id="cf-motto" class="name-input" maxlength="50" placeholder="e.g. Push past the limit, hold the line" />
+          <input id="cf-motto" class="name-input" maxlength="50" placeholder="e.g. Push past the limit, hold the line" autocomplete="off" spellcheck="false" />
         </label>
         <label>
           BADGE ICON:
@@ -5482,7 +5486,9 @@ window.handleCreateCrewSubmit = async function(e) {
   e.preventDefault();
   const ci = crewIdentity(); // v90 club sync
   const name = prefs.name || 'RACER';
-  const crewName = $('cf-name').value.trim();
+  // v158.6: one space between words, nothing at the ends - a name pasted or
+  // pre-filled with odd spacing is stored the way it reads on screen
+  const crewName = $('cf-name').value.replace(/\s+/g, ' ').trim();
   const tag = $('cf-tag').value.trim().toUpperCase();
   const motto = $('cf-motto').value.trim();
   const badge = $('cf-badge').value;
