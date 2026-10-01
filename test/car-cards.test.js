@@ -67,7 +67,11 @@ function loadCardBuilder(opts) {
       appendChild(c) { this.children.push(c); c.parent = this; return c; },
       replaceWith(c) { const p = this.parent; if (p) { const i = p.children.indexOf(this); if (i >= 0) p.children[i] = c; } c.parent = p; },
       addEventListener(t, f) { (this._on[t] = this._on[t] || []).push(f); },
-      fire(t) { (this._on[t] || []).forEach((f) => f({ type: t })); }
+      fire(t) { (this._on[t] || []).forEach((f) => f({ type: t })); },
+      setAttribute(k, v) { this._attrs = this._attrs || {}; this._attrs[k] = String(v); },
+      removeAttribute(k) { if (this._attrs) delete this._attrs[k]; },
+      getAttribute(k) { return this._attrs ? this._attrs[k] : undefined; },
+      hasAttribute(k) { return !!(this._attrs && k in this._attrs); }
     };
     made.push(el);
     return el;
@@ -80,7 +84,7 @@ function loadCardBuilder(opts) {
     window: {},
     CarModels: { idForHex: (h) => HEX2ID[h | 0] || null },
     prefs: { quality: 'high', color: 0x0a84ff },
-    savePrefs() {}, applyMyColor() {}, sendMeta() {},
+    savePrefs() {}, applyMyColor() {}, sendMeta() {}, toast() {},
     $: (id) => (id === 'car-cards' ? wrap : null)
   };
   sandbox.CAR_COLORS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
@@ -90,10 +94,87 @@ function loadCardBuilder(opts) {
   ];
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext(block + '\n;globalThis.__build = buildCarCards;globalThis.__art = carArtFor;',
+  // v155: the card tag is translated ("YOUR CAR"), so the shipped translator and its
+  // dictionary run here too - the tag the racer reads is the tag this test asserts.
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'i18n.js'), 'utf8'),
+    sandbox, { filename: 'i18n.js' });
+  const tAt = SRC.indexOf('function tI18n(');
+  assert.ok(tAt > 0, 'tI18n is in game.js');
+  let tDepth = 0, tEnd = tAt;
+  for (let j = SRC.indexOf('{', tAt); j < SRC.length; j++) {
+    if (SRC[j] === '{') tDepth++;
+    else if (SRC[j] === '}') { tDepth--; if (tDepth === 0) { tEnd = j + 1; break; } }
+  }
+  vm.runInContext(SRC.slice(tAt, tEnd), sandbox, { filename: 'tI18n.js' });
+  assert.ok(sandbox.window.SRI18N && sandbox.window.SRI18N.en, 'the dictionary loaded');
+
+  // v155: the roster the cards are drawn from is a const in this block, and a const in a
+  // vm context does not land on the sandbox object - expose it through a closure so the
+  // tests can hand the card builder a room and watch what it does with it.
+  vm.runInContext(block +
+    '\n;globalThis.__build = buildCarCards;globalThis.__art = carArtFor;' +
+    'globalThis.__state = { cars: carsTaken, setSeated: function (v) { seatedInRoom = v; } };',
     sandbox, { filename: 'cards.js' });
   return { build: sandbox.__build, art: sandbox.__art, wrap, made, sandbox };
 }
+
+// ---- v155: a car belongs to one racer -------------------------------------
+  // The card list is drawn from the room roster, so these run the real buildCarCards
+  // against the real v155 state that ships in game.js.
+function loadWithRoster(roster) {
+  const h = loadCardBuilder();
+  // the legend: colour -> the racer holding it
+  h.sandbox.__state.cars.clear();
+  for (const [color, holder] of roster) h.sandbox.__state.cars.set(color, holder);
+  return h;
+}
+
+test('v155: a car another racer holds is marked, named and not selectable', () => {
+    const h = loadWithRoster([[0xe10600, { slot: 2, name: 'RIVAL_92' }]]);
+    h.build();
+    const cards = h.wrap.children;
+    const taken = cards.find((c) => c.dataset.color === '#e10600');
+    assert.ok(taken, 'the taken car is still on the grid, so racers can see it is taken');
+    assert.match(taken.className, /taken/, 'and it is marked as taken');
+    assert.equal(taken.disabled, true, 'a taken car cannot be chosen');
+    const tag = taken.children.find((c) => c.className === 'car-tag');
+    assert.ok(tag, 'the card says who has it');
+    assert.equal(tag.textContent, 'RIVAL_92', 'by name');
+    // the other cars are untouched and still selectable
+    for (const c of cards.filter((x) => x !== taken)) {
+      assert.doesNotMatch(c.className, /taken/);
+      assert.ok(!c.disabled, 'a free car is selectable');
+    }
+  });
+
+test('v155: every free car stays free, and my own car is marked as mine', () => {
+    const h = loadWithRoster([[0xe10600, { slot: 2, name: 'RIVAL_92' }]]);
+    h.sandbox.__state.setSeated(true);          // seated in a room: cars have owners
+    h.build();
+    const mine = h.wrap.children.find((c) => c.dataset.color === '#0a84ff');   // the pref colour
+    assert.match(mine.className, /active/, 'the saved choice is still marked');
+    const tag = mine.children.find((c) => c.className === 'car-tag');
+    assert.equal(tag.textContent, 'YOUR CAR', 'and says it is yours');
+  });
+
+test('v155: clicking a taken car does not steal it', () => {
+    const h = loadWithRoster([[0xe10600, { slot: 2, name: 'RIVAL_92' }]]);
+    h.build();
+    const taken = h.wrap.children.find((c) => c.dataset.color === '#e10600');
+    const before = h.sandbox.prefs.color;
+    taken.fire('click');
+    assert.equal(h.sandbox.prefs.color, before, 'the click is refused locally too');
+    assert.doesNotMatch(taken.className, /active/, 'and it never becomes the chosen car');
+  });
+
+test('v155: with no room, no car is ever marked as taken', () => {
+    const h = loadCardBuilder();
+    h.build();
+    for (const c of h.wrap.children) {
+      assert.doesNotMatch(c.className, /taken/, 'solo setup offers every car');
+      assert.ok(!c.disabled);
+    }
+  });
 
 // the card's picture element, whichever branch produced it
 function pictureOf(card) {

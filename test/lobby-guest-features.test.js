@@ -304,11 +304,29 @@ function carSandbox() {
   const artAt = SRC.indexOf('const CAR_ART = {');
   const artDecl = SRC.slice(artAt, SRC.indexOf('};', artAt) + 2);
   assert.ok(artAt > 0 && artDecl.length > 20, 'CAR_ART table found');
+  // v155: the card list is drawn from the room - who is in which car - so the state
+  // those helpers read has to come across too, exactly as it ships
+  const lockAt = SRC.indexOf('// v155 — who is in the room, who runs it, and who is driving what.');
+  const lockEnd = SRC.indexOf('function applyRoomRoster', lockAt);
+  const lockDecls = SRC.slice(lockAt, lockEnd);
+  assert.ok(lockAt > 0 && /let seatedInRoom/.test(lockDecls), 'v155 room state found');
+  // v155: the card tag is translated, so the shipped dictionary and translator come too
   vm.runInContext(
-    [artDecl, extract('hexCss'), extract('carSwatch'), extract('carArtFor'), extract('buildCarCards')].join('\n') +
+    [artDecl, lockDecls, extract('carTakenBy'), extract('hexCss'), extract('carSwatch'),
+      extract('carArtFor'), extract('buildCarCards')].join('\n') +
     '\n;globalThis.__api = { buildCarCards };',
     sb
   );
+  vm.runInContext(require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'js', 'i18n.js'), 'utf8'),
+    sb, { filename: 'i18n.js' });
+  const tAt = SRC.indexOf('function tI18n(');
+  assert.ok(tAt > 0, 'tI18n is in game.js');
+  let tDepth = 0, tEnd = tAt;
+  for (let j = SRC.indexOf('{', tAt); j < SRC.length; j++) {
+    if (SRC[j] === '{') tDepth++;
+    else if (SRC[j] === '}') { tDepth--; if (tDepth === 0) { tEnd = j + 1; break; } }
+  }
+  vm.runInContext(SRC.slice(tAt, tEnd) + '\n;globalThis.__i18nReady = true;', sb, { filename: 'tI18n.js' });
   sb.__wrap = wrap;
   sb.__cards = made;
   return sb;

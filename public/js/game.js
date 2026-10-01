@@ -2859,6 +2859,14 @@ function resolveMapParam(search) {
     return raw == null ? null : validMapId(raw);
   } catch (e) { return null; }
 }
+// v155: painting a control is separated from handling its input, because a refused
+// change has to put the control back to the value the ROOM is running.
+function paintLaps() {
+  document.querySelectorAll('.laps-btn').forEach((x) => x.classList.toggle('active', parseInt(x.dataset.laps, 10) === prefs.laps));
+}
+function paintBotToggle() {
+  const b = $('bot-toggle'); if (b) b.checked = !!prefs.bot;
+}
 function paintMapCards(map) {
   document.querySelectorAll('.map-card').forEach((b) => b.classList.toggle('active', parseInt(b.dataset.map, 10) === map));
 }
@@ -3355,7 +3363,7 @@ function wireLobbyV2() {
     b.classList.toggle('active', parseInt(b.dataset.laps, 10) === prefs.laps);
     b.addEventListener('click', () => {
       prefs.laps = parseInt(b.dataset.laps, 10); savePrefs();
-      document.querySelectorAll('.laps-btn').forEach((x) => x.classList.toggle('active', x === b));
+      paintLaps();
       net.send({ type: 'laps', laps: prefs.laps });
     });
   });
@@ -3709,6 +3717,7 @@ function openFriends() {
 // ---------------------------------------------------------------------------
 // v76 — room lobby panel (players / rating / ready / host)
 let iAmReady = false; // v116: restored - the v115 garage slice swallowed this declaration
+
 function renderRoomLobby(e) {
   if (!e) return;
   const el = $('room-players'); if (!el) return;
@@ -3959,15 +3968,113 @@ function carArtFor(hex) {
   return (id && CAR_ART[id]) || '';
 }
 
+// ---------------------------------------------------------------------------
+// v155 — who is in the room, who runs it, and who is driving what.
+//
+// The room is the authority for all of it: the car cards and the setup controls are
+// only ever drawn from what the server last said. `seatedInRoom` is what separates
+// "setting up my own race" (everything is yours to change) from "I joined someone
+// else's room" (the creator decides the race, everyone picks a car).
+// ---------------------------------------------------------------------------
+let seatedInRoom = false;   // we hold a seat, so the room's rules apply
+let amHost = false;         // ...and we are the one who created it
+let roomHostName = '';      // who to name when a control is locked
+const carsTaken = new Map();  // color -> { slot, name } held by ANOTHER racer
+function applyRoomRoster(players, cap, room) {
+  carsTaken.clear();
+  // The room's own settings, straight from the room. laps and the bot are only ever
+  // adopted from here - the snapshot's `bot` is the race-time flag and is not what the
+  // wizard is showing.
+  if (room) {
+    if (room.laps != null && room.laps !== prefs.laps) { prefs.laps = room.laps; savePrefs(); paintLaps(); }
+    if (room.bot != null && !!room.bot !== !!prefs.bot) { prefs.bot = !!room.bot; savePrefs(); paintBotToggle(); }
+    if (room.weather != null) applyWeather(room.weather);
+  }
+  let hostSeen = false;
+  for (const p of players || []) {
+    if (p.host) { hostSeen = true; roomHostName = p.name || ''; }
+    if (p.color == null || p.slot === mySlot) continue;
+    carsTaken.set(p.color & 0xffffff, { slot: p.slot, name: p.name || ('RACER ' + p.slot) });
+  }
+  amHost = hostSeen && players.some((p) => p.slot === mySlot && p.host);
+  if (!hostSeen) amHost = false;
+  buildCarCards();
+  applyRoomLocks();
+}
+// my seat's car, straight from the room. Adopting it keeps the paint on the track and
+// the highlighted card in the wizard from ever disagreeing with the server.
+function adoptSeatCar(players) {
+  const mine = (players || []).find((p) => p.slot === mySlot && p.color != null);
+  if (!mine) return;
+  const hex = mine.color & 0xffffff;
+  if (hex === prefs.color) return;
+  prefs.color = hex; savePrefs(); applyMyColor();
+}
+function carTakenBy(color) { return carsTaken.get(color & 0xffffff) || null; }
+// Leaving a room (or being parked back in the lobby pool) puts this browser back to
+// setting up its own race, where every control is its own again.
+function releaseRoomState() {
+  seatedInRoom = false; amHost = false; roomHostName = '';
+  carsTaken.clear();
+  buildCarCards();
+  applyRoomLocks();
+}
+// The four settings the room creator owns. On a locked control the wizard still shows
+// the room's real value - it just cannot be changed from this browser.
+const LOCKED_SETTING_WORD = { map: 'hostOnlyCircuit', weather: 'hostOnlyWeather', laps: 'hostOnlyLaps', bot: 'hostOnlyBot' };
+const LOCKED_SETTING_PLAIN = { map: 'circuit', weather: 'weather', laps: 'race length', bot: 'AI rival' };
+// The lock note is built from the dictionary when it is there (the site ships EN / TE /
+// HI / ES) and falls back to the English sentence when it is not - a missing translation
+// must never blank the line that explains why a control does not work.
+function hostLockNote(setting) {
+  const host = roomHostName || tI18n('theHost');
+  const what = tI18n(LOCKED_SETTING_WORD[setting] || 'hostOnlyNote');
+  const line = tI18n('hostOnlyNote', { host, what });
+  if (line && line !== 'hostOnlyNote') return line;
+  return '🔒 Only ' + host + ' can change the ' + (LOCKED_SETTING_PLAIN[setting] || 'settings') +
+    '. You can still pick your car.';
+}
+function applyRoomLocks() {
+  const locked = seatedInRoom && !amHost;
+  const groups = [
+    ['#map-cards .map-card', locked],
+    ['#weather-cards .weather-btn', locked],
+    ['.laps-btn', locked],
+    ['#bot-toggle', locked],
+    ['#bsk-rookie, #bsk-pro', locked]
+  ];
+  for (const [sel, lock] of groups) {
+    document.querySelectorAll(sel).forEach((el) => {
+      el.disabled = !!lock;
+      el.classList.toggle('locked', !!lock);
+      if (lock) el.setAttribute('title', tI18n('hostOnlyTitle', { host: roomHostName || tI18n('theHost') }));
+      else el.removeAttribute('title');
+    });
+  }
+  document.querySelectorAll('.host-only-note').forEach((el) => {
+    el.hidden = !locked;
+    if (locked) el.textContent = hostLockNote(el.dataset.setting);
+  });
+  const carNote = document.querySelector('.host-car-note');
+  if (carNote) carNote.hidden = !seatedInRoom;
+}
+
 function buildCarCards() {
   const wrap = $('car-cards');
   if (!wrap) return;
   wrap.innerHTML = '';
   CAR_COLORS.forEach((hex, i) => {
     const nm = CAR_NAMES[i] || { e: '🏎️', n: 'RACER' };
+    const heldBy = carTakenBy(hex);            // v155: another racer already drives it
+    const mine = hex === prefs.color;
     const b = document.createElement('button');
-    b.className = 'car-card' + (hex === prefs.color ? ' active' : '');
+    b.className = 'car-card' + (mine ? ' active' : '') + (heldBy ? ' taken' : '') + (mine && seatedInRoom ? ' mine' : '');
     b.dataset.color = hexCss(hex);   // v141: a `color` attribute should hold a colour, not "14747136"
+    if (heldBy) {
+      b.disabled = true;
+      b.setAttribute('aria-disabled', 'true');
+      b.title = heldBy.name + ' is driving this car';
+    }
 
     const art = carArtFor(hex);
     if (art) {
@@ -3994,10 +4101,25 @@ function buildCarCards() {
     name.textContent = nm.n;
     b.appendChild(name);
 
+    // Who has it / that it is yours. Without this a blocked card is just a dead
+    // button; with it the lobby reads at a glance.
+    const tag = document.createElement('div');
+    tag.className = 'car-tag';
+    if (heldBy) tag.textContent = heldBy.name;
+    else if (mine) tag.textContent = tI18n('yourCar');   // v155: the card that is mine
+    if (tag.textContent) b.appendChild(tag);
+
     b.addEventListener('click', () => {
+      // The server decides - this is only so a blocked card does not look broken.
+      const holder = carTakenBy(hex);
+      if (holder) {
+        toast('🚗 ' + holder.name + ' is already driving that car — pick another');
+        return;
+      }
       prefs.color = hex; savePrefs();
-      wrap.querySelectorAll('.car-card').forEach((x) => x.classList.remove('active'));
+      wrap.querySelectorAll('.car-card').forEach((x) => x.classList.remove('active', 'mine'));
       b.classList.add('active');
+      if (seatedInRoom) b.classList.add('mine');
       applyMyColor(); sendMeta();
     });
     wrap.appendChild(b);
@@ -4481,7 +4603,10 @@ function updateLobby(snap) {
   if (SPEC_ROOM) { const ov = $('overlay'); if (ov && latest && latest.state !== 'waiting') ov.classList.add('hidden'); }
   const isTouchDev = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
   const ctrl = snap.controllers || {};
-  const sig = [snap.code, snap.mode, snap.map, ctrl[1] ? 1 : 0, ctrl[2] ? 1 : 0, snap.bot ? 1 : 0].join('|');
+  // v155: laps and weather are in the signature too - they are room settings the room
+  // creator can change at any moment, and the other racers' wizards have to follow
+  const sig = [snap.code, snap.mode, snap.map, ctrl[1] ? 1 : 0, ctrl[2] ? 1 : 0, snap.bot ? 1 : 0,
+    snap.laps, snap.weather].join('|');
   renderLeaderboard(snap);                  // has its own signature guard (1 Hz board)
   if (sig === _lobbySig) return;            // nothing else the lobby shows has changed
   const first = _lobbySig === null;
@@ -4499,6 +4624,18 @@ function updateLobby(snap) {
   if (modeChanged) document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === snap.mode));
   if (mapChanged) document.querySelectorAll('.map-card').forEach((b) => b.classList.toggle('active', parseInt(b.dataset.map, 10) === snap.map));
   if (snap.map != null) selectedMap = snap.map;
+  // v155 — the room is the authority for the race settings, so while we are waiting in
+  // one the wizard shows the room's values rather than this browser's own. That is what
+  // makes a locked control honest: it reflects what the race will actually be, and the
+  // only thing a joiner changes from here is their car.
+  if (seatedInRoom && snap.state === 'waiting') {
+    // laps and weather are settings in the snapshot, so they are safe to follow here.
+    // `snap.bot` is deliberately NOT used: it reports the race-time flag, which is not
+    // the AI-rival setting the wizard shows (and would flip a solo racer's own toggle).
+    if (snap.laps != null && snap.laps !== prefs.laps) { prefs.laps = snap.laps; savePrefs(); paintLaps(); }
+    if (snap.weather != null) applyWeather(snap.weather);
+    applyRoomLocks();
+  }
   const parts = [];
   if (ctrl[1]) parts.push('📱 P1 joystick');
   if (ctrl[2]) parts.push('📱 P2 joystick');
@@ -5905,7 +6042,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v154';
+const BUILD = 'v155';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -5946,6 +6083,7 @@ const net = new RoomLink({
   onWelcome(msg) {
     if (msg.role === 'lobby' || msg.type === 'lobby_welcome' || !msg.code || msg.slot === 0) {
       mySlot = 0; roomCode = '·····';
+      releaseRoomState();  // v155: back to setting up our own race
       clearRoomHop();      // v91: the exit completed (or we are parked in the pool)
       syncRoomButtons();
       if (msg.role === 'lobby' || msg.type === 'lobby_welcome') acceptingStates = false; // no room -> no snapshots
@@ -5960,6 +6098,10 @@ const net = new RoomLink({
       return;
     }
     mySlot = msg.slot; roomCode = msg.code;
+    // v155: seated in a room - from here the wizard is drawn from the room's state and
+    // the setup controls belong to whoever created it
+    seatedInRoom = true;
+    applyRoomLocks();
     clearRoomHop();      // v91: create/join hop confirmed by the relay
     syncRoomButtons();
     acceptingStates = true;
@@ -5997,11 +6139,22 @@ const net = new RoomLink({
       case 'state': if (acceptingStates) ingestSnapshot(msg); break; // v91: ignore the old room's stream mid-hop
       case 'lobby': {
         window.__lastLobby = msg.players || [];
+        // v155: this is also the car roster - who is in the room and which car each of
+        // them is in - and it is the only thing the car cards are drawn from
+        seatedInRoom = true;
+        adoptSeatCar(msg.players);
+        applyRoomRoster(msg.players, msg.cap, msg);
         if (typeof renderRoomLobby === 'function') renderRoomLobby(msg);
         else if (typeof window.renderRoomLobby === 'function') window.renderRoomLobby(msg);
         break;
       }
       case 'weather': if (msg.weather != null) applyWeather(msg.weather); break;
+      case 'welcome': {
+        // a seat means the room's rules now apply to this browser
+        if (msg.slot) seatedInRoom = true;
+        applyRoomLocks();
+        break;
+      }
       case 'photo-finish': if (msg.margin != null) triggerPhotoFinish(msg.margin, msg.winnerName, msg.runnerUpName); break;
       case 'need-ready': toast('⚠ ' + (msg.msg || 'not ready yet')); break;
       case 'full': toast('⚠ Room is full (6 max)'); break;
@@ -6036,12 +6189,42 @@ const net = new RoomLink({
       }
       case 'error':
         if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!');
-        else if (msg.code === 'map-host-only') {
-          // v93: only the host picks the track in a 3+ racer room. Repaint from the
-          // authoritative map so the wizard never promises a circuit we are not on.
-          const rm = validMapId(msg.map);
-          if (rm != null) { selectedMap = rm; paintMapCards(rm); }
-          toast((typeof tI18n === 'function' ? tI18n('mapHostOnly') : null) || '🔒 Only the host can change the track in a 3+ racer room');
+        else if (msg.code === 'host-only') {
+          // v155: the room creator owns the race settings. Put the control back to the
+          // value the room is actually running, so a refused change leaves nothing
+          // looking like it worked.
+          const who = msg.host ? (msg.host + ' runs this room') : 'only the host can change it';
+          if (msg.setting === 'map') {
+            const rm = validMapId(msg.value);
+            if (rm != null) { selectedMap = rm; paintMapCards(rm); }
+            toast('🔒 ' + (who.charAt(0).toUpperCase() + who.slice(1)) + ' — you can still pick your car');
+          } else if (msg.setting === 'weather') {
+            if (msg.value != null) applyWeather(msg.value);
+            toast('🔒 The weather is ' + msg.value + ' — ' + who);
+          } else if (msg.setting === 'laps') {
+            if (msg.value != null) { prefs.laps = msg.value; paintLaps(); }
+            toast('🔒 ' + msg.value + ' laps — ' + who);
+          } else if (msg.setting === 'bot') {
+            prefs.bot = !!msg.value; paintBotToggle();
+            toast('🔒 AI rival is ' + (msg.value ? 'ON' : 'OFF') + ' — ' + who);
+          } else {
+            toast('🔒 ' + who);
+          }
+          applyRoomLocks();
+        }
+        else if (msg.code === 'car-taken') {
+          // v155: someone else is in that car. The relay says which car this racer
+          // actually ended up with; adopt it and repaint, so the card, the paint and
+          // the seat can never disagree.
+          const owner = msg.name || ('RACER ' + msg.slot);
+          if (msg.assigned && msg.color != null) {
+            prefs.color = msg.color & 0xffffff; savePrefs(); applyMyColor();
+            const nm = CAR_NAMES[CAR_COLORS.indexOf(prefs.color)];
+            toast('🚗 ' + owner + ' already has that car — you are in the ' + ((nm && nm.n) || 'next free one'));
+          } else {
+            toast('🚗 ' + owner + ' is driving that car — pick another');
+          }
+          buildCarCards();
         }
         else if (msg.code === 'map-in-race') {
           const rm2 = validMapId(msg.map);

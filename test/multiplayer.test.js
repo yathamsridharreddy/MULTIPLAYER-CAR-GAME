@@ -547,18 +547,20 @@ describe('Authoritative Multiplayer Simulation & Rooms', () => {
     };
     const host = seat('p-host'); const second = seat('p-second'); const third = seat('p-third');
     assert.equal(host.slot, 1, 'the lowest seat hosts');
-    assert.equal(entry.screens.size, 3, 'three screens = host-only track changes');
+    assert.equal(entry.screens.size, 3, 'three screens on the grid');
     assert.equal(entry.room.mapId, 0);
 
     handleMessage(third, { type: 'map', map: 2 });
     assert.equal(entry.room.mapId, 0, 'a non-host change must not apply');
-    const refused = third.ws.findSent('error').filter((e) => e.code === 'map-host-only');
+    // v155: the refusal is one code for every setting the room creator owns, and it
+    // names the setting and the authoritative value so the wizard can repaint
+    const refused = third.ws.findSent('error').filter((e) => e.code === 'host-only' && e.setting === 'map');
     assert.equal(refused.length, 1, 'the racer is told why instead of watching nothing happen');
-    assert.equal(refused[0].map, 0, 'the refusal carries the authoritative track so the wizard repaints');
+    assert.equal(refused[0].value, 0, 'the refusal carries the authoritative track so the wizard repaints');
 
     handleMessage(host, { type: 'map', map: 2 });
     assert.equal(entry.room.mapId, 2, 'the host still changes the track');
-    assert.equal(host.ws.findSent('error').filter((e) => e.code === 'map-host-only').length, 0);
+    assert.equal(host.ws.findSent('error').filter((e) => e.code === 'host-only').length, 0);
 
     handleMessage(second, { type: 'map', map: 99 });
     assert.equal(entry.room.mapId, 2, 'an id naming no track is ignored rather than clamped to Highland');

@@ -126,6 +126,11 @@
 
   // car classes: stat trade-offs (top speed / acceleration / grip+steer)
   const SLOT_COLS = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7]; // v76
+  // v155: every car the wizard offers, in the order the cards are drawn. The seat
+  // defaults above are the first six of it. Exported so the server can hand out a
+  // free car when the one a joiner asked for is already on the grid, without the
+  // two sides ever disagreeing about what the list is.
+  const CAR_PALETTE = [0xe10600, 0x0a84ff, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7, 0xffffff, 0x111111];
   const CAR_CLASSES = {
     velocity:    { name: 'VELOCITY',    top: 1.12, acc: 0.95, grip: 0.95, steer: 0.95 },
     accelerator: { name: 'ACCELERATOR', top: 0.97, acc: 1.22, grip: 1.0,  steer: 1.0 },
@@ -1319,5 +1324,5 @@
     return (h >>> 0).toString(36);
   })();
 
-  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode, GEOM_ID, pickupSpots, WEATHER_CONDITIONS, getTrackElevation, getTerrainHeight };
+  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode, GEOM_ID, pickupSpots, WEATHER_CONDITIONS, getTrackElevation, getTerrainHeight, CAR_PALETTE };
 });

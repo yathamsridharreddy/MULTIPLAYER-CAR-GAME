@@ -3946,6 +3946,42 @@ function broadcastScreens(entry, obj, except) {
 }
 
 function hostSlot(entry) { let h = 0; for (const s of entry.slotByWs.values()) if (!h || s < h) h = s; return h; } // v77 BUG-006
+// v155 — one car, one racer. In this game the colour IS the car (it picks the model),
+// so two seats holding the same colour is two racers in the same car. The seat list is
+// the authority for who holds what; the client only ever draws it.
+function carHolder(entry, color, exceptSlot) {
+  if (typeof color !== 'number' || !isFinite(color)) return 0;
+  const want = Math.floor(color) & 0xffffff;
+  for (const [, slot] of entry.slotByWs) {
+    if (slot === exceptSlot) continue;
+    const c = entry.room.cars[slot - 1];
+    if (c && c.color === want) return slot;
+  }
+  return 0;
+}
+function seatName(entry, slot) {
+  const c = entry.room.cars[slot - 1];
+  return (c && c.name) || 'RACER ' + slot;
+}
+// what a joiner actually drives: their own car if it is free, otherwise the first one
+// nobody has. The palette is longer than the grid (8 cars, 6 seats) so this always
+// finds something for a seat that exists.
+function freeColorFor(entry, want, slot) {
+  const taken = new Set();
+  for (const [, s] of entry.slotByWs) {
+    if (s === slot) continue;
+    const c = entry.room.cars[s - 1];
+    if (c) taken.add(c.color);
+  }
+  const c = entry.room.cars[slot - 1];
+  const own = (typeof want === 'number' && isFinite(want)) ? (Math.floor(want) & 0xffffff) : null;
+  if (own != null && !taken.has(own)) return own;
+  for (const hex of core.CAR_PALETTE) if (!taken.has(hex)) return hex;
+  return (c && c.color) || core.CAR_PALETTE[0];
+}
+// settings the room creator owns. Everyone else races with what the host set, so the
+// controls are refused here rather than merely greyed out in one browser.
+const HOST_SETTINGS = { map: 1, weather: 1, laps: 1, bot: 1 };
 function broadcastLobby(entry) { // v76: player list with rating + ready
   const room = entry.room;
   const players = [];
@@ -3963,11 +3999,15 @@ function broadcastLobby(entry) { // v76: player list with rating + ready
       crewBadge: crew ? crew.badge : null,
       rating: entry.ratingBySlot[slot] || null,
       ready: entry.ready.has(ws),
-      host: slot === hostSlot(entry)
+      host: slot === hostSlot(entry),
+      color: c ? c.color : null        // v155: whose car is whose, for the car cards
     });
   }
   players.sort((a, b) => a.slot - b.slot);
-  broadcastScreens(entry, { type: 'lobby', players, cap: room.cap, weather: room.weather || 'dry', state: room.state });
+  broadcastScreens(entry, {
+    type: 'lobby', players, cap: room.cap, weather: room.weather || 'dry', state: room.state,
+    laps: room.laps, bot: !!room.bot      // v155: the room's settings, for the other racers' wizards
+  });
 }
 function controllerTelemetry(entry, ws, slot) {
   const room = entry.room;
@@ -4121,6 +4161,62 @@ function joinRoom(client, entry, role, msg) {
   }
 }
 
+// v155: identity + car arbitration in one place. Every path that seats or updates a
+// racer (hello, room create, start, meta) goes through this, so a car can never be
+// handed to two people by one path and guarded on another.
+//
+// opts.assign = true  -> the racer is ARRIVING, so they get the first car nobody has
+// opts.assign = false -> the racer is CHANGING, so a taken car is refused and they
+//                        keep the one they already hold
+// Either way the racer is told what happened, and told which car they actually got.
+function applySeatMeta(client, rawMeta, opts) {
+  const en = client.entry;
+  if (!en || !client.slot) return null;
+  const seatCar = en.room.cars[client.slot - 1];
+  const meta = Object.assign({}, rawMeta);
+  if (meta.color == null || !seatCar) { en.room.setPlayerMeta(client.slot, meta); return null; }
+
+  const before = seatCar.color;
+  const wanted = Math.floor(meta.color) & 0xffffff;
+  const isArrival = !!(opts && opts.assign);
+  const holder = carHolder(en, wanted, client.slot);
+  // An arrival is moved into the first car nobody has (they have to drive something);
+  // a racer who is already seated and asks for a car somebody else is in keeps the one
+  // they hold. Either way the room ends up with one racer per car.
+  const got = !holder ? wanted
+    : (isArrival ? freeColorFor(en, wanted, client.slot) : before);
+  meta.color = got;
+  en.room.setPlayerMeta(client.slot, meta);
+
+  // Every other racer's car cards are drawn from the lobby roster, so a car that changes
+  // hands has to be rebroadcast - both when a racer moves into a free car and when an
+  // arrival is moved off a taken one. Otherwise a browser keeps showing a car as taken by
+  // somebody who has already moved out of it.
+  if (got !== before) broadcastLobby(en);
+
+  if (holder) {
+    sendJSON(client.ws, {
+      type: 'error', code: 'car-taken', color: got, wanted,
+      slot: holder, name: seatName(en, holder), assigned: isArrival && got !== wanted
+    });
+  }
+  return got;
+}
+
+// A setting the room creator owns was changed by someone else. The refusal carries the
+// authoritative value so the sender's wizard repaints to what the room is actually
+// running, instead of leaving a control on screen that only looks like it worked.
+function hostRefusal(client, entry, setting) {
+  const room = entry.room;
+  // room.bot is the setting the room creator chose; room._botActive is the race-time
+  // result of it and is only computed when a race starts, so it is the wrong field here
+  const cur = { map: room.mapId, weather: room.weather || 'dry', laps: room.laps, bot: !!room.bot }[setting];
+  sendJSON(client.ws, {
+    type: 'error', code: 'host-only', setting, value: cur,
+    host: seatName(entry, hostSlot(entry))
+  });
+}
+
 async function handleMessage(client, msg) {   // v121: async for the no-guest handshake gate
   if (!msg || typeof msg !== 'object') return;
 
@@ -4167,12 +4263,22 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
       if (client.role === 'screen' && client.slot) {
         const room = entry.room;
         if (msg.pid) { entry.pidBySlot = entry.pidBySlot || {}; entry.pidBySlot[client.slot] = String(msg.pid).slice(0, 64); } // v90 club sync
-        if (msg.weather != null) room.setWeather(msg.weather);
-        if (msg.laps != null) room.setLaps(msg.laps);
-        if (msg.bot != null) room.setBot(msg.bot);
+        // v155: these four belong to the room's creator at every room size. A hello from
+        // someone joining carries their own saved setup, and it must not move the room's
+        // circuit, weather, length or AI rival - the joiner races what the host chose and
+        // picks their car, nothing else.
+        let setupChanged = false;
+        if (client.slot === hostSlot(entry)) {
+          if (msg.weather != null) setupChanged = room.setWeather(msg.weather) || setupChanged;
+          if (msg.laps != null) setupChanged = room.setLaps(msg.laps) || setupChanged;
+          if (msg.bot != null) setupChanged = room.setBot(msg.bot) || setupChanged;
+          if (msg.botSkill != null) room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
+        }
+        // the room the creator just set up is announced straight away, so their own
+        // screen and anyone already seated show the race that will actually be run
+        if (setupChanged) broadcastLobby(entry);
         if (msg.record === false) entry.noRecord = true; // v61 practice
-        if (msg.botSkill != null) room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
-        if (msg.name || msg.color || msg.cls || msg.sens != null) room.setPlayerMeta(client.slot, msg); // v92 sensitivity rides along
+        if (msg.name || msg.color || msg.cls || msg.sens != null) applySeatMeta(client, msg, { assign: true }); // v92 sens, v155 car
         if (msg.cls) { classPick(msg.cls); room.cars[client.slot - 1].clsKey = msg.cls; } // v64 telemetry
         if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
         // v73: verify the racer's Supabase token server-side -> authoritative uid
@@ -4223,7 +4329,7 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
         if (msg.bot != null) room.setBot(msg.bot);
         if (msg.record === false) entry.noRecord = true;
         if (msg.botSkill != null) room.setBotSkill(parseInt(msg.botSkill, 10));
-        if (msg.name || msg.color || msg.cls || msg.sens != null) room.setPlayerMeta(client.slot, msg); // v92 sensitivity rides along
+        if (msg.name || msg.color || msg.cls || msg.sens != null) applySeatMeta(client, msg, { assign: true }); // v92 sens, v155 car
         if (msg.cls) { classPick(msg.cls); room.cars[client.slot - 1].clsKey = msg.cls; }
         if (msg.cos || msg.title) room.cars[client.slot - 1].setCos(msg.cos, msg.title);
         if (msg.tok) verifyUid(msg.tok).then(async (uid) => {
@@ -4259,38 +4365,51 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
       // and the 30 Hz snapshot repaints the client's wizard either way.
       const wantMap = validMapId(msg.map);
       if (wantMap == null) break;
-      if (en.screens.size < 3 || client.slot === hostSlot(en)) { // v76/v77 host-only 3+
-        // setMap() only works while the room is waiting; say so instead of nothing
-        if (!en.room.setMap(wantMap)) sendJSON(client.ws, { type: 'error', code: 'map-in-race', map: en.room.mapId });
-      } else {
-        sendJSON(client.ws, { type: 'error', code: 'map-host-only', map: en.room.mapId }); // v93
-      }
+      // v155: the room creator owns the track for the whole room, not only once it fills
+      if (client.slot !== hostSlot(en)) { hostRefusal(client, en, 'map'); break; }
+      // setMap() only works while the room is waiting; say so instead of nothing
+      if (!en.room.setMap(wantMap)) sendJSON(client.ws, { type: 'error', code: 'map-in-race', map: en.room.mapId });
       break;
     }
 
-    case 'weather':
-      if (client.entry && client.role === 'screen' && (client.entry.screens.size < 3 || client.slot === hostSlot(client.entry))) {
-        client.entry.room.setWeather(msg.weather);
-        broadcastScreens(client.entry, { type: 'weather', weather: client.entry.room.weather });
-      }
+    case 'weather': {
+      if (!client.entry || client.role !== 'screen') break;
+      const en = client.entry;
+      if (client.slot !== hostSlot(en)) { hostRefusal(client, en, 'weather'); break; }
+      en.room.setWeather(msg.weather);
+      broadcastScreens(en, { type: 'weather', weather: en.room.weather });
       break;
+    }
 
     case 'meta':
       if (client.entry && client.role === 'screen' && client.slot) {
         if (msg.pid) { client.entry.pidBySlot = client.entry.pidBySlot || {}; client.entry.pidBySlot[client.slot] = String(msg.pid).slice(0, 64); } // v90 club sync
-        client.entry.room.setPlayerMeta(client.slot, msg);
-        if (msg.cos || msg.title) client.entry.room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
+        const en = client.entry;
+        // v155: the car is the colour, and a car belongs to one racer. Asking for one
+        // somebody else is driving keeps you in the car you already have.
+        const got = applySeatMeta(client, msg, { assign: false });
+        if (msg.cos || msg.title) en.room.cars[client.slot - 1].setCos(msg.cos, msg.title); // v59
         if (msg.botSkill != null) client.entry.room.setBotSkill(parseInt(msg.botSkill, 10)); // v45
       }
       break;
 
-    case 'laps':
-      if (client.entry && client.role === 'screen' && (client.entry.screens.size < 3 || client.slot === hostSlot(client.entry))) client.entry.room.setLaps(msg.laps); // v76/v77
+    case 'laps': {
+      if (!client.entry || client.role !== 'screen') break;
+      const en = client.entry;
+      if (client.slot !== hostSlot(en)) { hostRefusal(client, en, 'laps'); break; }
+      en.room.setLaps(msg.laps);
+      broadcastLobby(en);   // v155: the race length is the room's, not the host's screen's
       break;
+    }
 
-    case 'bot':
-      if (client.entry && client.role === 'screen') client.entry.room.setBot(msg.bot);
+    case 'bot': {
+      if (!client.entry || client.role !== 'screen') break;
+      const en = client.entry;
+      if (client.slot !== hostSlot(en)) { hostRefusal(client, en, 'bot'); break; }
+      en.room.setBot(msg.bot);
+      broadcastLobby(en);   // v155: same for the AI rival
       break;
+    }
 
     // v61: practice flag + quick restart (screen-controlled, no reconnect)
     case 'record':
@@ -4336,7 +4455,7 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
           if (msg.laps != null) entry.room.setLaps(msg.laps);
           if (msg.bot != null) entry.room.setBot(msg.bot);
           if (msg.weather != null) entry.room.setWeather(msg.weather);
-          if (msg.name || msg.color || msg.cls || msg.sens != null) entry.room.setPlayerMeta(client.slot, msg);
+          if (msg.name || msg.color || msg.cls || msg.sens != null) applySeatMeta(client, msg, { assign: true });
           if (msg.cos || msg.title) entry.room.cars[client.slot - 1].setCos(msg.cos, msg.title);
         }
       }
@@ -4644,7 +4763,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v154', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v155', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {

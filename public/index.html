@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap" media="print" onload="this.media='all'"/>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap"/></noscript>
-  <link rel="stylesheet" href="css/style.css?v=154"/>
+  <link rel="stylesheet" href="css/style.css?v=155"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -572,6 +572,7 @@
         <!-- step 1 : map cards -->
         <div class="wiz-sec" id="wiz-map">
           <div class="lsec-title" data-i18n="mapTitle">1 · CHOOSE YOUR CIRCUIT</div>
+          <div class="host-only-note" data-setting="map" hidden></div>
           <div class="card-row" id="map-cards">
             <button class="map-card active" data-map="0"><img src="img/map-highland.webp" alt="HIGHLAND RUSH"/><div class="mc-text"><div class="mc-name" data-i18n="mapHighland">HIGHLAND RUSH</div><div class="mc-sub" data-i18n="mapHighlandSub">Day · forests &amp; mountains</div></div></button>
             <button class="map-card" data-map="1"><img src="img/map-neon.webp" alt="NEON CITY"/><div class="mc-text"><div class="mc-name" data-i18n="mapNeon">NEON CITY</div><div class="mc-sub" data-i18n="mapNeonSub">Night · neon downtown</div></div></button>
@@ -584,6 +585,7 @@
         <!-- step 1.5 : dynamic track weather & surface conditions -->
         <div class="wiz-sec" id="wiz-weather">
           <div class="lsec-title" data-i18n="weatherTitle">DYNAMIC WEATHER &amp; SURFACE CONDITIONS</div>
+          <div class="host-only-note" data-setting="weather" hidden></div>
           <div class="weather-row" id="weather-cards">
             <button class="weather-btn active" data-weather="dry" type="button"><span class="wx-art" aria-hidden="true"></span><span class="wx-head"><span class="wx-ico"><span class="ico weather-ico" data-i="weather-sun" aria-hidden="true"></span></span><span class="wx-name" data-i18n="wDry">DRY ASPHALT</span></span><span class="wx-sub" data-i18n="wDrySub">1.00x Grip · Optimal Track Pace</span></button>
             <button class="weather-btn" data-weather="wet" type="button"><span class="wx-art" aria-hidden="true"></span><span class="wx-head"><span class="wx-ico"><span class="ico weather-ico" data-i="weather-rain" aria-hidden="true"></span></span><span class="wx-name" data-i18n="wWet">WET RAIN</span></span><span class="wx-sub" data-i18n="wWetSub">0.92x Grip · Water Spray &amp; Puddles</span></button>
@@ -595,6 +597,7 @@
         <!-- step 2 : car cards -->
         <div class="wiz-sec" id="wiz-car">
           <div class="lsec-title" data-i18n="carTitle">2 · CHOOSE YOUR CAR</div>
+          <div class="host-car-note" hidden data-i18n="carOwnNote">A car can only be driven by one racer — cars already taken carry the driver's name.</div>
           <div class="card-row" id="car-cards"></div>
         </div>
 
@@ -613,7 +616,9 @@
               <button class="laps-btn" data-laps="1">1</button>
               <button class="laps-btn active" data-laps="3">3</button>
               <button class="laps-btn" data-laps="5">5</button>
+              <div class="host-only-note" data-setting="laps" hidden></div>
               <label class="toggle-line"><input type="checkbox" id="bot-toggle" checked/> <span><span class="ico" data-i="racing-car" aria-hidden="true"></span><span data-i18n="aiRival">AI Rival Driver</span></span></label>
+              <div class="host-only-note" data-setting="bot" hidden></div>
               <div class="toggle-line" id="bot-skill-line">
                 <span class="opt-label" data-i18n="aiLevel">AI LEVEL</span>
                 <button class="q-btn" id="bsk-rookie" data-i18n="rookie">ROOKIE</button>
@@ -706,11 +711,11 @@
   </div>
 
   <script defer src="js/vendor/three.min.js"></script>
-  <script defer src="js/vendor/GLTFLoader.js?v=154"></script>
-  <script defer src="js/car-models.js?v=154"></script>
+  <script defer src="js/vendor/GLTFLoader.js?v=155"></script>
+  <script defer src="js/car-models.js?v=155"></script>
   <script defer src="js/vendor/qrcode.js"></script>
-  <script defer src="js/game-core.js?v=154"></script>
-  <script defer src="js/progression.js?v=154"></script>
+  <script defer src="js/game-core.js?v=155"></script>
+  <script defer src="js/progression.js?v=155"></script>
   <script src="js/config.js"></script>
   <script>
   // v119 ACCOUNT GATE: when this deploy has Supabase keys configured, the game
@@ -726,10 +731,10 @@
     } catch (e) {}
   })();
   </script>
-  <script defer src="js/account.js?v=154"></script>
-  <script defer src="js/i18n.js?v=154"></script>
-  <script defer src="js/net.js?v=154"></script>
-  <script defer src="js/game.js?v=154"></script>
+  <script defer src="js/account.js?v=155"></script>
+  <script defer src="js/i18n.js?v=155"></script>
+  <script defer src="js/net.js?v=155"></script>
+  <script defer src="js/game.js?v=155"></script>
   <script>
   // PWA (v36): register service worker + show INSTALL button when the browser allows it
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
