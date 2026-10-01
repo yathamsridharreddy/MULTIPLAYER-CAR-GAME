@@ -386,8 +386,10 @@ describe('v158 — the migration that does the database half', () => {
     assert.match(del, /not exists \(select 1 from public\.crew_members m where m\.crew_id = c\.id\)/,
       'a club with members left is never deleted');
 
-    const lead = body.slice(body.indexOf('update public.crews c'), body.indexOf('$sql$ using v_claims, v_crews;'));
-    assert.match(lead, /where c\.id = any\(\$2\)/, 'the leadership repair is scoped the same way');
+    const lead = body.slice(body.indexOf('update public.crews c'), body.indexOf('$sql$ using v_claims, v_crews, v_keys;'));
+    assert.match(lead, /c\.id = any\(\$2\)/, 'the leadership repair is scoped the same way');
+    assert.match(lead, /or c\.leader_uid = any\(\$3\)/,
+      'and it also fires for a club whose own row names the purged racer as leader');
   });
 
   test('a display name can never drag a live account into a purge', () => {
@@ -415,3 +417,76 @@ describe('v158 — the migration that does the database half', () => {
       'the sweep runs the same purge, never a hand-rolled delete');
   });
 });
+describe('v158.3 — a purge takes the racer it was told to and nothing else living', () => {
+  const TOOL = fs.readFileSync(path.join(ROOT, 'scripts', 'clean-deleted-racers.sql'), 'utf8');
+
+  test('a shared roster row can never widen the purge onto a living racer', () => {
+    // Two racers can share a display name and end up on ONE roster row: one
+    // joined as a guest, the other signed in, and the second racer's account id
+    // is left in the first one's alias list. The row goes with whoever is being
+    // purged; the living racer whose key rides on that alias list must not.
+    const body = SQL.slice(SQL.indexOf('-- 2. widen the identity set'), SQL.indexOf('-- 3. one identity column per table'));
+    assert.match(SQL, /v_given := v_keys;/,
+      'the keys the caller named are remembered, so they can be told apart from the widened ones');
+    assert.match(body, /and \(a = any\(v_given\)/,
+      'a widened key survives only when the caller named it...');
+    assert.match(body, /not exists \(\s*select 1 from auth\.users u\s*where u\.id::text = regexp_replace\(lower\(a\), '\^sb:', ''\)/,
+      '...or when it answers to nobody: any key that still has an account is dropped');
+    assert.match(body, /where c = any\(v_given\)/,
+      'the claimed roster rows are filtered the same way before anything is widened from them');
+
+    // and the trigger, which collects keys before the purger runs, with the
+    // same rule - otherwise the living racer is inside p_keys from the start
+    const trigger = SQL.slice(SQL.indexOf('create or replace function public.sr_on_auth_user_delete()'));
+    assert.match(trigger, /where k is null or k = ''\s*or not exists \(/,
+      'the trigger drops keys that belong to an account which still exists');
+  });
+
+  test('the purged identities come off the roster rows that survived them', () => {
+    const body = SQL.slice(SQL.indexOf('-- 6b.'), SQL.indexOf('-- 7. the tombstone'));
+    assert.match(body, /update public\.crew_members m/,
+      'the surviving row keeps its owner, its alias list is cleaned');
+    assert.match(body, /where not \(a = any\(\$1\)\)/, 'the purged keys are what comes off');
+    assert.match(body, /aliases_cleaned/, 'and the count is reported');
+  });
+
+  test('a roster row for a tombstoned racer is never hydrated again', () => {
+    // the moment between the trigger and the server learning of it: a warm
+    // process reading the club tables must not put the racer back on the roster
+    memCrews.get('apex').members = [];
+    noteTombstones([{ key: U, names: [NAME], purged_at: new Date().toISOString() }]);
+    const added = S.applyMemberRow({
+      crew_id: 'apex', member_key: U, name: NAME, role: 'leader',
+      aliases: [], weekly_meters: 1000, total_meters: 2000, weekly_points: 5, week_key: '2026-W40'
+    });
+    assert.equal(added, null, 'the row is refused');
+    assert.equal(memCrews.get('apex').members.length, 0, 'and nothing is on the roster');
+
+    // ...but a display name alone is never evidence: a namesake must still load
+    const namesake = S.applyMemberRow({
+      crew_id: 'apex', member_key: 'device-pid-someone-else', name: NAME, role: 'member',
+      aliases: [], weekly_meters: 0, total_meters: 0, weekly_points: 0, week_key: '2026-W40'
+    });
+    assert.ok(namesake, 'a racer who merely shares the deleted name is still hydrated');
+    assert.equal(memCrews.get('apex').members.length, 1);
+  });
+
+  test('the cleanup tool refuses to run beside the old, club-deleting purger', () => {
+    // The tool erases accounts that were deleted before the trigger existed, so
+    // it runs sr_purge_identity - and it must never do that on a database whose
+    // purge still carries the unscoped club delete. The guard is the first thing
+    // it does, and it raises instead of proceeding.
+    assert.match(TOOL, /if position\('c\.id = any\(\$1\)' in v_src\) = 0 then\s*raise exception/,
+      'the version of the installed purger is checked before anything is erased');
+    assert.match(TOOL, /raise exception 'sr_purge_identity is not installed here/,
+      'and so is its presence');
+    assert.match(TOOL, /v_out := public\.sr_purge_identity\(v_dead, v_names\)/,
+      'the erase is the same purger the trigger calls, never a second implementation');
+    assert.match(TOOL, /p_dry_run/, 'a preview mode exists and changes nothing');
+    assert.ok(TOOL.indexOf('p_dry_run') < TOOL.indexOf('v_out := public.sr_purge_identity'),
+      'the preview returns before the erase');
+    assert.match(TOOL, /revoke all on function public\.sr_cleanup_deleted_racers\(boolean\) from anon/,
+      'and it is not callable with the anon key');
+  });
+});
+

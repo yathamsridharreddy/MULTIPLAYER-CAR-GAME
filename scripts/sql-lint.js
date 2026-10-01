@@ -33,8 +33,14 @@ const ROOT = path.resolve(__dirname, '..');
 function sqlFiles() {
   const args = process.argv.slice(2);
   if (args.length) return args.map((a) => path.resolve(a));
-  return fs.readdirSync(ROOT)
+  const inRoot = fs.readdirSync(ROOT).filter((f) => f.endsWith('.sql'));
+  // scripts/*.sql are pasted into the Supabase editor exactly like the
+  // migrations, so they get the same grammar check (the recovery tool and the
+  // account-deletion cleanup live there)
+  const inScripts = fs.readdirSync(path.join(ROOT, 'scripts'))
     .filter((f) => f.endsWith('.sql'))
+    .map((f) => path.join('scripts', f));
+  return inRoot.concat(inScripts)
     .sort()
     .map((f) => path.join(ROOT, f));
 }

@@ -3125,6 +3125,17 @@ function applyMemberRow(r) {
   const c = memCrews.get(cid);
   const mk = String((r && r.member_key) || '');
   if (!c || !mk) return null;
+  // v158.3: never hydrate a racer a purge has taken out. The database row can
+  // still be there for the moment between the trigger firing and this process
+  // learning of it, and a warm process that hydrates it would put the deleted
+  // racer straight back on the club roster.
+  //
+  // Only KEYS are checked, never the display name: two racers may share a name,
+  // and a name match here would quietly drop the living one's membership row.
+  // (The purger strips a purged key off the rows that survive it, so a living
+  // racer's row does not carry one.)
+  if (isPurgedKey(mk) ||
+      (Array.isArray(r && r.aliases) && r.aliases.some((a) => isPurgedKey(a)))) return null;
   // v96: same rule as the club row - a member's weekly figures count only if the
   // row was written this week. Their lifetime total always counts.
   const rowIsThisWeek = String((r && r.week_key) || '') === currentWeekKey();

@@ -103,6 +103,7 @@ as $$
 declare
   v_keys   text[];
   v_names  text[];
+  v_given  text[];   -- exactly the keys the caller named; never filtered away
   v_rec    record;
   v_hit    bigint;
   v_out    jsonb := '{}'::jsonb;
@@ -134,6 +135,11 @@ begin
     return v_out;
   end if;
 
+  -- remember what the caller asked for. The roster may only ADD identities to
+  -- this list, and a roster row never gets to widen a purge onto a living
+  -- account - so the two rules below need to tell the two apart.
+  v_given := v_keys;
+
   -- ---- 2. widen the identity set from the club roster ---------------------
   -- The roster row is the richest record of who a racer is: it carries every
   -- device pid and display name ever seen for them. It is read FIRST so every
@@ -154,6 +160,25 @@ begin
                  where u.id::text = m.member_key or ('sb:' || u.id::text) = m.member_key
               ));
 
+      -- A roster row can be shared by two racers who picked the same display
+      -- name: one joined as a guest, the other signed in, and both aliases
+      -- ended up on one row. Only that row may go with the purged account -
+      -- never the living racer who happens to be the other name on it. So a
+      -- claimed key (and, below, any key the roster widens us onto) is dropped
+      -- the moment it still answers to a LIVE auth user, unless the caller
+      -- asked for that key by name. Same rule as the name guard above, applied
+      -- to every key the roster hands us.
+      if v_claims <> '{}' then
+        select coalesce(array_agg(distinct c), '{}')
+          into v_claims
+          from unnest(v_claims) as c
+         where c = any(v_given)
+            or not exists (
+                 select 1 from auth.users u
+                  where u.id::text = regexp_replace(lower(c), '^sb:', '')
+                     or ('sb:' || u.id::text) = lower(c));
+      end if;
+
       if v_claims <> '{}' then
         select coalesce(array_agg(distinct a), '{}')
           into v_keys
@@ -166,7 +191,12 @@ begin
             union
             select m.member_key from public.crew_members m where m.member_key = any(v_claims)
           ) s
-         where a is not null and a <> '';
+         where a is not null and a <> ''
+           and (a = any(v_given)
+                or not exists (
+                      select 1 from auth.users u
+                       where u.id::text = regexp_replace(lower(a), '^sb:', '')
+                          or ('sb:' || u.id::text) = lower(a)));
       end if;
     exception when undefined_column then
       v_claims := '{}';
@@ -328,7 +358,11 @@ begin
       $sql$ using v_crews, v_keys;
 
       -- ...and a club whose leader is gone passes to the member who has been
-      -- there longest, rather than pointing at an account that no longer exists
+      -- there longest, rather than pointing at an account that no longer
+      -- exists. The CLUB ROW can be the only thing naming that leader - a
+      -- leader whose roster row was never written, or was already removed - so
+      -- the club's own leader_uid is checked against the purge keys too.
+      -- Without that, a club keeps pointing at a deleted account for ever.
       execute $sql$
         update public.crews c
            set leader_uid = (
@@ -337,10 +371,35 @@ begin
               order by m.joined_at asc, m.member_key asc
               limit 1
            )
-         where c.id = any($2)
-           and exists (select 1 from public.crew_members m where m.crew_id = c.id)
+         where exists (select 1 from public.crew_members m where m.crew_id = c.id)
            and (c.leader_uid is null or c.leader_uid = any($1))
-      $sql$ using v_claims, v_crews;
+           and (c.id = any($2) or c.leader_uid = any($3))
+      $sql$ using v_claims, v_crews, v_keys;
+    exception when undefined_column then
+      null;
+    end;
+  end if;
+
+  -- ---- 6b. take the purged identities off the rows that SURVIVED ----------
+  -- A roster row can be shared by two racers who picked the same display name.
+  -- The row belongs to the one who is still here, so it stays - but the
+  -- deleted racer's key must not stay on it, or the identity lives on inside a
+  -- living racer's row for ever (and every later cleanup finds it again).
+  if to_regclass('public.crew_members') is not null and v_keys <> '{}' then
+    begin
+      execute $sql$
+        update public.crew_members m
+           set aliases = (
+             select coalesce(array_agg(a order by a), '{}')
+               from unnest(coalesce(m.aliases, '{}')) as a
+              where not (a = any($1))
+           )
+         where m.aliases is not null and m.aliases && $1
+      $sql$ using v_keys;
+      get diagnostics v_hit = row_count;
+      if v_hit > 0 then
+        v_out := v_out || jsonb_build_object('crew_members.aliases_cleaned', v_hit);
+      end if;
     exception when undefined_column then
       null;
     end;
@@ -435,6 +494,15 @@ begin
               from public.crew_members m
              where m.member_key = any($1) or (m.aliases is not null and m.aliases && $1)
           ) s
+         -- A roster row can be shared by two racers who use the same display
+         -- name, and then one of them is the account being deleted while the
+         -- other one is alive. Their account id must never travel with this
+         -- purge: the row goes, the living racer's own data does not.
+         where k is null or k = ''
+            or not exists (
+                  select 1 from auth.users u
+                   where u.id::text = regexp_replace(lower(k), '^sb:', '')
+                      or ('sb:' || u.id::text) = lower(k));
       $sql$ into v_extra, v_names_extra using v_ids;
       v_keys  := v_keys  || coalesce(v_extra, '{}');
       v_names := v_names || coalesce(v_names_extra, '{}');
