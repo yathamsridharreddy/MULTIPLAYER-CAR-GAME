@@ -725,6 +725,11 @@ describe('v158.7 — a name tombstone must not erase the racer who is still here
     purgedKeys.clear(); purgedNames.clear();
     seedClub();
     responder = async (u) => {
+      // v163: the default account check answers "that account is gone", which is
+      // the honest answer for a tombstoned uuid unless a test says otherwise.
+      if (u.startsWith(SB + '/auth/v1/admin/users/')) {
+        return { ok: false, status: 404, json: async () => ({ message: 'User not found' }), text: async () => '' };
+      }
       if (u.startsWith(SB + '/rest/v1/crews?')) {
         return { ok: true, status: 200, json: async () => [{ id: 'jointest', tag: 'JNT', name: 'Join Test', motto: 'm', badge: 'bolt', color: '#fff', weekly_meters: 0, total_meters: 0, weekly_points: 0, seeded: false }] };
       }
@@ -926,6 +931,70 @@ describe('v158.7 — a name tombstone must not erase the racer who is still here
     assert.equal(ids.uid, 'SOMEONEELSE', 'nothing is invented for a living name');
   });
 
+  test('a tombstone that names a LIVE account is cleared, and the join goes through', async () => {
+    // THE TRAP THIS BREAKS. A tombstone can name an account that can still sign
+    // in - a hand-erased key, an admin purge with the wrong id. Every join then
+    // answered "this account was deleted" while signing in again handed back the
+    // SAME uuid, so the advice repeated for ever. Auth is the authority: the user
+    // is still there, so the tombstone is wrong and goes.
+    noteTombstones([{ key: NEW, names: [NAME2], purged_at: new Date().toISOString() }]);
+    responder = async (u) => {
+      if (u.startsWith(SB + '/auth/v1/admin/users/')) return { ok: true, status: 200, json: async () => ({ id: NEW }), text: async () => '' };
+      if (u.startsWith(SB + '/rest/v1/crews?')) {
+        return { ok: true, status: 200, json: async () => [{ id: 'jointest', tag: 'JNT', name: 'Join Test', motto: 'm', badge: 'bolt', color: '#fff', weekly_meters: 0, total_meters: 0, weekly_points: 0, seeded: false }] };
+      }
+      return { ok: true, status: 201, json: async () => [] };
+    };
+    const res = await post('/api/player/crew/join', joinBody());
+    assert.equal(res.status, 200, 'the join is accepted - the account is alive');
+    assert.equal(res.json.ok, true);
+    const cleared = calls.filter((x) => x.method === 'DELETE' && x.url.includes('sr_purged_players'));
+    assert.ok(cleared.length >= 1, 'the stale tombstone row is deleted: ' + JSON.stringify(cleared.map((c) => c.url)));
+    assert.ok(!purgedKeys.has(NEW), 'and the running server forgets the key at once');
+    const write = calls.find((x) => x.method === 'POST' && x.url.includes('/crew_members'));
+    assert.ok(write, 'the roster row is written');
+    assert.ok(!JSON.stringify(write.json[0]).includes('"member_key":"' + NEW + '"') || write.json[0].member_key === NEW);
+    // founding a club can no longer be refused for the same stale reason either
+    calls.length = 0;
+    const made = await post('/api/player/crew/create', { uid: NAME2, pid: 'sb:' + NEW, sbUid: NEW, name: NAME2, crewName: 'Living Racer Club', tag: 'LIVE' });
+    assert.equal(made.status, 200, 'and the club can be founded');
+  });
+
+  test('an account check that cannot be made is reported, not guessed', async () => {
+    noteTombstones([{ key: NEW, names: [NAME2], purged_at: new Date().toISOString() }]);
+    responder = async (u) => {
+      if (u.startsWith(SB + '/auth/v1/admin/users/')) return { ok: false, status: 500, json: async () => ({ message: 'auth down' }), text: async () => '' };
+      if (u.startsWith(SB + '/rest/v1/crews?')) {
+        return { ok: true, status: 200, json: async () => [{ id: 'jointest', tag: 'JNT', name: 'Join Test', motto: 'm', badge: 'bolt', color: '#fff', weekly_meters: 0, total_meters: 0, weekly_points: 0, seeded: false }] };
+      }
+      return { ok: true, status: 201, json: async () => [] };
+    };
+    const res = await post('/api/player/crew/join', joinBody());
+    assert.equal(res.status, 503);
+    assert.equal(res.json.error, 'account_check_failed', 'the racer is told the check failed, not that they are deleted');
+    assert.ok(!calls.some((x) => x.method === 'DELETE'), 'and nothing is deleted on a guess');
+  });
+
+  test('the account check only ever runs for a tombstoned account', async () => {
+    noteTombstones([{ key: DEAD, names: [NAME2], purged_at: new Date().toISOString() }]);
+    const res = await post('/api/player/crew/join', joinBody());   // NEW is not tombstoned
+    assert.equal(res.status, 200);
+    assert.equal(calls.filter((x) => x.url.includes('/auth/v1/admin/users/')).length, 0,
+      'a living account costs no extra round trip');
+  });
+
+  test('the account check answers from the status alone', async () => {
+    responder = async () => ({ ok: true, status: 200, json: async () => ({ id: NEW }), text: async () => '' });
+    assert.equal(await S.accountExistsInAuth(NEW), true, 'a user Supabase still has');
+    responder = async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '' });
+    assert.equal(await S.accountExistsInAuth(NEW), false, 'a user it does not have');
+    responder = async () => ({ ok: false, status: 401, json: async () => ({}), text: async () => '' });
+    assert.equal(await S.accountExistsInAuth(NEW), null, 'a key that is not allowed to ask is not an answer');
+    responder = async () => { throw new Error('offline'); };
+    assert.equal(await S.accountExistsInAuth(NEW), null, 'nor is a network that is down');
+    assert.equal(await S.accountExistsInAuth('sridhar'), null, 'and a display name is never asked about');
+  });
+
   test('the client says why, and never hides it behind "Failed to join crew"', () => {
     assert.match(GAME, /function crewJoinErrorText/, 'the reason is turned into words');
     assert.match(GAME, /code === 'invalid_uid'/, 'an identity that never arrived says so');
@@ -934,6 +1003,31 @@ describe('v158.7 — a name tombstone must not erase the racer who is still here
     assert.match(GAME, /res\.durable && !res\.stored && !res\.pending/, 'a write that did not land is not toasted as success');
     assert.match(GAME, /Could not reach the game server/, 'a network failure is named as one');
     assert.ok(!/toast\([^\n]*Failed to join crew/.test(GAME), 'the toast that hid every one of these is gone');
+  });
+});
+
+describe('v163 — a tombstone is not the last word on a living account', () => {
+  const SCRIPT = fs.readFileSync(path.join(ROOT, 'scripts', 'clean-stale-tombstones.sql'), 'utf8');
+  const GAME_SRC = fs.readFileSync(path.join(ROOT, 'public', 'js', 'game.js'), 'utf8');
+
+  test('the SQL tool removes only the tombstones that name a live account', () => {
+    assert.equal((SCRIPT.match(/delete from/gi) || []).length, 1, 'exactly one delete statement');
+    assert.match(SCRIPT, /delete from public\.sr_purged_players p/, 'and it is on the tombstone table');
+    assert.match(SCRIPT, /from auth\.users u/, 'the live-account test reads auth.users');
+    assert.match(SCRIPT, /regexp_replace\(lower\(p\.key\), '\^sb:', ''\)/, "it handles the 'sb:<uuid>' form");
+    const beforeDelete = SCRIPT.slice(0, SCRIPT.indexOf('delete from'));
+    assert.match(beforeDelete, /select p\.key, p\.names, p\.purged_at/, 'a preview comes first');
+    assert.match(SCRIPT, /Ctrl\+A/, 'and it reminds the operator to select the whole file first');
+    assert.match(SCRIPT, /RESTART THE GAME SERVER/, 'and that a running server must be restarted once');
+    assert.match(SCRIPT, /no stats, no club, no race history/, 'and says what it never touches');
+  });
+
+  test('the client repairs a deleted account instead of handing back advice', () => {
+    assert.match(GAME_SRC, /function crewSignedIn\(\)/, 'the client knows whether it holds a session');
+    assert.match(GAME_SRC, /SRAccount\.logout\(\)/, 'it signs a deleted session out');
+    assert.match(GAME_SRC, /guestAfterErase: true/, 'and retries the same click as a guest');
+    assert.match(GAME_SRC, /account_check_failed/, 'an unreachable check is named, not guessed');
+    assert.match(GAME_SRC, /const retriedAsGuest = /, 'the retry cannot loop for ever');
   });
 });
 

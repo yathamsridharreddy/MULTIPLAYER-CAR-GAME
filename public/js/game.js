@@ -5500,13 +5500,14 @@ function crewJoinErrorText(res) {
       ? 'This account was deleted from the game - sign out and sign up again, then join.'
       : "This device's old racer was deleted - reload the page, then join again.";
   }
+  if (code === 'account_check_failed') return 'The account check could not be reached - try again in a moment.';
   if (code === 'crew_not_found') return 'That club is no longer around - the board is being refreshed.';
   if (code === 'seeded_club') return 'The built-in clubs cannot be changed - join it instead.';
   if (code) return 'Could not join the club (' + code + ').';
   return 'The club did not answer - try again in a moment.';
 }
 
-// v162: ONE reader for every club call, so no click can end in silence. Every
+// v163: ONE reader for every club call, so no click can end in silence. Every
 // answer used to be read with .then(r => r.json()); a cold Render instance (502),
 // a proxy error page, or an empty body made that throw, and the catch told the
 // racer to "check your connection" - a true answer to the wrong question, and
@@ -5522,7 +5523,7 @@ async function clubJson(url, opts) {
     return { status: 0, ok: false, body: null };
   }
 }
-// v162: the toast fades and the reason goes with it, so the join tab keeps the
+// v163: the toast fades and the reason goes with it, so the join tab keeps the
 // last attempt on screen in words. "I clicked and I cannot join" becomes a line
 // that names the club, the code and what the server said.
 let lastJoinNote = null;
@@ -5558,7 +5559,15 @@ function clubHttpText(status) {
   return 'The club server answered HTTP ' + status + ' - try again in a moment.';
 }
 
-window.joinCrewAction = async function(crewId) {
+// v163: is this browser holding a live signed-in session? (the join uses it to
+// decide whether a racer_erased answer can be repaired here instead of being
+// handed back to the racer as advice)
+function crewSignedIn() {
+  return !!(window.SRAccount && typeof SRAccount.loggedIn === 'function' && SRAccount.loggedIn() &&
+    typeof SRAccount.uid === 'function' && SRAccount.uid());
+}
+window.joinCrewAction = async function(crewId, opts) {
+  const retriedAsGuest = !!(opts && opts.guestAfterErase);
   const ci = crewIdentity(); // v90 club sync
   const name = prefs.name || 'RACER';
   const r = await clubJson(`${httpBase()}/api/player/crew/join`, {
@@ -5566,11 +5575,21 @@ window.joinCrewAction = async function(crewId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(Object.assign({}, ci, { name, crewId }))
   });
-  // v162: a refusal names its reason; anything else (a cold server, an error
+  // v163: a refusal names its reason; anything else (a cold server, an error
   // page, a body that is not JSON) names the status. Never nothing at all.
   if (!r.body || !r.body.ok) {
+    // v163: "sign out and sign up again" is not advice a racer can act on while
+    // this browser is still holding the dead session - and signing in again with
+    // the same account returns the same uuid, so the refusal would repeat for
+    // ever. The server has just asked Supabase whether that account exists; a
+    // racer_erased answer means it does not. So sign the dead session out here
+    // and join as a guest in the same click.
+    if (r.body && r.body.error === 'racer_erased' && !retriedAsGuest && crewSignedIn()) {
+      try { if (window.SRAccount && typeof SRAccount.logout === 'function') SRAccount.logout(); } catch (e) {}
+      return window.joinCrewAction(crewId, { guestAfterErase: true });
+    }
     const why = (r.body && r.body.error) ? crewJoinErrorText(r.body) : clubHttpText(r.status);
-    setJoinNote('LAST ATTEMPT - ' + why);
+    setJoinNote('LAST ATTEMPT - ' + why + (retriedAsGuest ? ' You joined as a guest.' : ''));
     toast(why);
     return;
   }
@@ -5590,7 +5609,8 @@ window.joinCrewAction = async function(crewId) {
     setJoinNote('LAST ATTEMPT - joined [' + res.tag + '] as ' + name + '. This device\'s old racer was deleted, so you start fresh.', 'ok');
     toast(`🏁 Joined [${res.tag}] ${res.name} - this device's old racer was deleted, so you start fresh.`);
   } else {
-    setJoinNote('LAST ATTEMPT - joined [' + res.tag + '] as ' + name + '.', 'ok');
+    setJoinNote('LAST ATTEMPT - joined [' + res.tag + '] as ' + name +
+      (retriedAsGuest ? ' (the deleted account was signed out first).' : '.'), 'ok');
     toast(`🏁 Joined [${res.tag}] ${res.name}!`);
   }
   openCrewModal('my');
@@ -6312,7 +6332,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v162';
+const BUILD = 'v163';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

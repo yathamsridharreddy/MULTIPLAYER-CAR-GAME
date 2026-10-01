@@ -2466,6 +2466,64 @@ function healErasedGuestIdentity(ids) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// v163 - A TOMBSTONE IS NOT ALWAYS RIGHT ABOUT A LIVING ACCOUNT.
+// ---------------------------------------------------------------------------
+// The tombstone is the server's copy of "this racer is gone", written when the
+// account is deleted in Supabase Auth. But a tombstone can also name an account
+// that is STILL THERE - a key an operator erased by hand with one of the SQL
+// tools, an admin purge called with the wrong id, a row left behind by a
+// half-finished cleanup. When that happens the account is locked out of every
+// club it clicks ("This account was deleted from the game - sign out and sign up
+// again") while it can still sign in, which is a trap no racer can escape from
+// the screen: signing in again returns the SAME uuid, so it is refused again.
+//
+// Auth is the authority on whether an account exists, and one question settles
+// it. If Supabase still has the user, the tombstone naming it is wrong and is
+// cleared here, and the racer joins on their account as normal. If Supabase does
+// not have them, the refusal stands - that IS a deleted account. If the question
+// itself cannot be asked (Supabase unreachable), the answer is honest rather than
+// guessed: `account_check_failed`, and the client says to try again in a moment.
+async function accountExistsInAuth(sbUid) {
+  const id = normCrewKey(sbUid);
+  if (!id || !UUID_RE.test(id) || !sbOn()) return null;   // null = cannot tell
+  try {
+    const r = await fetch(SB_URL + '/auth/v1/admin/users/' + encodeURIComponent(id), {
+      headers: sbHdr(), signal: AbortSignal.timeout(SB_TIMEOUT_MS)
+    });
+    if (r.status >= 200 && r.status < 300) return true;
+    if (r.status === 404) return false;
+    return null;   // 401/403 (key not allowed), 5xx, anything else: unknown
+  } catch (e) { return null; }
+}
+
+// Deleting the row is the durable half; forgetting the key in RAM is what lets
+// the very next write through in this process.
+async function clearStaleTombstone(sbUid) {
+  const id = normCrewKey(sbUid);
+  if (!id) return false;
+  const keys = [id, 'sb:' + id];
+  for (const k of keys) purgedKeys.delete(k);
+  let ok = true;
+  for (const k of keys) {
+    try { if (!(await sbDelete('sr_purged_players', 'key=eq.' + encodeURIComponent(k)))) ok = false; }
+    catch (e) { ok = false; }
+  }
+  console.log('[v163] cleared the tombstone of a LIVE account (' + id.slice(0, 8) + '…) - every club join was being refused');
+  return ok;
+}
+
+// The one place both handlers ask the question, so join and create cannot drift.
+async function settleErasedAccount(ids, healed) {
+  if (!healed || !healed.account) return healed;
+  const uid = normCrewKey(ids && ids.sbUid);
+  if (!uid || !UUID_RE.test(uid)) return healed;   // no account in the request to ask about
+  const alive = await accountExistsInAuth(uid);
+  if (alive === true) { await clearStaleTombstone(uid); return healErasedGuestIdentity(ids); }
+  if (alive === null) return { erased: true, account: false, freshPid: '', identity: '', unverified: true };
+  return healed;
+}
+
 app.post('/api/player/crew/join', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   const { uid, name, crewId, pid, sbUid } = req.body || {};
@@ -2483,7 +2541,11 @@ app.post('/api/player/crew/join', async (req, res) => {
   // next purge pass would drop every row naming them again. KEYS only, never a
   // name a living racer may share; an erased GUEST gets a new device key instead
   // of a dead end, and a deleted ACCOUNT is refused with the reason.
-  const erasedId = healErasedGuestIdentity(ids);
+  let erasedId = healErasedGuestIdentity(ids);
+  if (erasedId.account) {
+    erasedId = await settleErasedAccount(ids, erasedId);
+    if (erasedId.unverified) return res.status(503).json({ ok: false, error: 'account_check_failed' });
+  }
   if (erasedId.account) return res.status(403).json({ ok: false, error: 'racer_erased' });
 
   // Remove from old crew — matched by any STRONG alias, not just the raw uid,
@@ -2646,7 +2708,11 @@ app.post('/api/player/crew/create', async (req, res) => {
   // club row was written with a leader whose roster row could never be stored,
   // which is a club with no leader in it.
   const founderIds = { uid, name: idStr(name), pid: idStr(pid), sbUid: idStr(sbUid) };
-  const erasedId = healErasedGuestIdentity(founderIds);
+  let erasedId = healErasedGuestIdentity(founderIds);
+  if (erasedId.account) {
+    erasedId = await settleErasedAccount(founderIds, erasedId);
+    if (erasedId.unverified) return res.status(503).json({ ok: false, error: 'account_check_failed' });
+  }
   if (erasedId.account) return res.status(403).json({ ok: false, error: 'racer_erased' });
 
   // Remove from old crew (strong aliases only, same as /join)
@@ -5488,7 +5554,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v162', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v163', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
@@ -5667,6 +5733,9 @@ module.exports = {
   purgeRowIdentities,
   healErasedGuestIdentity,
   freshGuestPid,
+  accountExistsInAuth,
+  clearStaleTombstone,
+  settleErasedAccount,
   crewLeaderKeys,
   callerLeadsCrew,
   applyCrewRow,

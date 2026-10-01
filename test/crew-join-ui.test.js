@@ -426,7 +426,7 @@ test('v160: a deleted device racer is re-minted, and the browser adopts the new 
   assert.match(toast(window), /starts? fresh|old racer was deleted/i, 'and the racer is told their old racer is gone');
 });
 
-test('v162: a server that is not answering still says so - a click never ends in silence', { skip: SKIP }, async (t) => {
+test('v163: a server that is not answering still says so - a click never ends in silence', { skip: SKIP }, async (t) => {
   // A cold Render instance answers 502 with an HTML body, so r.json() rejects and
   // the old catch said "check your connection" - a wrong answer to the wrong
   // question, and "nothing happened" is what "I cannot join the club" looks like.
@@ -451,7 +451,7 @@ test('v162: a server that is not answering still says so - a click never ends in
   assert.ok(note && /502|waking up/i.test(note.textContent), 'the join tab keeps the reason: ' + (note && note.textContent));
 });
 
-test('v162: a refused join is written on the join tab, not only in a toast', { skip: SKIP }, async (t) => {
+test('v163: a refused join is written on the join tab, not only in a toast', { skip: SKIP }, async (t) => {
   const { window, dom } = boot({ fetchStub: (url) => {
     const u = String(url);
     if (u.includes('/api/player/crew/join')) return { status: 403, json: { ok: false, error: 'racer_erased' } };
@@ -475,7 +475,7 @@ test('v162: a refused join is written on the join tab, not only in a toast', { s
   assert.ok(again && /deleted|sign out|reload/i.test(again.textContent), 'it is still there when the dialog is reopened');
 });
 
-test('v162: a join that lands is written on the tab too', { skip: SKIP }, async (t) => {
+test('v163: a join that lands is written on the tab too', { skip: SKIP }, async (t) => {
   const { window, dom } = boot({ fetchStub: (url) => {
     const u = String(url);
     if (u.includes('/api/player/crew/join')) return { status: 200, json: { ok: true, crewId: CLUB.id, tag: CLUB.tag, name: CLUB.name, member: { uid: 'pdev1' }, durable: true, stored: true, pending: false } };
@@ -496,7 +496,7 @@ test('v162: a join that lands is written on the tab too', { skip: SKIP }, async 
   assert.ok(note && /joined \[BHAI\] as SRIDHAR/i.test(note.textContent), 'the tab says which club took them: ' + (note && note.textContent));
 });
 
-test('v162: join, create and delete all read their answer through the one reader', { skip: SKIP }, async () => {
+test('v163: join, create and delete all read their answer through the one reader', { skip: SKIP }, async () => {
   const src = fs.readFileSync(path.join(ROOT, 'public', 'js', 'game.js'), 'utf8');
   assert.match(src, /async function clubJson\(/, 'there is one reader');
   assert.match(src, /function clubHttpText\(/, 'and one way to say what an HTTP status means');
@@ -504,6 +504,49 @@ test('v162: join, create and delete all read their answer through the one reader
   assert.equal(posts.length, 3, 'every club POST goes through it: ' + posts.length);
   assert.ok(!/\.then\(r => r\.json\(\)\)[\s\S]{0,400}?Joined \[/.test(src),
     'no club POST answer is still read with a bare .json()');
+});
+
+test('v163: a deleted account is signed out and the same click still joins as a guest', { skip: SKIP }, async (t) => {
+  // "Sign out and sign up again" is not advice a racer can act on while the dead
+  // session is still in the browser - and signing in again returns the same
+  // account id, so the refusal repeats for ever. The server has already asked
+  // Supabase whether that account exists; a racer_erased answer means it does not,
+  // so the client clears the dead session and joins as a guest in the same click.
+  const bodies = [];
+  const { window, dom } = boot({ fetchStub: (url, opt) => {
+    const u = String(url);
+    if (u.includes('/api/player/crew/join')) {
+      bodies.push(JSON.parse((opt && opt.body) || '{}'));
+      if (bodies.length === 1) return { status: 403, json: { ok: false, error: 'racer_erased' } };
+      return { status: 200, json: { ok: true, crewId: CLUB.id, tag: CLUB.tag, name: CLUB.name, member: { uid: 'pdev1' }, durable: true, stored: true, pending: false } };
+    }
+    if (u.includes('/api/player/crew')) return { status: 200, json: MINE(false) };
+    if (u.includes('/api/crews/')) return { status: 200, json: { ok: true, crew: MINE(false).crew } };
+    if (u.includes('/api/crews')) return { status: 200, json: { ok: true, crews: [CLUB] } };
+    return { status: 200, json: [] };
+  } });
+  t.after(() => dom.window.close());
+  // a signed-in browser, as the real page has once a session exists
+  window.eval("prefs.name = 'SRIDHAR'; prefs.pid = 'pdev1'; window.__ses = true;"
+    + " window.SRAccount = { available: () => true, loggedIn: () => window.__ses,"
+    + " uid: () => window.__ses ? '22222222-2222-4222-8222-222222222222' : null,"
+    + " name: () => 'SRIDHAR', logout: () => { window.__ses = false; window.__loggedOut = true; } };");
+
+  const btn = await openJoinTab(window);
+  btn.click();
+  await settle(300);
+  assert.equal(window.eval('window.__loggedOut'), true, 'the dead session was cleared');
+  assert.equal(bodies.length, 2, 'and the join was tried again in the same click');
+  assert.equal(bodies[0].sbUid, '22222222-2222-4222-8222-222222222222', 'the first attempt was the account');
+  assert.equal(bodies[1].sbUid, '', 'the second is a guest');
+  assert.equal(bodies[1].pid, 'pdev1', 'with the device identity');
+  // the success path switches to MY CLUB (the roster they just joined), so the
+  // note lives on the join tab: reopen it and it is there.
+  window.eval("openCrewModal('join')");
+  await settle(120);
+  const note = dom.window.document.getElementById('crew-join-status');
+  assert.ok(note && /joined \[BHAI\]/i.test(note.textContent), 'and the tab says they are in: ' + (note && note.textContent));
+  assert.match(note.textContent, /deleted account was signed out/i, 'with the reason they are a guest now');
 });
 
 test("v158.8: DELETE THIS CLUB is the leader's button, asks first, and posts", { skip: SKIP }, async (t) => {
