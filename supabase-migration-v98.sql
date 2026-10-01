@@ -1263,7 +1263,14 @@ begin
         from public.crew_members m
        where m.member_key = any(v_keys)
           or (m.aliases is not null and m.aliases && v_keys)
-          or (v_names <> '{}' and m.name = any(v_names));
+          -- a name is weaker evidence, so it never claims a roster row whose key
+          -- still answers to a LIVE account: two racers sharing a display name
+          -- must not let one of them drag the other into a purge
+          or (v_names <> '{}' and m.name = any(v_names)
+              and not exists (
+                select 1 from auth.users u
+                 where u.id::text = m.member_key or ('sb:' || u.id::text) = m.member_key
+              ));
 
       if v_claims <> '{}' then
         select coalesce(array_agg(distinct a), '{}')
@@ -1424,13 +1431,19 @@ begin
         v_out := v_out || jsonb_build_object('crew_members', v_hit);
       end if;
 
-      -- a club with nobody left in it was that racer's club: it goes with them.
-      -- The built-in clubs are seeded and stay.
+      -- A club with nobody left in it was that racer's club, so it goes with
+      -- them - but ONLY a club this purge actually emptied (c.id = any(v_crews))
+      -- and ONLY when the leader who owned it is one of the identities being
+      -- purged. Without the first condition this statement deletes every club
+      -- that merely happens to have no roster rows right now, which is not this
+      -- racer's data at all. The built-in clubs are seeded and stay either way.
       execute $sql$
         delete from public.crews c
-         where coalesce(c.seeded, false) = false
+         where c.id = any($1)
+           and coalesce(c.seeded, false) = false
+           and (c.leader_uid is null or c.leader_uid = any($2))
            and not exists (select 1 from public.crew_members m where m.crew_id = c.id)
-      $sql$;
+      $sql$ using v_crews, v_keys;
 
       -- ...and a club whose leader is gone passes to the member who has been
       -- there longest, rather than pointing at an account that no longer exists
@@ -1442,9 +1455,10 @@ begin
               order by m.joined_at asc, m.member_key asc
               limit 1
            )
-         where exists (select 1 from public.crew_members m where m.crew_id = c.id)
+         where c.id = any($2)
+           and exists (select 1 from public.crew_members m where m.crew_id = c.id)
            and (c.leader_uid is null or c.leader_uid = any($1))
-      $sql$ using v_claims;
+      $sql$ using v_claims, v_crews;
     exception when undefined_column then
       null;
     end;

@@ -369,6 +369,39 @@ describe('v158 — the migration that does the database half', () => {
       'adding the column to an older tombstone table is safe');
   });
 
+  test('a club is only deleted when THIS purge emptied it and it was theirs', () => {
+    // The live incident this pins: the club cleanup used to run as
+    //   delete from crews where not seeded and not exists (any member row)
+    // with no reference to the clubs the purge had touched, so one purge deleted
+    // every club that merely had no roster rows stored at that moment - clubs
+    // belonging to racers who were not being purged at all. v_crews is computed
+    // for exactly this and has to be what the delete is scoped by.
+    const body = SQL.slice(SQL.indexOf('-- 6. the clubs'), SQL.indexOf('-- 7. the tombstone'));
+    const del = body.slice(body.indexOf('delete from public.crews c'), body.indexOf('$sql$ using v_crews, v_keys;'));
+    assert.match(del, /where c\.id = any\(\$1\)/,
+      'the club delete must name only the clubs this purge emptied');
+    assert.match(del, /coalesce\(c\.seeded, false\) = false/, 'the built-in clubs stay');
+    assert.match(del, /c\.leader_uid is null or c\.leader_uid = any\(\$2\)/,
+      'and only a club whose owner is one of the purged identities goes');
+    assert.match(del, /not exists \(select 1 from public\.crew_members m where m\.crew_id = c\.id\)/,
+      'a club with members left is never deleted');
+
+    const lead = body.slice(body.indexOf('update public.crews c'), body.indexOf('$sql$ using v_claims, v_crews;'));
+    assert.match(lead, /where c\.id = any\(\$2\)/, 'the leadership repair is scoped the same way');
+  });
+
+  test('a display name can never drag a live account into a purge', () => {
+    // The roster widening matches by name last, because a name is weaker
+    // evidence than a key. It therefore has to refuse any roster row whose key
+    // still answers to a live auth account: two racers called SRIDHAR must not
+    // let one of them delete the other.
+    const body = SQL.slice(SQL.indexOf('-- 2. widen the identity set'), SQL.indexOf('-- 3. one identity column per table'));
+    assert.match(body, /v_names <> '\{\}' and m\.name = any\(v_names\)/,
+      'the roster is still widened by a display name - that is how a name-keyed guest is found');
+    assert.match(body, /not exists \(\s*select 1 from auth\.users u\s*where u\.id::text = m\.member_key or \('sb:' \|\| u\.id::text\) = m\.member_key\s*\)/,
+      'but never for a roster row whose key belongs to a live account');
+  });
+
   test('the guest rows are never swept by the orphan pass', () => {
     // a guest is a device pid, not a uuid, and never had an auth account. The
     // sweep deletes "a uuid with no auth user", so a device must not qualify on
