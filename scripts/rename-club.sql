@@ -45,6 +45,41 @@
 -- ============================================================================
 
 
+-- ----------------------------------------------------------------------------
+--  The one thing this file needs in the database: a note of WHEN a club's
+--  wording last changed, so a running game server can notice a rename without
+--  being restarted. This is the same schema change supabase-migration-v158.sql
+--  applies (its section 1b) - kept here so this file works on its own.
+-- ----------------------------------------------------------------------------
+
+alter table if exists public.crews
+  add column if not exists updated_at timestamptz not null default now();
+
+create or replace function public.sr_crews_touch()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- ONLY wording counts. If a counter moving bumped this, every settlement
+  -- would make the game server re-read every club.
+  if new.name is distinct from old.name
+     or new.tag is distinct from old.tag
+     or new.motto is distinct from old.motto
+     or new.badge is distinct from old.badge
+     or new.color is distinct from old.color then
+    new.updated_at := now();
+  else
+    new.updated_at := old.updated_at;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists sr_crews_touch on public.crews;
+create trigger sr_crews_touch
+  before update on public.crews
+  for each row execute function public.sr_crews_touch();
+
+
 create or replace function public.sr_rename_club(
   p_club  text,
   p_name  text default null,

@@ -673,6 +673,10 @@ describe('v158.6 — a club renamed in the SQL editor appears without a restart'
     assert.ok(TOOL.indexOf('if p_dry_run then') < TOOL.indexOf('update public.crews c'), 'and stops before the write');
     assert.match(TOOL, /revoke all on function public\.sr_rename_club\(text, text, boolean, text, text, text, text\) from anon/,
       'service role only');
+    // the tool must work on a database that has never seen the new column
+    assert.match(TOOL, /add column if not exists updated_at timestamptz not null default now\(\)/,
+      'it carries the schema change it needs, so one paste is enough');
+    assert.match(TOOL, /create trigger sr_crews_touch/, 'including the trigger');
     assert.match(TOOL, /The board and the club page pick it up by themselves/,
       'and the operator is told the running server will pick it up without a restart');
   });
