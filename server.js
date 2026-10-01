@@ -2395,6 +2395,14 @@ app.post('/api/player/crew/join', async (req, res) => {
   const str = (v) => (typeof v === 'string' ? v.slice(0, 64) : '');
   const ids = { uid, name: str(name), pid: str(pid), sbUid: str(sbUid) };
 
+  // v158.7: a racer the purge erased cannot be written back into a club - the
+  // next purge pass would drop every row naming them again, and refusing with the
+  // reason is the only answer that is not a lie. KEYS only: a name that happens to
+  // be tombstoned must never keep a living racer out of a club.
+  if (crewStrongKeys(ids).some((k) => isPurgedKey(k))) {
+    return res.status(403).json({ ok: false, error: 'racer_erased' });
+  }
+
   // Remove from old crew — matched by any STRONG alias, not just the raw uid,
   // and the stale aliases pointing at the old club are released.
   const oldCrewId = findCrewIdStrong(ids);
@@ -2432,8 +2440,91 @@ app.post('/api/player/crew/join', async (req, res) => {
   refreshLobbyCrewTags(ids); // v90: show the new tag in any live lobby straight away
   // v95: make the membership durable (rule 3 - best-effort; joining still works
   // for this session if the database is unreachable)
-  persistCrewWithMember(targetCrew, member).catch(() => {}); // v96: club row first (foreign key)
-  res.json({ ok: true, crewId: cid, tag: targetCrew.tag, name: targetCrew.name, member });
+  // v96: club row first (foreign key). v158.7: awaited with a ceiling, so the
+  // answer can carry whether the roster row really landed. `durable` is false when
+  // this server has no database configured at all (a local run): then RAM is the
+  // store and there is nothing to warn about.
+  const waited = await Promise.race([
+    persistCrewWithMember(targetCrew, member).then((r) => (r ? 'stored' : 'refused')).catch(() => 'refused'),
+    new Promise((r) => setTimeout(() => r('pending'), SB_WRITE_WAIT_MS))
+  ]);
+  if (waited === 'refused') {
+    console.warn('[v158.7] club join was not stored: crew=' + cid + ' member=' + normCrewKey(member.uid));
+  }
+  res.json({
+    ok: true, crewId: cid, tag: targetCrew.tag, name: targetCrew.name, member,
+    durable: sbOn(), stored: waited === 'stored', pending: waited === 'pending'
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v158.8 DELETE A CLUB - the leader's own button.
+// ---------------------------------------------------------------------------
+// Deleting a club is irreversible, so it is the LEADER's action and nobody
+// else's, and it removes exactly three things: the club row, its roster (which
+// cascades from that row) and its milestone claims. No racer's own data is
+// touched - not their stats, wallet, garage, badges or race history. Those
+// belong to the racer, not to the club. The five built-in clubs are game content
+// and refuse the call. The leader's identity is matched the same way membership
+// is, so the account that founded the club can still delete it after a rename of
+// their own driver name.
+function crewLeaderKeys(c) {
+  const out = [];
+  const push = (v) => { const k = normCrewKey(v); if (k && out.indexOf(k) === -1) out.push(k); };
+  push(c && c.leaderUid);
+  const row = (c && Array.isArray(c.members) ? c.members : []).find((m) => m && m.role === 'leader');
+  if (row) { push(row.uid); if (Array.isArray(row.aliases)) row.aliases.forEach(push); }
+  return out;
+}
+function callerLeadsCrew(c, ids) {
+  const mine = crewStrongKeys(ids);
+  if (!mine.length) return false;
+  return crewLeaderKeys(c).some((k) => mine.indexOf(k) !== -1);
+}
+
+app.post('/api/player/crew/delete', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  const { uid, name, crewId, pid, sbUid } = req.body || {};
+  if (!uid || typeof uid !== 'string') return res.status(400).json({ ok: false, error: 'invalid_uid' });
+  const cid = String(crewId || '').trim().toLowerCase();
+  if (!cid) return res.status(400).json({ ok: false, error: 'unknown_crew' });
+  const str = (v) => (typeof v === 'string' ? v.slice(0, 64) : '');
+  const ids = { uid, name: str(name), pid: str(pid), sbUid: str(sbUid) };
+  await hydrateCrew(cid);
+  const c = memCrews.get(cid);
+  if (!c) return res.status(404).json({ ok: false, error: 'crew_not_found' });
+  if (SEEDED_CREW_IDS.has(cid)) return res.status(403).json({ ok: false, error: 'seeded_club' });
+  if (!callerLeadsCrew(c, ids)) return res.status(403).json({ ok: false, error: 'not_leader' });
+
+  const gone = (c.members || []).map((m) => ({
+    uid: m && m.uid,
+    name: m && m.name,
+    aliases: (m && Array.isArray(m.aliases)) ? m.aliases.slice() : []
+  }));
+
+  // ONE decisive write first: the club row. The roster cascades from it, so a
+  // failure here changes nothing and the leader can simply try again - instead of
+  // a half-deleted club whose roster is empty while its row lives on.
+  let removed = false;
+  try { removed = await sbDelete('crews', 'id=eq.' + encodeURIComponent(cid)); } catch (e) { removed = false; }
+  if (sbOn() && !removed) return res.status(502).json({ ok: false, error: 'delete_failed' });
+  // the claims table has no foreign key to the club; the roster sweep is repeated
+  // for a database whose crew_members predates the cascade
+  try { await sbDelete('crew_milestone_claims', 'crew_id=eq.' + encodeURIComponent(cid)); } catch (e) { /* best effort */ }
+  try { await sbDelete('crew_members', 'crew_id=eq.' + encodeURIComponent(cid)); } catch (e) { /* best effort */ }
+
+  // RAM is the other half of the delete: a running process that still holds the
+  // club keeps serving it from the board and letting racers join it.
+  memCrews.delete(cid);
+  for (const k of Array.from(memPlayerCrew.keys())) if (memPlayerCrew.get(k) === cid) memPlayerCrew.delete(k);
+  for (const k of Array.from(memClaimedCrewMilestones.keys())) if (k.indexOf(cid + ':') === 0) memClaimedCrewMilestones.delete(k);
+  for (const m of gone) unbindCrewIdentities(cid, { uid: m.uid, name: m.name, aliases: m.aliases });
+  forgetHydration('crew|' + cid);
+  // every open lobby loses the badge at the next snapshot instead of at the next
+  // deploy: broadcastLobby resolves the tag live from memCrews
+  for (const entry of rooms.values()) { try { broadcastLobby(entry); } catch (e) { /* a closed room */ } }
+  console.log('[v158.8] club deleted: ' + cid + ', ' + gone.length + ' roster row(s) released');
+  res.json({ ok: true, crewId: cid, tag: c.tag, name: c.name, members: gone.length, durable: sbOn(), stored: removed === true });
 });
 
 app.post('/api/player/crew/create', async (req, res) => {
@@ -2620,6 +2711,12 @@ const sbHdr = () => ({ apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE, 'Con
 //      be persisted the claim is rolled back and refused.
 // ---------------------------------------------------------------------------
 const SB_TIMEOUT_MS = 4000;
+// v158.7: how long a join waits for its roster row before answering. The write is
+// still best-effort - a racer joins a club for this session even when the
+// database is unreachable - but the reply has to say which of the two happened,
+// because "Joined!" over a write that never landed is a lie the next reload
+// exposes.
+const SB_WRITE_WAIT_MS = 1200;
 const sbWarned = new Set();
 function sbWarnOnce(key, msg) {
   if (sbWarned.has(key)) return;
@@ -2652,9 +2749,16 @@ function dropPurgedRows(rows) {
   if (!purgedKeys.size && !purgedNames.size) return rows;
   return rows.filter((r) => {
     if (!r || typeof r !== 'object') return true;
+    // a tombstoned key is decisive
     for (const f of SB_ID_FIELDS) {
       const v = r[f];
-      if (v != null && v !== '' && isPurgedRacer(v)) return false;
+      if (v != null && v !== '' && isPurgedKey(v)) return false;
+    }
+    // a tombstoned name only erases a row that is nothing but that name
+    for (const f of SB_ID_FIELDS) {
+      const v = r[f];
+      if (v == null || v === '' || !isPurgedName(v)) continue;
+      if (purgeNameIsSoleIdentity(v, purgeRowIdentities(r))) return false;
     }
     return true;
   });
@@ -2774,6 +2878,41 @@ function isPurgedRacer() {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// v158.7 A NAME TOMBSTONE IS NOT A KEY. WHY "JOINED!" STORED NOTHING.
+// ---------------------------------------------------------------------------
+// A tombstone row carries a KEY (the account uuid or the device pid) and, since
+// v158.3, the display names the erased account used. A KEY is decisive: every
+// row carrying it is the erased racer's and stays out. A NAME is not. Display
+// names are not unique, and the racer signing in today can be a different person
+// - or the same person on a new account - who happens to use the name of
+// somebody who was erased. Treating a name as decisive silently dropped that
+// living racer's writes: the join answered 200 {ok:true}, the screen said
+// "Joined!", and the roster row never reached the database, so the next reload
+// put them back outside the club. It also evicted them from the club they were
+// already in. So: a name match erases an identity only when that name is ALL the
+// identity has. Any other identity on the row that is not itself tombstoned means
+// the row belongs to somebody alive.
+function purgeRowIdentities(row) {
+  const out = [];
+  if (!row || typeof row !== 'object') return out;
+  for (const f of SB_ID_FIELDS) { const v = row[f]; if (v != null && v !== '') out.push(String(v)); }
+  if (Array.isArray(row.aliases)) for (const a of row.aliases) if (a != null && a !== '') out.push(String(a));
+  return out;
+}
+// `nameLike` matched a tombstone name; `ids` is every identity the same row or
+// cache entry carries. True only when none of them is a live identity of its own.
+function purgeNameIsSoleIdentity(nameLike, ids) {
+  const nk = purgeNameOf(nameLike);
+  if (!nk || !purgedNames.has(nk)) return false;
+  for (const raw of ids || []) {
+    const s = String(raw);
+    if (purgeNameOf(s) === nk) continue; // this value IS the name that matched
+    if (!isPurgedKey(s)) return false;   // a live identity of its own
+  }
+  return true;
+}
+
 // One pass over every cache. `matchKey` decides identity keys; `matchName`
 // decides rows that are only known by a display name. Returns the drop count.
 function sweepPurgedMemory(matchKey, matchName) {
@@ -2781,8 +2920,13 @@ function sweepPurgedMemory(matchKey, matchName) {
   const rowName = (row) => (row && typeof row.name === 'string' ? row.name : '');
   // a key can BE a display name: the club name hints and the 'name:' identity
   // form are both keyed by exactly that
+  // v158.7: the name half is narrowed the same way dropPurgedRows is - a cache
+  // entry that carries a live identity of its own is not the erased racer's,
+  // however its display name reads.
+  const idsOf = (k, row) => [k].concat(purgeRowIdentities(row));
   const hitRow = (k, row) => matchKey(k) ||
-    (matchName && (matchName(k) || (!!rowName(row) && matchName(rowName(row)))));
+    (matchName && ((matchName(k) && purgeNameIsSoleIdentity(k, idsOf(k, row))) ||
+      (!!rowName(row) && matchName(rowName(row)) && purgeNameIsSoleIdentity(rowName(row), idsOf(k, row)))));
   const sweep = (m) => {
     for (const k of Array.from(m.keys())) if (hitRow(k, m.get(k))) { m.delete(k); dropped++; }
   };
@@ -2809,7 +2953,9 @@ function sweepPurgedMemory(matchKey, matchName) {
     if (matchKey(k)) { memRevengeTargets.delete(k); dropped++; continue; }
     const list = memRevengeTargets.get(k);
     if (!Array.isArray(list)) continue;
-    const kept = list.filter((t) => !(matchKey(t && t.targetUid) || (matchName && t && t.targetName && matchName(t.targetName))));
+    const kept = list.filter((t) => !(matchKey(t && t.targetUid) ||
+      (matchName && t && t.targetName && matchName(t.targetName) &&
+        purgeNameIsSoleIdentity(t.targetName, [t.targetUid]))));
     if (kept.length !== list.length) { dropped += list.length - kept.length; memRevengeTargets.set(k, kept); }
   }
 
@@ -2821,7 +2967,8 @@ function sweepPurgedMemory(matchKey, matchName) {
     const before = c.members.length;
     const gone = c.members.filter((m) => matchKey(m && m.uid) ||
       (Array.isArray(m && m.aliases) && m.aliases.some((a) => matchKey(a))) ||
-      (matchName && m && m.name && matchName(m.name)));
+      (matchName && m && m.name && matchName(m.name) &&
+        purgeNameIsSoleIdentity(m.name, [m.uid].concat(Array.isArray(m.aliases) ? m.aliases : []))));
     if (!gone.length) continue;
     c.members = c.members.filter((m) => gone.indexOf(m) < 0);
     dropped += gone.length;
@@ -2842,7 +2989,9 @@ function sweepPurgedMemory(matchKey, matchName) {
   for (const mapId of Object.keys(leaderboard)) {
     const list = leaderboard[mapId];
     if (!Array.isArray(list)) continue;
-    const kept = list.filter((r) => !(matchKey(r && r.pid) || (matchName && r && r.name && matchName(r.name))));
+    const kept = list.filter((r) => !(matchKey(r && r.pid) ||
+      (matchName && r && r.name && matchName(r.name) &&
+        purgeNameIsSoleIdentity(r.name, [r.pid].concat(purgeRowIdentities(r))))));
     if (kept.length !== list.length) { dropped += list.length - kept.length; leaderboard[mapId] = kept; lbChanged = true; }
   }
   if (lbChanged) { try { fs.writeFileSync(LB_FILE, JSON.stringify(leaderboard)); } catch (e) { /* best effort */ } }
@@ -5407,6 +5556,11 @@ module.exports = {
   persistCrewClaim,
   crewDbRow,
   crewMemberDbRow,
+  dropPurgedRows,
+  purgeNameIsSoleIdentity,
+  purgeRowIdentities,
+  crewLeaderKeys,
+  callerLeadsCrew,
   applyCrewRow,
   applyMemberRow,
   SEEDED_CREW_IDS,

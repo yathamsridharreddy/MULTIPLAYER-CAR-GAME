@@ -4204,6 +4204,43 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 .cpc-btn.secondary { background: rgba(126, 231, 255, .1); border-color: rgba(126, 231, 255, .45); color: #9fe9ff; }
 .cpc-btn.secondary:hover { background: rgba(126, 231, 255, .18); }
 
+/* v158.8 — deleting a club is the leader's own action. It sits apart from the
+   roster, in the one red the game already uses for a refusal, and says in words
+   what happens to the racers in the club before the button is pressed. */
+.crew-danger-zone {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 82, 82, .28);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.crew-danger-zone .cdz-text {
+  font: 600 10px var(--font-body);
+  color: #8b93a8;
+  letter-spacing: .3px;
+  line-height: 1.5;
+}
+
+.crew-danger-btn {
+  background: rgba(255, 82, 82, .08);
+  border: 1px solid rgba(255, 82, 82, .55);
+  color: #ff8f8f;
+  font: 800 10.5px var(--font-display);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.crew-danger-btn:hover {
+  background: #ff5252;
+  border-color: #ff5252;
+  color: #12060a;
+}
+
 /* the standings club cell opens the roster too */
 .clb-crew-btn {
   display: flex; align-items: center; gap: 7px; width: 100%;

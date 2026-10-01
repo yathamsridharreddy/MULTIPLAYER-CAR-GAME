@@ -5327,7 +5327,17 @@ async function openCrewModal(tab = 'my') {
               </tbody>
             </table>
           </div>
+
+          ${c.isLeader || (c.members || []).some((m) => m.role === 'leader' && crewRowIsMe(m, ci)) ? `
+          <!-- v158.8: deleting a club is the leader's own action, so it sits
+               apart from the roster with the weight of a dangerous button. -->
+          <div class="crew-danger-zone">
+            <div class="cdz-text">CLOSING THE CLUB REMOVES IT AND ITS ROSTER FOR EVERYONE. EVERY RACER KEEPS THEIR OWN CARS, STATS AND RECORDS.</div>
+            <button class="crew-danger-btn" id="crew-delete-btn" data-crew="${escapeHtml(c.id)}">DELETE THIS CLUB</button>
+          </div>` : ''}
         `;
+        const delBtn = body.querySelector('#crew-delete-btn');
+        if (delBtn) delBtn.addEventListener('click', () => deleteCrewAction(delBtn.dataset.crew));
       } else {
         body.innerHTML = `
           <div style="text-align:center; padding:30px 10px;">
@@ -5375,12 +5385,12 @@ async function openCrewModal(tab = 'my') {
     body.innerHTML = `
       <form class="crew-form" id="crew-create-form" onsubmit="handleCreateCrewSubmit(event)">
         <label>
-          CLUB NAME (3-20 characters):
+          CLUB NAME (3-32 characters):
           <!-- v158.6: autocomplete off. A browser may pre-fill a text field with a
                value from elsewhere (a saved form entry, a password manager's "name"),
                and that text then rides along into the club's name - which is how a
                name nobody typed ended up in front of a real one. -->
-          <input id="cf-name" class="name-input" maxlength="20" placeholder="e.g. Redline Pro Racing" autocomplete="off" spellcheck="false" required />
+          <input id="cf-name" class="name-input" maxlength="32" placeholder="e.g. Redline Pro Racing" autocomplete="off" spellcheck="false" required />
         </label>
         <label>
           CLUB TAG (2-5 uppercase letters/numbers):
@@ -5462,24 +5472,92 @@ window.claimCrewMilestoneReward = async function(tier) {
   }
 };
 
+// v158.7: the server's reason, in words the racer can act on. The old fallback
+// was one toast - "Failed to join crew" - whatever had happened, which hid the
+// two cases that need completely different answers: the club is gone, or the
+// racer identity never arrived at all.
+function crewJoinErrorText(res) {
+  const code = (res && res.error) || '';
+  if (code === 'invalid_uid') return 'Your racer name was not sent - reload the page, then join again.';
+  if (code === 'racer_erased') return 'This racer was deleted from the game - sign in or sign up again, then join.';
+  if (code === 'crew_not_found') return 'That club is no longer around - the board is being refreshed.';
+  if (code === 'seeded_club') return 'The built-in clubs cannot be changed - join it instead.';
+  if (code) return 'Could not join the club (' + code + ').';
+  return 'The club did not answer - try again in a moment.';
+}
+
 window.joinCrewAction = async function(crewId) {
   const ci = crewIdentity(); // v90 club sync
   const name = prefs.name || 'RACER';
+  let res = null;
   try {
-    const res = await fetch(`${httpBase()}/api/player/crew/join`, {
+    res = await fetch(`${httpBase()}/api/player/crew/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Object.assign({}, ci, { name, crewId }))
     }).then(r => r.json());
-    if (res && res.ok) {
-      toast(`🏁 Joined [${res.tag}] ${res.name}!`);
-      openCrewModal('my');
-    } else {
-      toast(res.error || 'Failed to join crew');
-    }
   } catch (e) {
-    toast('Error joining crew');
+    // a network failure is not the club's fault, and saying so is the difference
+    // between "try again" and "the game is broken"
+    toast('Could not reach the game server - check your connection and try again.');
+    return;
   }
+  if (!res || !res.ok) { toast(crewJoinErrorText(res)); return; }
+  // v158.7: say whether the club really stored the membership. "Joined!" over a
+  // roster row that never landed is what made a club look joined for one session
+  // and vanish on the next reload.
+  if (res.durable && !res.stored && !res.pending) {
+    toast(`🏁 Joined [${res.tag}] - but the club could not save you to its roster. Reload and try again.`);
+  } else if (res.pending) {
+    toast(`🏁 Joined [${res.tag}] - still saving you to the roster…`);
+  } else {
+    toast(`🏁 Joined [${res.tag}] ${res.name}!`);
+  }
+  openCrewModal('my');
+};
+
+// v158.8: the leader's own button. The confirmation names the club and says what
+// happens to the racers in it - "delete?" with a yes/no box nobody reads is how a
+// club of twenty vanishes by accident.
+function crewDeleteErrorText(res) {
+  const code = (res && res.error) || '';
+  if (code === 'not_leader') return 'Only the club leader can delete a club.';
+  if (code === 'seeded_club') return 'The built-in clubs are part of the game and cannot be deleted.';
+  if (code === 'crew_not_found') return 'That club is already gone.';
+  if (code === 'delete_failed') return 'The club could not be deleted just now - nothing was changed. Try again.';
+  if (code) return 'Could not delete the club (' + code + ').';
+  return 'The club did not answer - try again in a moment.';
+}
+
+window.deleteCrewAction = async function(crewId) {
+  if (!crewId) return;
+  const ci = crewIdentity();
+  let crew = null;
+  try {
+    const info = await fetch(`${httpBase()}/api/crews/${encodeURIComponent(crewId)}?${crewQuery(ci)}`).then(r => r.json());
+    crew = info && info.crew ? info.crew : null;
+  } catch (e) { crew = null; }
+  const label = crew ? `[${crew.tag}] ${crew.name}` : 'this club';
+  const n = crew && Array.isArray(crew.members) ? crew.members.length : 0;
+  const q = `Delete ${label}?\n\n${n} racer${n === 1 ? '' : 's'} will be removed from the club and the club is gone for good.\nTheir own cars, stats and race history are not touched.\n\nThis cannot be undone.`;
+  if (!confirm(q)) return;
+  let res = null;
+  try {
+    res = await fetch(`${httpBase()}/api/player/crew/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({}, ci, { crewId }))
+    }).then(r => r.json());
+  } catch (e) {
+    toast('Could not reach the game server - the club was not deleted.');
+    return;
+  }
+  if (res && res.ok) {
+    toast(`🗑️ Club [${res.tag}] ${res.name} deleted.`);
+    openCrewModal('join'); // the board without it is the proof it went
+    return;
+  }
+  toast(crewDeleteErrorText(res));
 };
 
 window.handleCreateCrewSubmit = async function(e) {
@@ -5507,7 +5585,7 @@ window.handleCreateCrewSubmit = async function(e) {
       const errEl = $('cf-err');
       if (errEl) {
         if (res.error === 'tag_taken') errEl.innerHTML = icoSpan('x', 'ico-red') + ' Club Tag is already taken by another syndicate!';
-        else if (res.error === 'invalid_crew_name') errEl.innerHTML = icoSpan('x', 'ico-red') + ' Club Name must be 3-30 characters (letters, numbers, spaces, and punctuation)!';
+        else if (res.error === 'invalid_crew_name') errEl.innerHTML = icoSpan('x', 'ico-red') + ' Club Name must be 3-32 characters (letters, numbers, spaces, and punctuation)!';
         else if (res.error === 'invalid_crew_tag') errEl.innerHTML = icoSpan('x', 'ico-red') + ' Club Tag must be 2-5 letters/numbers (e.g. APEX, F1, SPEED)!';
         else errEl.innerHTML = icoSpan('x', 'ico-red') + ' ' + (res.error || 'Validation error');
       }

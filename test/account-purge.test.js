@@ -22,7 +22,7 @@
 process.env.SUPABASE_URL = 'https://fake.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
 
-const { test, describe, beforeEach, before, after } = require('node:test');
+const { test, describe, beforeEach, afterEach, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -46,6 +46,7 @@ const {
   memPlayerMissions, memEquippedBadges, memRevengeTargets,
   purgedKeys, purgedNames, isPurgedKey, isPurgedName, isPurgedRacer,
   noteTombstones, evictPurged, dropRacerMemory, refreshPurges,
+  memClaimedCrewMilestones, crewClaimKey,
   lbAdd, sbUpsert, hydrateMissions, hydrated, claimHydration, forgetHydration
 } = S;
 
@@ -682,3 +683,286 @@ describe('v158.6 — a club renamed in the SQL editor appears without a restart'
   });
 });
 
+
+describe('v158.7 — a name tombstone must not erase the racer who is still here', () => {
+  // THE BUG THIS PINS. The user deleted their account in Supabase, signed up
+  // again with the same driver name, and could not join a club: the join
+  // answered 200 {ok:true}, the screen said "Joined!", and the roster row was
+  // silently dropped before it was written, because the tombstone carried the
+  // display name and the write path treated a name as decisive. The next reload
+  // read the database and the club was gone. A KEY is decisive; a NAME is only
+  // decisive when it is all the identity has.
+  const http = require('node:http');
+  const GAME = fs.readFileSync(path.join(ROOT, 'public', 'js', 'game.js'), 'utf8');
+  const NAME2 = 'SRIDHAR';
+  const DEAD = '11111111-1111-4111-8111-111111111111';  // the account that was deleted
+  const NEW = '22222222-2222-4222-8222-222222222222';   // the account signing in today
+  const ME = { uid: NAME2, pid: 'sb:' + NEW, sbUid: NEW, name: NAME2 };
+  let srv, base;
+  const post = async (p, body) => {
+    const r = await fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: r.status, json: await r.json() };
+  };
+  const joinBody = (extra) => Object.assign({}, ME, { crewId: 'jointest', name: NAME2 }, extra || {});
+  const seedClub = () => {
+    memCrews.set('jointest', {
+      id: 'jointest', tag: 'JNT', name: 'Join Test', motto: 'm', badge: 'bolt', color: '#fff',
+      leaderUid: 'someone-else', members: [], weeklyMeters: 0, totalMeters: 0, weeklyPoints: 0
+    });
+    forgetHydration('crew|jointest');
+    hydrated.delete('crew|jointest');
+  };
+
+  before(async () => {
+    await new Promise((r) => { srv = http.createServer(S.app); srv.listen(0, '127.0.0.1', () => { base = 'http://127.0.0.1:' + srv.address().port; r(); }); });
+  });
+  after(async () => {
+    if (srv) await new Promise((r) => srv.close(r));
+    memCrews.delete('jointest');
+  });
+  beforeEach(() => {
+    calls.length = 0;
+    purgedKeys.clear(); purgedNames.clear();
+    seedClub();
+    responder = async (u) => {
+      if (u.startsWith(SB + '/rest/v1/crews?')) {
+        return { ok: true, status: 200, json: async () => [{ id: 'jointest', tag: 'JNT', name: 'Join Test', motto: 'm', badge: 'bolt', color: '#fff', weekly_meters: 0, total_meters: 0, weekly_points: 0, seeded: false }] };
+      }
+      return { ok: true, status: 201, json: async () => [] };
+    };
+  });
+
+  test('the write keeps a row with a live account uuid beside a tombstoned name', () => {
+    noteTombstones([{ key: DEAD, names: [NAME2], purged_at: new Date().toISOString() }]);
+    const row = { crew_id: 'jointest', member_key: 'sridhar', name: NAME2, role: 'leader', aliases: ['sridhar', NEW], weekly_meters: 0, total_meters: 0, weekly_points: 0 };
+    assert.deepEqual(S.dropPurgedRows([row]), [row],
+      'the roster row is written: the same row carries an account uuid the tombstones do not name');
+    assert.deepEqual(S.dropPurgedRows([Object.assign({}, row, { aliases: ['sridhar'] })]), [],
+      'a row that is nothing but the erased name is still dropped');
+    assert.deepEqual(S.dropPurgedRows([Object.assign({}, row, { member_key: DEAD, aliases: [DEAD] })]), [],
+      'and a tombstoned KEY always drops, whatever else the row says');
+    assert.equal(S.purgeNameIsSoleIdentity(NAME2, ['sridhar', NEW]), false, 'the helper says why');
+    assert.equal(S.purgeNameIsSoleIdentity(NAME2, ['sridhar']), true);
+  });
+
+  test('the sweep keeps the living member and still takes the erased one out', () => {
+    noteTombstones([{ key: DEAD, names: [NAME2], purged_at: new Date().toISOString() }]);
+    const c = memCrews.get('jointest');
+    c.members = [{ uid: 'sridhar', name: NAME2, role: 'leader', aliases: ['sridhar', NEW], weeklyMeters: 1000, totalMeters: 2000, weeklyPoints: 5, joined_at: '2026-01-01T00:00:00Z' }];
+    c.weeklyMeters = 1000; c.totalMeters = 2000; c.weeklyPoints = 5;
+    evictPurged();
+    assert.equal(c.members.length, 1, 'the member whose row carries a live uuid stayed');
+    assert.equal(c.members[0].role, 'leader', 'and keeps the club');
+    assert.equal(c.weeklyMeters, 1000, 'and their kilometres still count');
+
+    c.members = [{ uid: 'sridhar', name: NAME2, role: 'member', aliases: [], weeklyMeters: 400, totalMeters: 900, weeklyPoints: 4, joined_at: '2026-01-02T00:00:00Z' }];
+    c.weeklyMeters = 400; c.totalMeters = 900; c.weeklyPoints = 4;
+    evictPurged();
+    assert.equal(c.members.length, 0, 'a row that is nothing but the erased name is still taken out');
+    assert.equal(c.weeklyMeters, 0, 'and its kilometres come off the club');
+  });
+
+  test('the join stores the membership, and the reply says so', async () => {
+    noteTombstones([{ key: DEAD, names: [NAME2], purged_at: new Date().toISOString() }]);
+    const res = await post('/api/player/crew/join', joinBody());
+    assert.equal(res.status, 200);
+    assert.equal(res.json.ok, true, 'the join is accepted');
+    assert.equal(res.json.stored, true, 'and the reply says the roster row landed');
+    assert.equal(res.json.pending, false);
+    assert.equal(res.json.durable, true, 'with a database configured, the racer is told the truth');
+    const writes = calls.filter((x) => x.method === 'POST' && x.url.includes('/crew_members'));
+    assert.equal(writes.length, 1, 'the roster row was really offered to the database');
+    assert.equal(writes[0].json[0].member_key, 'sridhar');
+    assert.ok(writes[0].json[0].aliases.includes(NEW), 'with the live account uuid among its aliases');
+  });
+
+  test('a racer the purge erased is refused with the reason, not with a 200', async () => {
+    noteTombstones([{ key: NEW, names: [NAME2], purged_at: new Date().toISOString() }]);
+    const res = await post('/api/player/crew/join', joinBody());
+    assert.equal(res.status, 403);
+    assert.equal(res.json.error, 'racer_erased');
+    assert.ok(!calls.some((x) => x.method === 'POST' && x.url.includes('/crew_members')), 'and nothing was written');
+  });
+
+  test('a refused write is reported as refused, not dressed up as a join', async () => {
+    noteTombstones([{ key: DEAD, names: [NAME2], purged_at: new Date().toISOString() }]);
+    responder = async (u, opts) => {
+      if (u.startsWith(SB + '/rest/v1/crews?')) {
+        return { ok: true, status: 200, json: async () => [{ id: 'jointest', tag: 'JNT', name: 'Join Test', motto: 'm', badge: 'bolt', color: '#fff', weekly_meters: 0, total_meters: 0, weekly_points: 0, seeded: false }] };
+      }
+      if (u.startsWith(SB + '/rest/v1/crew_members') && opts && opts.method === 'POST') {
+        return { ok: false, status: 400, json: async () => ({ message: 'nope' }), text: async () => 'nope' };
+      }
+      return { ok: true, status: 201, json: async () => [], text: async () => '' };
+    };
+    const res = await post('/api/player/crew/join', joinBody());
+    assert.equal(res.status, 200, 'the racer is still in the club for this session');
+    assert.equal(res.json.ok, true);
+    assert.equal(res.json.stored, false, 'but the reply does not pretend the roster row was stored');
+    assert.equal(res.json.pending, false, 'it waited for the answer');
+  });
+
+  test('the client says why, and never hides it behind "Failed to join crew"', () => {
+    assert.match(GAME, /function crewJoinErrorText/, 'the reason is turned into words');
+    assert.match(GAME, /code === 'invalid_uid'/, 'an identity that never arrived says so');
+    assert.match(GAME, /code === 'racer_erased'/, 'an erased racer is told what to do about it');
+    assert.match(GAME, /code === 'crew_not_found'/, 'a club that is gone says so');
+    assert.match(GAME, /res\.durable && !res\.stored && !res\.pending/, 'a write that did not land is not toasted as success');
+    assert.match(GAME, /Could not reach the game server/, 'a network failure is named as one');
+    assert.ok(!/toast\([^\n]*Failed to join crew/.test(GAME), 'the toast that hid every one of these is gone');
+  });
+});
+
+describe('v158.8 — deleting a club is the leader\'s own action', () => {
+  const http = require('node:http');
+  const TOOL = fs.readFileSync(path.join(ROOT, 'scripts', 'delete-club.sql'), 'utf8');
+  const GAME = fs.readFileSync(path.join(ROOT, 'public', 'js', 'game.js'), 'utf8');
+  const DEL_SRC = SERVER_SRC.slice(SERVER_SRC.indexOf("app.post('/api/player/crew/delete'"), SERVER_SRC.indexOf("app.post('/api/player/crew/create'"));
+  const MATE_U = '33333333-7777-4777-8777-333333333333';   // its own uuid: V belongs to the v158 seeding
+  const LEADER = { uid: 'SRIDHAR', pid: 'sb:' + U, sbUid: U, name: 'SRIDHAR' };
+  const MATE = { uid: 'MATE', pid: 'sb:' + MATE_U, sbUid: MATE_U, name: 'MATE' };
+  let srv, base;
+  const post = async (p, body) => {
+    const r = await fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: r.status, json: await r.json() };
+  };
+  const get = async (p) => { const r = await fetch(base + p); return { status: r.status, json: await r.json() }; };
+  const seedDeleted = () => {
+    memCrews.set('deltest', {
+      id: 'deltest', tag: 'DELT', name: 'Delete Test', motto: 'm', badge: 'bolt', color: '#fff',
+      leaderUid: 'SRIDHAR', members: [
+        { uid: 'SRIDHAR', name: 'SRIDHAR', role: 'leader', weeklyMeters: 1000, totalMeters: 3000, weeklyPoints: 9, aliases: ['sridhar', U], joined_at: '2026-01-01T00:00:00Z' },
+        { uid: 'MATE', name: 'MATE', role: 'member', weeklyMeters: 500, totalMeters: 1500, weeklyPoints: 4, aliases: ['mate', MATE_U], joined_at: '2026-01-02T00:00:00Z' }
+      ],
+      weeklyMeters: 1500, totalMeters: 4500, weeklyPoints: 13
+    });
+    memPlayerCrew.set('SRIDHAR', 'deltest');
+    memPlayerCrew.set(U, 'deltest');
+    memPlayerCrew.set(MATE_U, 'deltest');
+    memCrewAliases.set('sridhar', 'deltest');
+    memCrewAliases.set(U, 'deltest');
+    memCrewAliases.set(MATE_U, 'deltest');
+    memCrewNameHints.set('sridhar', new Set(['deltest']));
+    memClaimedCrewMilestones.set(crewClaimKey('deltest', 1, 'sridhar', '2026-W40'), true);
+    memClaimedCrewMilestones.set(crewClaimKey('apex', 1, 'someone', '2026-W40'), true);
+    forgetHydration('crew|deltest');
+    hydrated.delete('crew|deltest');
+  };
+
+  before(async () => {
+    await new Promise((r) => { srv = http.createServer(S.app); srv.listen(0, '127.0.0.1', () => { base = 'http://127.0.0.1:' + srv.address().port; r(); }); });
+  });
+  after(async () => {
+    if (srv) await new Promise((r) => srv.close(r));
+    memCrews.delete('deltest');
+  });
+  afterEach(() => {
+    memPlayerCrew.delete('SRIDHAR'); memPlayerCrew.delete(U); memPlayerCrew.delete(MATE_U);
+    memCrewAliases.delete('sridhar'); memCrewAliases.delete(U); memCrewAliases.delete(MATE_U);
+    memCrewNameHints.delete('sridhar');
+    memClaimedCrewMilestones.delete(crewClaimKey('deltest', 1, 'sridhar', '2026-W40'));
+    memCrews.delete('deltest');
+  });
+  beforeEach(() => {
+    calls.length = 0;
+    seedDeleted();
+    responder = async () => ({ ok: true, status: 200, json: async () => [], text: async () => '' });
+  });
+
+  test('only the leader, and never a built-in club', async () => {
+    const member = await post('/api/player/crew/delete', Object.assign({}, MATE, { crewId: 'deltest' }));
+    assert.equal(member.status, 403);
+    assert.equal(member.json.error, 'not_leader', 'a plain member cannot delete the club');
+    const stranger = await post('/api/player/crew/delete', { uid: 'NOBODY', pid: 'p', sbUid: '', name: 'NOBODY', crewId: 'deltest' });
+    assert.equal(stranger.status, 403);
+    assert.equal(stranger.json.error, 'not_leader');
+    const seeded = await post('/api/player/crew/delete', Object.assign({}, LEADER, { crewId: 'apex' }));
+    assert.equal(seeded.status, 403);
+    assert.equal(seeded.json.error, 'seeded_club', 'the game\'s own clubs are not the leader\'s to delete');
+    const unknown = await post('/api/player/crew/delete', Object.assign({}, LEADER, { crewId: 'nosuchclub' }));
+    assert.equal(unknown.status, 404);
+    assert.equal(unknown.json.error, 'crew_not_found');
+    assert.ok(!calls.some((c) => c.method === 'DELETE'), 'nothing was deleted by any of the refusals');
+    assert.ok(memCrews.has('deltest'), 'and the club is still there');
+  });
+
+  test('the leader deletes it, and the running server forgets it everywhere', async () => {
+    const res = await post('/api/player/crew/delete', Object.assign({}, LEADER, { crewId: 'deltest' }));
+    assert.equal(res.status, 200);
+    assert.equal(res.json.ok, true);
+    assert.equal(res.json.members, 2, 'the reply says how many racers were released');
+
+    const dels = calls.filter((c) => c.method === 'DELETE').map((c) => c.url);
+    assert.ok(dels.some((u) => u.includes('/crews?') && u.includes('id=eq.deltest')), 'the club row is deleted');
+    assert.ok(dels.some((u) => u.includes('/crew_members?') && u.includes('crew_id=eq.deltest')), 'its roster rows are deleted');
+    assert.ok(dels.some((u) => u.includes('/crew_milestone_claims?') && u.includes('crew_id=eq.deltest')), 'its claims are deleted');
+    assert.equal(dels.length, 3, 'and nothing else in the database is touched');
+    assert.ok(!calls.some((c) => /player_stats|leaderboard|ghosts|player_wallet/.test(c.url)), 'no racer table is named');
+
+    assert.ok(!memCrews.has('deltest'), 'the club is out of memory');
+    assert.ok(!memPlayerCrew.has('SRIDHAR') && !memPlayerCrew.has(U) && !memPlayerCrew.has(MATE_U), 'every member is unbound from it');
+    assert.ok(!memCrewAliases.has('sridhar') && !memCrewAliases.has(U) && !memCrewAliases.has(MATE_U), 'and their identity aliases are released');
+    assert.ok(!memCrewNameHints.has('sridhar'), 'including the loose name hint');
+    assert.ok(!memClaimedCrewMilestones.has(crewClaimKey('deltest', 1, 'sridhar', '2026-W40')), 'its claims leave memory too');
+    assert.ok(memClaimedCrewMilestones.has(crewClaimKey('apex', 1, 'someone', '2026-W40')), 'another club\'s claims stay');
+
+    const board = await get('/api/crews');
+    assert.ok(!board.json.crews.some((c) => c.id === 'deltest'), 'the board no longer lists it');
+    assert.ok(board.json.crews.some((c) => c.id === 'apex'), 'and still lists the clubs that are left');
+    const page = await get('/api/crews/deltest');
+    assert.equal(page.status, 404);
+    assert.equal(page.json.error, 'crew_not_found', 'its page is gone');
+    const mine = await get('/api/player/crew?' + new URLSearchParams(MATE).toString());
+    assert.equal(mine.json.hasCrew, false, 'and its members are clubless');
+  });
+
+  test('the leader is recognised through the roster row, not just one field', () => {
+    const club = { id: 'x', leaderUid: 'pabc', members: [{ uid: 'pabc', name: 'OLD NAME', role: 'leader', aliases: ['old name', U] }] };
+    assert.deepEqual(S.crewLeaderKeys(club), ['pabc', 'old name', U], 'both the club field and the leader row count');
+    assert.equal(S.callerLeadsCrew(club, { uid: 'pabc' }), true, 'the founder deletes their own club');
+    assert.equal(S.callerLeadsCrew(club, { uid: 'x', sbUid: U }), true, 'and can still do it from a signed-in identity');
+    assert.equal(S.callerLeadsCrew(club, { uid: 'mate', sbUid: MATE_U }), false, 'a member cannot');
+    assert.equal(S.callerLeadsCrew(club, { uid: 'nobody' }), false, 'and neither can a stranger');
+    assert.match(DEL_SRC, /if \(SEEDED_CREW_IDS\.has\(cid\)\)/, 'the built-in clubs are refused by id');
+    assert.ok(DEL_SRC.indexOf('SEEDED_CREW_IDS.has(cid)') < DEL_SRC.indexOf("sbDelete('crews'"), 'and the refusal comes before any delete');
+    assert.ok(DEL_SRC.indexOf('callerLeadsCrew(c, ids)') < DEL_SRC.indexOf("sbDelete('crews'"), 'so does the leader check');
+    assert.match(DEL_SRC, /if \(sbOn\(\) && !removed\) return res\.status\(502\)/,
+      'a database that refuses the club delete leaves the club intact instead of half-deleting it');
+  });
+
+  test('the SQL tool deletes one club, its roster and its claims - nothing else', () => {
+    assert.match(TOOL, /create or replace function public\.sr_delete_club\(\s*p_club\s+text,\s*p_dry_run boolean default false\s*\)/);
+    assert.match(TOOL, /'error', 'built_in_club'/, 'the game\'s own clubs are refused');
+    assert.match(TOOL, /'error', 'club_not_found'/, 'an unknown club reports, never guesses');
+    assert.match(TOOL, /'error', 'ambiguous_name'/, 'two clubs with the same name are never a coin toss');
+    assert.match(TOOL, /if p_dry_run then/, 'a preview exists');
+    assert.ok(TOOL.indexOf('if p_dry_run then') < TOOL.indexOf('delete from public.crew_milestone_claims'),
+      'and it returns before anything is deleted');
+    assert.match(TOOL, /delete from public\.crew_milestone_claims where crew_id = v_id/);
+    assert.match(TOOL, /delete from public\.crew_members where crew_id = v_id/);
+    assert.match(TOOL, /delete from public\.crews c where c\.id = v_id/);
+    const deletes = TOOL.match(/delete from [a-z_.]+/g) || [];
+    assert.equal(deletes.length, 3, 'three deletes, all of them scoped to the one club: ' + deletes.join(', '));
+    assert.ok(!/insert into|update public/.test(TOOL.slice(TOOL.indexOf('as $$') + 5, TOOL.indexOf('end $$;'))),
+      'the tool writes no tombstone and updates nothing');
+    const body = TOOL.slice(TOOL.indexOf('as $$') + 5, TOOL.indexOf('end $$;'));
+    assert.ok(!/player_stats|player_wallet|leaderboard|race_history|ghosts/.test(body),
+      'a racer\'s own data is not named by one statement of it');
+    assert.match(TOOL, /to_regclass\('public\.crew_members'\)/, 'a database without the roster table still runs');
+    assert.match(TOOL, /revoke all on function public\.sr_delete_club\(text, boolean\) from anon/, 'service role only');
+    assert.match(TOOL, /keeps showing it until it restarts/, 'and the operator is told what a running server does afterwards');
+  });
+
+  test('the in-game button is the leader\'s, and it warns before it deletes', () => {
+    assert.match(GAME, /window\.deleteCrewAction = async function/);
+    assert.match(GAME, /c\.isLeader \|\| \(c\.members \|\| \[\]\)\.some\(\(m\) => m\.role === 'leader' && crewRowIsMe\(m, ci\)\)/,
+      'the button is rendered for the leader and nobody else');
+    assert.match(GAME, /crew-danger-btn/, 'it is the dangerous-looking button');
+    assert.match(GAME, /if \(!confirm\(q\)\) return;/, 'and it asks first');
+    assert.match(GAME, /racer\$\{n === 1 \? '' : 's'\} will be removed from the club/, 'naming what happens to the racers in it');
+    assert.match(GAME, /cannot be undone/, 'and that it is irreversible');
+    assert.match(GAME, /function crewDeleteErrorText/, 'refusals come back as words');
+    assert.match(GAME, /code === 'not_leader'/, 'starting with who may do this');
+    assert.match(GAME, /openCrewModal\('join'\)/, 'afterwards the board without the club is shown');
+  });
+});
