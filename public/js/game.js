@@ -5157,6 +5157,98 @@ function ensureCrewPersistBanner(body) {
   }).catch(() => {});
 }
 
+// ---------------------------------------------------------------------------
+// v156 — WHO IS IN THIS CLUB.
+//
+// The club directory is public: any racer can open any club and see its roster,
+// member or not. That is the point of a club on this site - the tag on a car in a
+// lobby means something only if you can look up who races under it.
+//
+// The server sends a display name, a role and a contribution; the identities it
+// settles races by never leave it. `you` marks the reader's own row when they are a
+// member, so nobody has to guess which racer is them.
+// ---------------------------------------------------------------------------
+let crewModalTab = 'my';   // the tab the roster view came from, so BACK returns to it
+
+function crewRosterHtml(c, opts) {
+  const o = opts || {};
+  const back = o.backTab || 'join';
+  const rows = c.members || [];
+  const stat = (label, value) => `<div class="chc-stat-col"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
+  const leaderLine = c.leaderName
+    ? `<div class="crew-roster-leader">${icoSpan('crown', 'gold')}<span>${escapeHtml(tI18n('clubRunBy') || 'RUN BY')} <b>${escapeHtml(c.leaderName)}</b></span></div>`
+    : '';
+  return `
+    <button class="ghost sm crew-roster-back" data-back="${escapeHtml(back)}">${icoSpan('arrow-left')}<span>${escapeHtml(tI18n('backToClubs') || 'BACK')}</span></button>
+    <div class="crew-hero-card" style="border-color:${c.color || '#00e5ff'};">
+      <div class="chc-header">
+        <div class="chc-title">
+          <span class="syndicate-tag" style="background:${c.color || '#ff3366'};">[${escapeHtml(c.tag)}]</span>
+          <span class="chc-name">${badgeMarkup(c.badge)} ${escapeHtml(c.name)}</span>
+        </div>
+        <span class="crew-roster-count">${icoSpan('users')}<b>${rows.length}</b></span>
+      </div>
+      <div class="chc-motto">"${escapeHtml(c.motto || 'Speed is our only law')}"</div>
+      ${leaderLine}
+      <div class="chc-stats">
+        ${stat(tI18n('weeklyMileage') || 'WEEKLY MILEAGE', c.weeklyKm + ' km')}
+        ${stat(tI18n('grandPrixPts') || 'GRAND PRIX PTS', String(c.weeklyPoints))}
+        ${stat(tI18n('totalMileage') || 'TOTAL MILEAGE', c.totalKm + ' km')}
+      </div>
+      ${c.resetsIn ? `<div class="crew-roster-resets">${escapeHtml(tI18n('resetsIn') || 'Resets in')} ${escapeHtml(c.resetsIn)}</div>` : ''}
+    </div>
+    <div class="crew-roster-wrap">
+      <div class="crew-roster-title">${icoSpan('users')}<span>${escapeHtml(tI18n('crewRoster', { count: rows.length }) || ('CREW ROSTER (' + rows.length + ')'))}</span></div>
+      ${rows.length ? `
+        <table class="crew-lb-table crew-roster-table">
+          <thead><tr>
+            <th>${escapeHtml(tI18n('racerTh') || 'RACER')}</th>
+            <th>${escapeHtml(tI18n('roleTh') || 'ROLE')}</th>
+            <th>${escapeHtml(tI18n('weeklyDistTh') || 'WEEKLY DISTANCE')}</th>
+            <th>${escapeHtml(tI18n('pointsTh') || 'POINTS')}</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map((m) => `
+              <tr class="${m.you ? 'is-me' : ''}">
+                <td><b>${escapeHtml(m.name)}</b>${m.you ? ` <span class="crew-you">(${escapeHtml(tI18n('you') || 'YOU')})</span>` : ''}</td>
+                <td><span class="crew-role ${m.role === 'leader' ? 'leader' : ''}">${escapeHtml((m.role === 'leader' ? (tI18n('leader') || 'LEADER') : (tI18n('member') || 'MEMBER')).toUpperCase())}</span></td>
+                <td class="clb-km">${m.weeklyKm} km</td>
+                <td class="clb-pts">+${m.weeklyPoints || 0}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : `<p class="crew-roster-empty">${escapeHtml(tI18n('noMembersYet') || 'No racers in this club yet.')}</p>`}
+    </div>
+  `;
+}
+
+// Opens one club. `fromTab` is where BACK goes, so a racer who was reading the
+// championship standings is returned to the standings, not to the join list.
+window.openCrewRoster = async function (crewId, fromTab) {
+  const body = $('crew-body');
+  if (!body || !crewId) return;
+  const back = fromTab || crewModalTab || 'join';
+  ['my', 'join', 'create', 'board'].forEach((t) => {
+    const btn = $(`ctab-${t}`);
+    if (btn) btn.classList.toggle('active', t === back);
+  });
+  body.innerHTML = '<div class="crew-loading">' + (tI18n('loadingCircuit') || 'Loading Syndicate…') + '</div>';
+  try {
+    const ci = crewIdentity();
+    const res = await fetch(`${httpBase()}/api/crews/${encodeURIComponent(crewId)}?${crewQuery(ci)}`).then(r => r.json());
+    if (!res || !res.ok || !res.crew) {
+      body.innerHTML = '<div class="crew-fail">' + escapeHtml(tI18n('clubGone') || 'That club is no longer around.') + '</div>';
+      return;
+    }
+    body.innerHTML = crewRosterHtml(res.crew, { backTab: back });
+    const backBtn = body.querySelector('.crew-roster-back');
+    if (backBtn) backBtn.addEventListener('click', () => openCrewModal(backBtn.dataset.back || 'join'));
+  } catch (e) {
+    body.innerHTML = '<div class="crew-fail">' + escapeHtml(tI18n('clubGone') || 'That club is no longer around.') + '</div>';
+  }
+};
+
 // v83 Racing Syndicate Crews Modal Controller
 async function openCrewModal(tab = 'my') {
   const dlg = $('crew-dlg');
@@ -5165,6 +5257,7 @@ async function openCrewModal(tab = 'my') {
   if (!body) return;
   dlg.hidden = false;
   ensureCrewPersistBanner(body); // v107
+  crewModalTab = tab;
 
   ['my', 'join', 'create', 'board'].forEach(t => {
     const btn = $(`ctab-${t}`);
@@ -5263,8 +5356,12 @@ async function openCrewModal(tab = 'my') {
                 <span class="cpc-name">${badgeMarkup(cr.badge)} ${escapeHtml(cr.name)}</span>
               </div>
               <div class="cpc-motto">"${escapeHtml(cr.motto)}"</div>
-              <div class="cpc-stats">👥 ${cr.memberCount} Racers · ${cr.weeklyKm} km this week</div>
-              <button class="cpc-btn" onclick="joinCrewAction('${cr.id}')">JOIN [${escapeHtml(cr.tag)}]</button>
+              <div class="cpc-stats">${icoSpan('users')} ${cr.memberCount} ${escapeHtml(tI18n('racers') || 'Racers')} · ${cr.weeklyKm} km ${escapeHtml(tI18n('thisWeek') || 'this week')}</div>
+              ${cr.leaderName ? `<div class="cpc-leader">${icoSpan('crown', 'gold')}<span>${escapeHtml(tI18n('clubRunBy') || 'RUN BY')} <b>${escapeHtml(cr.leaderName)}</b></span></div>` : ''}
+              <div class="cpc-actions">
+                <button class="cpc-btn secondary" onclick="openCrewRoster('${cr.id}', 'join')">${icoSpan('eye')} ${escapeHtml(tI18n('viewRoster') || "WHO'S IN")}</button>
+                <button class="cpc-btn" onclick="joinCrewAction('${cr.id}')">JOIN [${escapeHtml(cr.tag)}]</button>
+              </div>
             </div>
           `).join('')}
         </div>
@@ -5319,8 +5416,11 @@ async function openCrewModal(tab = 'my') {
               <tr>
                 <td class="clb-rank">#${cr.rank}</td>
                 <td class="clb-crew">
-                  <span class="syndicate-tag" style="background:${cr.color || '#ff3366'};">[${escapeHtml(cr.tag)}]</span>
-                  <b>${badgeMarkup(cr.badge)} ${escapeHtml(cr.name)}</b>
+                  <button class="clb-crew-btn" onclick="openCrewRoster('${cr.id}', 'board')" title="${escapeHtml(tI18n('viewRoster') || "WHO'S IN")}">
+                    <span class="syndicate-tag" style="background:${cr.color || '#ff3366'};">[${escapeHtml(cr.tag)}]</span>
+                    <b>${badgeMarkup(cr.badge)} ${escapeHtml(cr.name)}</b>
+                    <span class="clb-crew-peek">${icoSpan('eye')}</span>
+                  </button>
                 </td>
                 <td>👥 ${cr.memberCount}</td>
                 <td class="clb-km">${cr.weeklyKm} km</td>
@@ -6042,7 +6142,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v155';
+const BUILD = 'v156';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

@@ -4168,3 +4168,48 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
   .sens-val, #set-sens::-webkit-slider-thumb { transition: none; }
   .sens-val.pop { transform: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   v156 — the club roster, open to everyone.
+
+   The directory used to be a list of names with a member COUNT; you could not
+   find out who those members were until you had joined. These rules carry the
+   roster view: one club, its racers, and which of them is you.
+   --------------------------------------------------------------------------- */
+.crew-roster-back {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin: 0 0 10px; font: 800 10px Orbitron, sans-serif; letter-spacing: .8px;
+}
+.crew-roster-count { display: inline-flex; align-items: center; gap: 6px; font: 800 12px Orbitron, sans-serif; color: #7ee7ff; }
+.crew-roster-leader { display: flex; align-items: center; gap: 6px; margin-top: 8px; font: 700 10px Orbitron, sans-serif; letter-spacing: .6px; color: #ffd479; }
+.crew-roster-leader span { color: #8b93a8; font-family: Rajdhani, sans-serif; font-size: 12px; letter-spacing: .4px; }
+.crew-roster-leader b { color: #ffd479; }
+.crew-roster-resets { margin-top: 7px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.09); text-align: center; font: 700 9px Orbitron, sans-serif; letter-spacing: .7px; color: #7fd7ff; }
+.crew-roster-wrap { margin-top: 16px; }
+.crew-roster-title { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font: 800 12px Orbitron, sans-serif; color: #fff; }
+.crew-roster-empty { padding: 18px; text-align: center; font-size: 12px; color: #8b93a8; }
+.crew-roster-table tr.is-me { background: rgba(0, 229, 255, .07); box-shadow: inset 3px 0 0 var(--cyber-cyan); }
+.crew-you { color: var(--cyber-cyan); font: 800 9px Orbitron, sans-serif; letter-spacing: .5px; }
+.crew-role { font: 700 10px Orbitron, sans-serif; letter-spacing: .5px; color: #8b93a8; }
+.crew-role.leader { color: #ffd479; }
+.clb-pts { color: #ffd479; font-weight: 700; }
+.crew-loading { color: #8b93a8; text-align: center; padding: 30px; }
+.crew-fail { color: #ff5252; text-align: center; padding: 20px; }
+
+/* the club card: who runs it, and a way in to the roster */
+.cpc-leader { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; font: 700 9px Orbitron, sans-serif; letter-spacing: .5px; color: #8b93a8; }
+.cpc-leader b { color: #ffd479; }
+.cpc-actions { display: flex; gap: 8px; margin-top: 9px; }
+.cpc-actions .cpc-btn { flex: 1; margin-top: 0; }
+.cpc-btn.secondary { background: rgba(126, 231, 255, .1); border-color: rgba(126, 231, 255, .45); color: #9fe9ff; }
+.cpc-btn.secondary:hover { background: rgba(126, 231, 255, .18); }
+
+/* the standings club cell opens the roster too */
+.clb-crew-btn {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  background: none; border: 0; padding: 4px 6px; margin: -4px -6px;
+  color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 8px;
+}
+.clb-crew-btn:hover { background: rgba(255, 255, 255, .06); }
+.clb-crew-peek { color: #7ee7ff; opacity: .55; }
+.clb-crew-btn:hover .clb-crew-peek { opacity: 1; }

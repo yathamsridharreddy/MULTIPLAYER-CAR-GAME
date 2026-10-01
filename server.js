@@ -1965,6 +1965,14 @@ function findCrewId(ids) {
 }
 
 // the roster row for this racer inside a club (so we never create a duplicate)
+// The racer who runs a club, for a public listing. Legacy rows created before roles
+// existed have no leader flag, so the first member stands in.
+function crewLeaderName(crew) {
+  const rows = (crew && crew.members) || [];
+  const leader = rows.find((m) => m && m.role === 'leader') || rows[0];
+  return (leader && leader.name) ? String(leader.name).slice(0, 32) : null;
+}
+
 function findCrewMember(crew, ids) {
   if (!crew || !Array.isArray(crew.members)) return null;
   const strong = crewStrongKeys(ids);
@@ -2219,6 +2227,9 @@ app.get(['/api/crews', '/api/crews/leaderboard'], async (req, res) => {
       badge: c.badge,
       color: c.color,
       memberCount: (c.members || []).length,
+      // v156: the club directory shows who runs each club, so the list carries the
+      // leader's display name (and only that - never an identity).
+      leaderName: crewLeaderName(c),
       weeklyMeters: c.weeklyMeters || 0,
       weeklyKm: +(c.weeklyMeters / 1000).toFixed(1),
       totalMeters: c.totalMeters || 0,
@@ -2234,6 +2245,72 @@ app.get(['/api/crews', '/api/crews/leaderboard'], async (req, res) => {
   // v96: the board is weekly, so say when the week ends - otherwise the numbers
   // vanish on a Monday with no explanation.
   res.json({ ok: true, count: ranked.length, weekKey: wInfo.weekKey, resetsIn: wInfo.endsInFormatted, crews: ranked });
+});
+
+// v156 — the club roster is public. ANYONE can open a club and see who is in it,
+// whether or not they are a member, because "who is in which club" is part of what a
+// club is on this site. What leaves here is only what a club member would expect a
+// stranger to see: a display name, a role and a contribution. Never a uuid, a device
+// pid or the alias list the settlement path uses.
+app.get('/api/crews/:id', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  const cid = String(req.params.id || '').trim().toLowerCase();
+  if (!cid) return res.status(400).json({ ok: false, error: 'invalid_crew' });
+  if (!memCrews.has(cid)) await hydrateCrew(cid); // v95: a club created before the restart
+  if (!memCrews.has(cid)) return res.status(404).json({ ok: false, error: 'crew_not_found' });
+  const c = memCrews.get(cid);
+  rollCrewWeek(c); // v96: a club last driven before Monday reads as this week's club
+  const wInfo = weeklyInfo();
+  const mileInfo = prog.getCrewMilestoneInfo(c.weeklyMeters || 0);
+  const str = (v) => (typeof v === 'string' ? v.slice(0, 64) : '');
+  // who is asking, so their own row can be marked. Optional: a stranger reading the
+  // directory marks nobody.
+  const ids = { uid: str(req.query.uid), sbUid: str(req.query.sbUid), pid: str(req.query.pid), name: str(req.query.name) };
+  const me = findCrewMember(c, ids);
+
+  // the roster reads like a scoreboard: the leader first, then whoever has put in the
+  // most distance this week, then alphabetical so the order never flickers
+  const rows = (c.members || []).slice().sort((a, b) => {
+    const al = a && a.role === 'leader' ? 1 : 0, bl = b && b.role === 'leader' ? 1 : 0;
+    if (al !== bl) return bl - al;
+    const d = ((b && b.weeklyMeters) || 0) - ((a && a.weeklyMeters) || 0);
+    return d !== 0 ? d : String((a && a.name) || '').localeCompare(String((b && b.name) || ''));
+  });
+  const members = rows.map((m) => ({
+    name: (m && m.name) ? String(m.name).slice(0, 32) : 'RACER',
+    role: (m && m.role === 'leader') ? 'leader' : 'member',
+    weeklyKm: +((((m && m.weeklyMeters) || 0) / 1000).toFixed(1)),
+    totalKm: +((((m && m.totalMeters) || 0) / 1000).toFixed(1)),
+    weeklyPoints: (m && m.weeklyPoints) || 0,
+    joinedAt: (m && m.joined_at) || null,
+    you: !!(me && m === me)
+  }));
+  const leader = members.find((m) => m.role === 'leader') || members[0] || null;
+
+  res.json({
+    ok: true,
+    crew: {
+      id: c.id,
+      tag: c.tag,
+      name: c.name,
+      motto: c.motto,
+      badge: c.badge,
+      color: c.color,
+      memberCount: members.length,
+      weeklyMeters: c.weeklyMeters || 0,
+      weeklyKm: +((c.weeklyMeters || 0) / 1000).toFixed(1),
+      totalMeters: c.totalMeters || 0,
+      totalKm: +((c.totalMeters || 0) / 1000).toFixed(1),
+      weeklyPoints: c.weeklyPoints || 0,
+      currentTier: mileInfo.currentTier,
+      progressPct: mileInfo.progressPct,
+      nextMilestone: mileInfo.nextMilestone,
+      weekKey: wInfo.weekKey,
+      resetsIn: wInfo.endsInFormatted,
+      leaderName: leader ? leader.name : null,
+      members
+    }
+  });
 });
 
 app.get('/api/player/crew', async (req, res) => {
@@ -4763,7 +4840,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v155', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v156', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
