@@ -5479,7 +5479,7 @@ window.claimCrewMilestoneReward = async function(tier) {
 function crewJoinErrorText(res) {
   const code = (res && res.error) || '';
   if (code === 'invalid_uid') return 'Your racer name was not sent - reload the page, then join again.';
-  if (code === 'racer_erased') return 'This racer was deleted from the game - sign in or sign up again, then join.';
+  if (code === 'racer_erased') return 'This racer was deleted from the game - sign up with a new account or set a new driver name, then join.';
   if (code === 'crew_not_found') return 'That club is no longer around - the board is being refreshed.';
   if (code === 'seeded_club') return 'The built-in clubs cannot be changed - join it instead.';
   if (code) return 'Could not join the club (' + code + ').';
