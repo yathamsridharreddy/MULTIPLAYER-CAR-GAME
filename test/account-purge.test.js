@@ -22,7 +22,7 @@
 process.env.SUPABASE_URL = 'https://fake.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
 
-const { test, describe, beforeEach, after } = require('node:test');
+const { test, describe, beforeEach, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -542,6 +542,69 @@ describe('v158.4 — a row the purge cannot prove is theirs is removed by hand, 
     assert.match(TOOL, /'error', 'member_not_found'/, 'a wrong name is reported, not guessed at');
     assert.match(TOOL, /'roster', v_after/,
       'and the real roster is handed back so the next call can copy a name from it');
+  });
+});
+
+describe('v158.5 — the club a purge touches is fixed on the spot, not on the next restart', () => {
+  const http = require('node:http');
+  let srv, base;
+  const APEX = () => memCrews.get('apex');
+  const club = async (id) => {
+    const res = await fetch(base + '/api/crews/' + id);
+    return { status: res.status, json: await res.json() };
+  };
+
+  before(async () => {
+    await new Promise((r) => { srv = http.createServer(S.app); srv.listen(0, '127.0.0.1', () => { base = 'http://127.0.0.1:' + srv.address().port; r(); }); });
+  });
+  after(async () => { if (srv) await new Promise((r) => srv.close(r)); });
+  beforeEach(() => { calls.length = 0; });
+
+  test('a pre-seeded club reads its stored roster instead of its empty RAM copy', async () => {
+    // The five built-in clubs are seeded into memory at boot WITH NO MEMBERS, so
+    // "hydrate only when the club is not in memory" meant their stored rosters
+    // were never read: a club that really has members answered with nobody.
+    const fresh = memCrews.get('apex');
+    fresh.members = []; fresh.weeklyMeters = 0; fresh.totalMeters = 0; fresh.weeklyPoints = 0;
+    hydrated.delete('crew|apex');   // a fresh boot's state for this club
+    responder = async (u) => {
+      if (u.startsWith(SB + '/rest/v1/crews?')) {
+        return { ok: true, status: 200, json: async () => [{ id: 'apex', tag: 'REDL', name: 'Redline Motorsport', weekly_meters: 4000, total_meters: 9000, weekly_points: 12, week_key: '2026-W40', seeded: true }] };
+      }
+      if (u.startsWith(SB + '/rest/v1/crew_members')) {
+        return { ok: true, status: 200, json: async () => [{ crew_id: 'apex', member_key: V, name: 'SURVIVOR', role: 'leader', aliases: [V], weekly_meters: 4000, total_meters: 9000, weekly_points: 12, week_key: '2026-W40' }] };
+      }
+      return { ok: true, status: 200, json: async () => [] };
+    };
+
+    const { status, json } = await club('apex');
+    assert.equal(status, 200);
+    assert.deepEqual(json.crew.members.map((m) => m.name), ['SURVIVOR'],
+      'the stored member is on the roster even though the club was already in RAM');
+    assert.equal(json.crew.totalKm, 9, 'and so is the distance they put in');
+  });
+
+  test('opening a club drops a member the tombstones have taken', async () => {
+    // A deletion is at most one small query away from being visible: the roster
+    // read checks for new tombstones itself instead of waiting for the 60 s poll.
+    seedCaches();
+    responder = async (u) => {
+      if (u.startsWith(SB + '/rest/v1/sr_purged_players')) {
+        return { ok: true, status: 200, json: async () => [{ key: U, names: [NAME], purged_at: new Date().toISOString() }] };
+      }
+      return { ok: true, status: 200, json: async () => [] };
+    };
+    purgedKeys.clear(); purgedNames.clear();
+    // the roster check is throttled to one small query every couple of seconds,
+    // so wait the throttle out rather than depend on how fast the test runs
+    await new Promise((r) => setTimeout(r, 2100));
+
+    const { json } = await club('apex');
+    const names = json.crew.members.map((m) => m.name);
+    assert.ok(!names.includes(NAME), 'the purged racer is not on the roster: ' + names.join(','));
+    assert.ok(names.includes('SURVIVOR'), 'and the racer beside them still is');
+    assert.ok(calls.some((c) => c.url.includes('sr_purged_players')),
+      'the read consulted the tombstone table');
   });
 });
 

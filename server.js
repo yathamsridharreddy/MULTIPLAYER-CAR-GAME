@@ -2214,6 +2214,7 @@ async function mergeRacerIdentity(fromKey, toKey) {
 
 app.get(['/api/crews', '/api/crews/leaderboard'], async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
+  await touchPurges(); // v158.5: a deletion made a second ago is not still on the board
   // v95: the board lists EVERY club, so it needs the user-created ones too -
   // after a restart memory holds only the five seeded presets.
   await hydrateAllCrews();
@@ -2256,9 +2257,15 @@ app.get(['/api/crews', '/api/crews/leaderboard'], async (req, res) => {
 // pid or the alias list the settlement path uses.
 app.get('/api/crews/:id', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
+  await touchPurges(); // v158.5: the roster is where a purged racer would show up
   const cid = String(req.params.id || '').trim().toLowerCase();
   if (!cid) return res.status(400).json({ ok: false, error: 'invalid_crew' });
-  if (!memCrews.has(cid)) await hydrateCrew(cid); // v95: a club created before the restart
+  // v158.5: hydrate even when the club IS in memory. The five built-in clubs are
+  // seeded into RAM at boot with an EMPTY roster, so "not in memory" was the
+  // wrong question - it meant their stored members were never read, and a club
+  // that really has members answered with nobody. hydrateCrew() is cached per
+  // club per boot, so an already-hydrated club costs one map lookup.
+  await hydrateCrew(cid); // v95: a club created before the restart
   if (!memCrews.has(cid)) return res.status(404).json({ ok: false, error: 'crew_not_found' });
   const c = memCrews.get(cid);
   rollCrewWeek(c); // v96: a club last driven before Monday reads as this week's club
@@ -2378,7 +2385,10 @@ app.post('/api/player/crew/join', async (req, res) => {
   const { uid, name, crewId, pid, sbUid } = req.body || {};
   if (!uid || typeof uid !== 'string') return res.status(400).json({ ok: false, error: 'invalid_uid' });
   const cid = String(crewId || '').trim().toLowerCase();
-  if (cid && !memCrews.has(cid)) await hydrateCrew(cid); // v95: a club created before the restart
+  // v158.5: hydrate unconditionally - see the roster endpoint. Joining a built-in
+  // club whose stored members had not been read yet put the joiner in an empty
+  // club, and the next write persisted that emptiness over the real roster.
+  if (cid) await hydrateCrew(cid); // v95: a club created before the restart
   if (!memCrews.has(cid)) return res.status(404).json({ ok: false, error: 'crew_not_found' });
   const str = (v) => (typeof v === 'string' ? v.slice(0, 64) : '');
   const ids = { uid, name: str(name), pid: str(pid), sbUid: str(sbUid) };
@@ -2717,6 +2727,11 @@ function forgetHydration(key) { hydrated.delete(key); }
 // ---------------------------------------------------------------------------
 const ADMIN_KEY = String(process.env.ADMIN_KEY || '');
 const PURGE_POLL_MS = 60000;
+// v158.5: the poll interval above is fine for statistics, but the club roster is
+// the one screen where a purged racer is VISIBLE - and "I deleted them and they
+// are still on the club" is exactly what a user reports. So a club read also
+// checks for new tombstones, throttled to one small query every few seconds.
+const PURGE_TOUCH_MS = 2000;
 const purgedKeys = new Map();   // tombstoned identity -> when we learned of it (ms)
 const purgedNames = new Set();  // display names those tombstones carried (lowercased)
 let purgeCursor = 0;            // ms; tombstones are read from just before this again
@@ -2888,6 +2903,17 @@ async function refreshPurges(force) {
   const dropped = evictPurged();
   if (added || dropped) console.log('[v158 purge] learned ' + added + ' tombstone key(s), dropped ' + dropped + ' memory entr' + (dropped === 1 ? 'y' : 'ies') + ' (total ' + purgedKeys.size + ')');
   return added;
+}
+
+// v158.5: called by the club reads (roster and directory). A removal is at most
+// one small select away from being visible, instead of up to a minute.
+let lastPurgeTouch = 0;
+async function touchPurges() {
+  if (!sbOn()) return 0;
+  const now = Date.now();
+  if (now - lastPurgeTouch < PURGE_TOUCH_MS) return 0;
+  lastPurgeTouch = now;
+  try { return await refreshPurges(); } catch (e) { return 0; }
 }
 
 async function sbRpc(fn, body) {

@@ -1,5 +1,5 @@
 -- ============================================================================
---  SRIDHAR RUSH - remove ONE person you can still see in a club.  (v158.4)
+--  SRIDHAR RUSH - remove ONE person you can still see in a club.  (v158.5)
 --
 --  WHEN TO USE THIS
 --    A name is still on a club roster after the account was deleted. The purge
@@ -64,7 +64,6 @@ declare
   v_rows   jsonb := '[]'::jsonb;
   v_live   text[] := array[]::text[];
   v_keys   text[] := array[]::text[];
-  v_names  text[] := array[]::text[];
   v_removed bigint := 0;
   v_fixed  bigint := 0;
   v_after  jsonb := '[]'::jsonb;
@@ -93,7 +92,11 @@ begin
     );
   end if;
 
-  -- ---- 2. the roster row(s) with that name --------------------------------
+  -- ---- 2. the roster row(s) the name refers to ----------------------------
+  -- Matched three ways, because the name on screen is not always the name in the
+  -- row: the display name, the identity the row is KEYED by (what the roster
+  -- shows as the member, e.g. a device id) and any alias recorded on it. The
+  -- rows themselves decide which keys are removed - never the string typed here.
   select coalesce(jsonb_agg(distinct jsonb_build_object(
            'key', m.member_key,
            'name', m.name,
@@ -104,18 +107,20 @@ begin
            'points', coalesce(m.weekly_points, 0),
            'joined_at', m.joined_at
          )), '[]'::jsonb),
-         coalesce(array_agg(distinct m.member_key) filter (where m.member_key is not null), '{}'),
-         coalesce(array_agg(distinct a) filter (where a is not null and a <> ''), '{}')
-    into v_rows, v_keys, v_names
+         coalesce(array_agg(distinct m.member_key) filter (where m.member_key is not null), '{}')
+    into v_rows, v_keys
     from public.crew_members m
-    left join lateral unnest(coalesce(m.aliases, '{}')) as a on true
    where m.crew_id = v_crew
-     and lower(btrim(coalesce(m.name, ''))) = lower(btrim(p_name));
+     and ( lower(btrim(coalesce(m.name, ''))) = lower(btrim(p_name))
+        or lower(btrim(coalesce(m.member_key, ''))) = lower(btrim(p_name))
+        or exists (select 1 from unnest(coalesce(m.aliases, '{}')) as a
+                    where lower(btrim(a)) = lower(btrim(p_name))) );
 
   if v_keys = '{}' then
-    -- nothing under that name: list what the roster actually shows, so the
-    -- next call can copy a name from here instead of guessing at it
-    select coalesce(jsonb_agg(jsonb_build_object('name', x.name, 'role', x.role,
+    -- nothing matched: hand back the real roster so the next call can copy a
+    -- name (or a key) from here instead of guessing at it
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'name', x.name, 'key', x.member_key, 'role', x.role,
              'km_lifetime', round((coalesce(x.total_meters, 0) / 1000.0)::numeric, 1)) order by x.name), '[]'::jsonb)
       into v_after
       from public.crew_members x where x.crew_id = v_crew;
@@ -123,13 +128,14 @@ begin
       'ok', false,
       'error', 'member_not_found',
       'club', v_cname,
-      'message', 'Nobody on that roster is called ' || btrim(p_name) || '. The names below are exactly what the club shows - call it again with one of them.',
+      'club_id', v_crew,
+      'message', 'Nothing on that roster matches ' || btrim(p_name) || ' (by display name, by key or by alias). The roster below is exactly what the club shows - call it again with one of those names or keys.',
       'roster', v_after
     );
   end if;
 
   -- ---- 3. is any of it a LIVING racer? ------------------------------------
-  -- Refuse: a row whose key still has an account is somebody's club
+  -- Refuse: a row whose key still answers to an account is somebody's club
   -- membership, not a leftover. Their account is the thing to delete.
   select coalesce(array_agg(distinct u.id::text), '{}') into v_live
     from auth.users u
@@ -151,8 +157,7 @@ begin
   select coalesce(sum(m.weekly_meters), 0), coalesce(sum(m.total_meters), 0), coalesce(sum(m.weekly_points), 0)
     into v_wm, v_tm, v_wp
     from public.crew_members m
-   where m.crew_id = v_crew
-     and lower(btrim(coalesce(m.name, ''))) = lower(btrim(p_name));
+   where m.crew_id = v_crew and m.member_key = any(v_keys);
 
   if p_dry_run then
     return jsonb_build_object(
@@ -168,11 +173,11 @@ begin
         'km_lifetime', round((v_tm / 1000.0)::numeric, 2),
         'points', v_wp
       ),
-      'message', 'Nothing was changed. Run the same call without the true to remove this row, or without the row at all if it is not the person you meant.'
+      'message', 'Nothing was changed. Run the same call without the true to remove these rows, or with a different name if they are not the person you meant.'
     );
   end if;
 
-  -- ---- 5. remove the row --------------------------------------------------
+  -- ---- 5. remove them -----------------------------------------------------
   update public.crews c
      set weekly_meters = greatest(0, c.weekly_meters - x.wm),
          total_meters  = greatest(0, c.total_meters  - x.tm),
@@ -180,14 +185,12 @@ begin
     from (
       select sum(m.weekly_meters) as wm, sum(m.total_meters) as tm, sum(m.weekly_points) as wp
         from public.crew_members m
-       where m.crew_id = v_crew
-         and lower(btrim(coalesce(m.name, ''))) = lower(btrim(p_name))
+       where m.crew_id = v_crew and m.member_key = any(v_keys)
     ) x
    where c.id = v_crew;
 
   delete from public.crew_members m
-   where m.crew_id = v_crew
-     and lower(btrim(coalesce(m.name, ''))) = lower(btrim(p_name));
+   where m.crew_id = v_crew and m.member_key = any(v_keys);
   get diagnostics v_removed = row_count;
 
   -- leadership: never left pointing at a row that is no longer there
@@ -206,7 +209,9 @@ begin
 
   -- ---- 6. the tombstone: this is what reaches the RUNNING server ----------
   -- The club keeps this roster in memory; without a tombstone it would keep
-  -- showing the name until the next restart. The server sweeps within a minute.
+  -- showing the member until the next restart. The club reads now check the
+  -- tombstone table themselves (throttled), so a refresh a few seconds later
+  -- shows the roster without them - no restart, no redeploy.
   -- Only the row's own keys are recorded - never the display name, which other
   -- racers may share.
   insert into public.sr_purged_players (key, names)
@@ -216,7 +221,8 @@ begin
   on conflict (key) do update set purged_at = now();
 
   -- ---- 7. what the club shows now ----------------------------------------
-  select coalesce(jsonb_agg(jsonb_build_object('name', x.name, 'role', x.role,
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'name', x.name, 'key', x.member_key, 'role', x.role,
            'km_lifetime', round((coalesce(x.total_meters, 0) / 1000.0)::numeric, 1)) order by x.name), '[]'::jsonb)
     into v_after
     from public.crew_members x where x.crew_id = v_crew;
@@ -231,12 +237,12 @@ begin
     'tombstoned_keys', to_jsonb(v_keys),
     'leadership_repaired', v_fixed > 0,
     'roster', v_after,
-    'message', 'Removed. The club itself is untouched. The running game server drops this member from memory within a minute (no restart); refresh the club page after that.'
+    'message', 'Removed. The club itself is untouched. The running game server drops this member from memory when the club is next opened (a few seconds); refresh the club page if you still see them.'
   );
 end $$;
 
 comment on function public.sr_remove_club_member(text, text, boolean) is
-  'v158.4: removes one member from one club by the name the roster shows, subtracts their contribution, tombstones their keys. Refuses rows that belong to a living account. The club itself is never deleted.';
+  'v158.5: removes one member from one club by the display name, the row key or an alias; subtracts their contribution; tombstones the keys. Refuses rows that belong to a living account. The club itself is never deleted.';
 
 -- service role only, like every other write path into the club tables
 do $$
@@ -257,6 +263,10 @@ end $$;
 --  STEP 2 - LOOK (nothing is removed)
 -- ============================================================================
 -- select public.sr_remove_club_member('Midnight Club Tokyo', 'RACER-9WKP', true);
+--
+-- The dry run also accepts the key the row is stored under, or any alias on it,
+-- instead of the display name - copy either from the reply if a name does not
+-- match (a roster can show a name the row does not carry).
 
 -- ============================================================================
 --  STEP 3 - REMOVE
