@@ -490,3 +490,58 @@ describe('v158.3 — a purge takes the racer it was told to and nothing else liv
   });
 });
 
+describe('v158.4 — a row the purge cannot prove is theirs is removed by hand, safely', () => {
+  const TOOL = fs.readFileSync(path.join(ROOT, 'scripts', 'remove-club-member.sql'), 'utf8');
+
+  test('the account deletion also looks for the name the game SHOWS', () => {
+    // v144 stores the driver name in profiles.display_name, and that is the name
+    // a club roster carries - while the trigger only ever read the handle. A
+    // racer who joined as a guest and later signed in left a roster row whose
+    // only link to the account is that name.
+    const trigger = SQL.slice(SQL.indexOf('create or replace function public.sr_on_auth_user_delete()'));
+    assert.match(trigger, /p\.display_name from public\.profiles p where p\.id::text = \$1/,
+      'the driver name is collected with the handle');
+    assert.match(trigger, /information_schema\.columns[\s\S]{0,200}column_name = 'display_name'/,
+      'and guarded, because display_name only exists from v144');
+    assert.match(trigger, /else[\s\S]{0,160}p\.username/,
+      'an older database still collects the handle');
+    assert.ok(trigger.indexOf('display_name') < trigger.indexOf('perform public.sr_purge_identity'),
+      'both are collected before the purge runs');
+  });
+
+  test('the by-hand removal refuses a row that belongs to a living account', () => {
+    assert.match(TOOL, /'error', 'live_account'/,
+      'a living account is never removed from a club by name');
+    assert.match(TOOL, /Authentication -> Users/,
+      'and the operator is told what to do instead');
+    assert.match(TOOL, /into v_live\s*\n\s*from auth\.users u/,
+      'the check is against auth.users, not against the shape of the key');
+    // the refusal has to happen before anything is written
+    assert.ok(TOOL.indexOf('live_account') < TOOL.indexOf('delete from public.crew_members'),
+      'the refusal comes before the delete');
+  });
+
+  test('the removal is dry-runnable, subtracts what the member contributed and tombstones the keys', () => {
+    assert.match(TOOL, /if p_dry_run then/, 'a preview exists');
+    assert.ok(TOOL.indexOf('if p_dry_run then') < TOOL.indexOf('delete from public.crew_members'),
+      'and returns before anything is deleted');
+    assert.match(TOOL, /greatest\(0, c\.weekly_meters - x\.wm\)/,
+      'the club loses that member\'s kilometres, never below zero');
+    assert.match(TOOL, /insert into public\.sr_purged_players \(key, names\)\s*\n\s*select k, '\{\}'::text\[\]/,
+      'the keys are tombstoned so the RUNNING server drops the member without a restart');
+    const insert = TOOL.slice(TOOL.indexOf('insert into public.sr_purged_players'));
+    assert.ok(!/p_name/.test(insert.slice(0, 400)), 'and never the display name, which other racers may share');
+    assert.match(TOOL, /leader_uid = \(/, 'leadership is handed on if the leader was the one removed');
+  });
+
+  test('the removal never touches the club itself and is not reachable with the anon key', () => {
+    assert.ok(!/delete from public\.crews/.test(TOOL),
+      'no statement deletes a club - emptying a club is not deleting it');
+    assert.match(TOOL, /revoke all on function public\.sr_remove_club_member\(text, text, boolean\) from anon/,
+      'service role only');
+    assert.match(TOOL, /'error', 'member_not_found'/, 'a wrong name is reported, not guessed at');
+    assert.match(TOOL, /'roster', v_after/,
+      'and the real roster is handed back so the next call can copy a name from it');
+  });
+});
+

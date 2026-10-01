@@ -9,7 +9,7 @@
 [![Play Now](https://img.shields.io/badge/▶_PLAY_NOW-LIVE_DEMO-00F0FF?style=for-the-badge&logo=googlechrome&logoColor=05070c)](https://sridhar-drift.vercel.app)
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yathamsridharreddy/MULTIPLAYER-CAR-GAME)
 
-[![Tests](https://img.shields.io/badge/Tests-603%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
+[![Tests](https://img.shields.io/badge/Tests-607%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
 [![Simulation](https://img.shields.io/badge/Simulation-30Hz%20Authoritative-ffd479?style=flat-square)](public/js/game-core.js)
 [![Multiplayer](https://img.shields.io/badge/Multiplayer-1--6%20Players%20%2B%20AI-ff2e54?style=flat-square)](server.js)
 [![3D Engine](https://img.shields.io/badge/3D%20Engine-Three.js%20WebGL-00f0ff?style=flat-square)](public/js/game.js)
@@ -209,8 +209,10 @@ precached), so first load pays once and every later race is instant.
 │   ├── live-probe.js            probes a deployed server's /health
 │   ├── restore-clubs.*          prints SQL that rebuilds the club tables from a
 │   │                            running server's memory (.js = Node, .html = browser)
-│   └── clean-deleted-racers.sql erases accounts deleted before v158's trigger,
-│                                repairs the clubs they were in, prints a report
+│   ├── clean-deleted-racers.sql erases accounts deleted before v158's trigger,
+│   │                            repairs the clubs they were in, prints a report
+│   └── remove-club-member.sql   removes one person from one club by the name the
+│                                roster shows, refusing rows of living accounts
 ├── supabase-setup.sql           canonical schema for a NEW database
 ├── supabase-migration-v98.sql   ONE re-runnable script that converges ANY database
 ├── supabase-migration-v99.sql   converges `challenges` for the revenge flow

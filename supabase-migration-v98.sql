@@ -1581,8 +1581,23 @@ begin
   -- its stats rows. Both are best-effort - an older database may not have them.
   begin
     if to_regclass('public.profiles') is not null then
-      execute 'select coalesce(array_agg(distinct p.username), ''{}'') from public.profiles p where p.id::text = $1'
+      -- Both names the account is known by: the handle and the driver name the
+      -- game actually SHOWS (v144). The driver name is the one a club roster
+      -- carries, so a row that was written before this account was linked to an
+      -- identity can still be recognised as theirs. display_name arrived in
+      -- v144, hence the column check rather than an exception.
+      if exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'profiles' and column_name = 'display_name') then
+        execute 'select coalesce(array_agg(distinct x), ''{}'') from (
+                   select p.username as x from public.profiles p where p.id::text = $1
+                   union all
+                   select p.display_name from public.profiles p where p.id::text = $1
+                 ) s where length(btrim(x)) > 0'
         into v_extra using old.id::text;
+      else
+        execute 'select coalesce(array_agg(distinct p.username), ''{}'') from public.profiles p where p.id::text = $1'
+        into v_extra using old.id::text;
+      end if;
       v_names := v_names || coalesce(v_extra, '{}');
     end if;
   exception when undefined_column then null;
