@@ -377,7 +377,7 @@ test('v158.7: clicking JOIN CLUB and then JOIN [TAG] joins the club, and says so
 test('v158.7: every refusal reaches the screen in words', { skip: SKIP }, async (t) => {
   const cases = [
     [{ status: 404, json: { ok: false, error: 'crew_not_found' } }, /no longer around/i],
-    [{ status: 403, json: { ok: false, error: 'racer_erased' } }, /deleted from the game/i],
+    [{ status: 403, json: { ok: false, error: 'racer_erased' } }, /deleted[^]*?(reload|sign out)/i],
     [{ status: 400, json: { ok: false, error: 'invalid_uid' } }, /racer name was not sent/i],
     [{ status: 200, json: { ok: true, tag: 'BHAI', name: 'B.Tech Badithulu', durable: true, stored: false, pending: false, member: {} } }, /could not save you/i]
   ];
@@ -392,6 +392,38 @@ test('v158.7: every refusal reaches the screen in words', { skip: SKIP }, async 
     assert.match(said, want, 'the refusal is on screen in words: ' + said);
     assert.ok(!/Failed to join crew/.test(said), 'and never the sentence that hid all of these');
   }
+});
+
+test('v160: a deleted device racer is re-minted, and the browser adopts the new identity', { skip: SKIP }, async (t) => {
+  // The join endpoint answers reset:true + newPid when the browser's stored device
+  // key is the one a purge erased. If the client did not adopt it, the very next
+  // request would arrive as the erased racer again and nothing would stick.
+  const NEW_PID = 'pnewdevice99';
+  let joined = false;
+  const { window, dom, calls } = boot({ fetchStub: (url) => {
+    const u = String(url);
+    if (u.includes('/api/player/crew/join')) {
+      joined = true;
+      return { status: 200, json: { ok: true, crewId: CLUB.id, tag: CLUB.tag, name: CLUB.name, member: { uid: NEW_PID }, durable: true, stored: true, pending: false, newPid: NEW_PID, reset: true } };
+    }
+    if (u.includes('/api/player/crew')) return { status: 200, json: joined ? MINE(false) : { ok: true, hasCrew: false, crew: null, presets: [] } };
+    if (u.includes('/api/crews/')) return { status: 200, json: { ok: true, crew: MINE(false).crew } };
+    if (u.includes('/api/crews')) return { status: 200, json: { ok: true, crews: [CLUB] } };
+    return { status: 200, json: [] };
+  } });
+  t.after(() => dom.window.close());
+  window.eval("prefs.name = 'SRIDHAR'; prefs.pid = 'polddevice1';");
+
+  const btn = await openJoinTab(window);
+  btn.click();
+  await settle(150);
+  assert.equal(window.eval('prefs.pid'), NEW_PID, 'the new device identity is adopted');
+  const stored = JSON.parse(window.localStorage.getItem('sr_prefs') || '{}');
+  assert.equal(stored.pid, NEW_PID, 'and persisted, or a reload would present the erased one again');
+  const read = calls.filter((c) => c.url.includes('/api/player/crew?')).pop();
+  assert.ok(read && read.url.includes('pid=' + NEW_PID), 'the next request carries the new identity: ' + (read && read.url));
+  assert.ok(!/polddevice1/.test(read ? read.url : ''), 'and never the erased one');
+  assert.match(toast(window), /starts? fresh|old racer was deleted/i, 'and the racer is told their old racer is gone');
 });
 
 test("v158.8: DELETE THIS CLUB is the leader's button, asks first, and posts", { skip: SKIP }, async (t) => {

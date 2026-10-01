@@ -5472,6 +5472,17 @@ window.claimCrewMilestoneReward = async function(tier) {
   }
 };
 
+// v160: the server minted a new device identity because this browser's racer was
+// deleted from the game (the tombstone is on the old device id, so every write
+// naming it was dropped - including the join). Adopt it BEFORE anything else is
+// sent, or the next request would arrive as the erased racer again.
+function adoptServerIdentity(res) {
+  if (!res || !res.newPid) return false;
+  prefs.pid = String(res.newPid);
+  try { savePrefs(); } catch (e) {}
+  return true;
+}
+
 // v158.7: the server's reason, in words the racer can act on. The old fallback
 // was one toast - "Failed to join crew" - whatever had happened, which hid the
 // two cases that need completely different answers: the club is gone, or the
@@ -5479,7 +5490,15 @@ window.claimCrewMilestoneReward = async function(tier) {
 function crewJoinErrorText(res) {
   const code = (res && res.error) || '';
   if (code === 'invalid_uid') return 'Your racer name was not sent - reload the page, then join again.';
-  if (code === 'racer_erased') return 'This racer was deleted from the game - sign up with a new account or set a new driver name, then join.';
+  if (code === 'racer_erased') {
+    // v160: the server now mints a fresh device identity for a GUEST whose old one
+    // was erased, so this refusal only reaches a signed-in racer - and for them the
+    // uuid is the account: signing up again is the only way back in.
+    const signedIn = !!(window.SRAccount && typeof SRAccount.loggedIn === 'function' && SRAccount.loggedIn());
+    return signedIn
+      ? 'This account was deleted from the game - sign out and sign up again, then join.'
+      : "This device's old racer was deleted - reload the page, then join again.";
+  }
   if (code === 'crew_not_found') return 'That club is no longer around - the board is being refreshed.';
   if (code === 'seeded_club') return 'The built-in clubs cannot be changed - join it instead.';
   if (code) return 'Could not join the club (' + code + ').';
@@ -5503,6 +5522,9 @@ window.joinCrewAction = async function(crewId) {
     return;
   }
   if (!res || !res.ok) { toast(crewJoinErrorText(res)); return; }
+  // v160: an erased device identity was replaced by a fresh one - say so, because
+  // this racer starts with nothing: that is what erasing the old one means.
+  const reset = adoptServerIdentity(res);
   // v158.7: say whether the club really stored the membership. "Joined!" over a
   // roster row that never landed is what made a club look joined for one session
   // and vanish on the next reload.
@@ -5510,6 +5532,8 @@ window.joinCrewAction = async function(crewId) {
     toast(`🏁 Joined [${res.tag}] - but the club could not save you to its roster. Reload and try again.`);
   } else if (res.pending) {
     toast(`🏁 Joined [${res.tag}] - still saving you to the roster…`);
+  } else if (reset) {
+    toast(`🏁 Joined [${res.tag}] ${res.name} - this device's old racer was deleted, so you start fresh.`);
   } else {
     toast(`🏁 Joined [${res.tag}] ${res.name}!`);
   }
@@ -5579,7 +5603,10 @@ window.handleCreateCrewSubmit = async function(e) {
       body: JSON.stringify(Object.assign({}, ci, { name, crewName, tag, motto, badge, color }))
     }).then(r => r.json());
     if (res && res.ok) {
-      toast(`🏁 Club [${res.crew.tag}] ${res.crew.name} Created!`);
+      const fresh = adoptServerIdentity(res);
+      toast(fresh
+        ? `🏁 Club [${res.crew.tag}] ${res.crew.name} created - this device's old racer was deleted, so you start fresh.`
+        : `🏁 Club [${res.crew.tag}] ${res.crew.name} Created!`);
       openCrewModal('my');
     } else {
       const errEl = $('cf-err');
@@ -6228,7 +6255,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v159';
+const BUILD = 'v160';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

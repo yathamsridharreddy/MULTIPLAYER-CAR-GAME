@@ -2382,6 +2382,81 @@ app.get('/api/player/crew', async (req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// v160 - AN ERASED IDENTITY IS NOT A LIFE SENTENCE FOR THE BROWSER.
+// ---------------------------------------------------------------------------
+// A tombstone KEY bars every row naming it, by design: that is how a deleted
+// account, and a roster row removed with scripts/remove-club-member.sql, stay
+// gone. But a GUEST's key is a device id the browser keeps in localStorage and
+// sends again on every request - so erasing that account also wrote a tombstone
+// for the identity the browser goes on presenting. That browser could then never
+// join a club again, and nothing it did was ever saved, with no way back: the
+// id is only generated when it is missing. The racer stays erased - no row
+// naming a tombstoned key is ever written - and the PERSON gets a new, empty
+// racer: the join lands on a freshly minted device key, and the client adopts it
+// (newPid) so the next request uses the same new identity.
+// A signed-in racer is different - and this is the case that kept "I click JOIN
+// CLUB and I cannot join" coming back. The client puts the driver name in the
+// `uid` slot (crewIdentity() in public/js/game.js), so a signed-in racer's roster
+// row is keyed by their DISPLAY NAME, and the purge widens its key set from that
+// row: deleting the account records `sridhar` (and `sb:sridhar`) as tombstone
+// KEYS in public.sr_purged_players. From then on the same person signing up again
+// with the same driver name presented a key that was tombstoned, and v159.1
+// refused every join with 403 racer_erased - for ever. A display name is not an
+// account. A LIVE ACCOUNT IS NEVER THE ERASED RACER: when sbUid is present and not
+// itself tombstoned the join goes ahead, keyed on the account, and a tombstoned
+// device key or name from the past is simply left behind. Only a tombstoned
+// uuid-shaped key with no live account - the deleted account itself - is refused.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function freshGuestPid() {
+  return 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+}
+// v160: which identity may this request be stored under, and is the racer gone?
+//
+// A tombstone KEY is decisive: every row naming it belongs to an erased racer,
+// so the write filter drops it. A guest's only key is the device id in the
+// browser, minted once and reused for ever - so erasing that guest's account left
+// the browser presenting the erased key on every join, every write was silently
+// dropped, and there was no way out. THIS function is the way out.
+//
+// The rule, in order:
+//   1. the ACCOUNT is alive (a sbUid is present and not tombstoned) - the racer is
+//      not erased, whatever else the request carries. A display name that a purge
+//      recorded as a key, or a device id from a guest past, is not an account and
+//      must never refuse that racer; it is replaced by the live account so the
+//      roster row is keyed on something no tombstone names.
+//   2. no live account and a tombstoned uuid-shaped key - the signed-in account
+//      itself was deleted. Refuse (`racer_erased`): no row may name them.
+//   3. no live account and only device keys / name-shaped keys - mint a fresh
+//      device identity for this request and carry on as a new, empty racer.
+// The caller writes the returned `identity` into the roster row and tells the
+// client about `freshPid`, so the next request never presents the erased key.
+function healErasedGuestIdentity(ids) {
+  const out = { erased: false, account: false, freshPid: '', identity: '' };
+  const sbUid = normCrewKey(ids && ids.sbUid);
+  const liveAccount = !!sbUid && !isPurgedKey(sbUid);
+  const erased = crewStrongKeys(ids).filter((k) => isPurgedKey(k));
+  const usable = (v) => { const k = normCrewKey(v); return !!k && !isPurgedKey(k); };
+  if (liveAccount) {
+    out.erased = erased.length > 0;
+    out.identity = sbUid;
+    // Only a value a tombstone names is replaced - everything else is left exactly
+    // as the request carried it, so a client's own keys keep working.
+    if (!usable(ids.uid)) ids.uid = sbUid;
+    if (!usable(ids.pid)) ids.pid = 'sb:' + sbUid;
+    return out;
+  }
+  if (!erased.length) return out;
+  if (erased.some((k) => UUID_RE.test(k))) { out.erased = true; out.account = true; return out; }
+  const freshPid = freshGuestPid();
+  ids.uid = freshPid;
+  ids.pid = freshPid;
+  out.erased = true;
+  out.identity = freshPid;
+  out.freshPid = freshPid;
+  return out;
+}
+
 app.post('/api/player/crew/join', async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   const { uid, name, crewId, pid, sbUid } = req.body || {};
@@ -2395,13 +2470,12 @@ app.post('/api/player/crew/join', async (req, res) => {
   const str = (v) => (typeof v === 'string' ? v.slice(0, 64) : '');
   const ids = { uid, name: str(name), pid: str(pid), sbUid: str(sbUid) };
 
-  // v158.7: a racer the purge erased cannot be written back into a club - the
-  // next purge pass would drop every row naming them again, and refusing with the
-  // reason is the only answer that is not a lie. KEYS only: a name that happens to
-  // be tombstoned must never keep a living racer out of a club.
-  if (crewStrongKeys(ids).some((k) => isPurgedKey(k))) {
-    return res.status(403).json({ ok: false, error: 'racer_erased' });
-  }
+  // v158.7/v160: a racer the purge erased cannot be written back into a club - the
+  // next purge pass would drop every row naming them again. KEYS only, never a
+  // name a living racer may share; an erased GUEST gets a new device key instead
+  // of a dead end, and a deleted ACCOUNT is refused with the reason.
+  const erasedId = healErasedGuestIdentity(ids);
+  if (erasedId.account) return res.status(403).json({ ok: false, error: 'racer_erased' });
 
   // Remove from old crew — matched by any STRONG alias, not just the raw uid,
   // and the stale aliases pointing at the old club are released.
@@ -2420,9 +2494,18 @@ app.post('/api/player/crew/join', async (req, res) => {
   rollCrewWeek(targetCrew); // v96: joining in a new week joins a fresh scoreboard
   targetCrew.members = targetCrew.members || [];
   let member = findCrewMember(targetCrew, ids);
+  // v160: a roster row keyed by a tombstoned value (an old device id, or a display
+  // name a purge recorded as a key) is dropped again by every write, so the join
+  // would look joined for this session and be gone on the next reload. Re-key it on
+  // the identity the server settled on above - the live account, or the fresh
+  // device key - before the write.
+  if (member && erasedId.identity && isPurgedKey(normCrewKey(member.uid))) member.uid = erasedId.identity;
   if (!member) {
     member = {
-      uid,
+      // v160: ids.uid, not the raw request uid - a healed guest's new device key is
+      // the one the client will present from now on, and the only one that may be
+      // written (the erased key stays out of every row).
+      uid: ids.uid,
       name: (name && typeof name === 'string') ? name.slice(0, 16) : 'RACER',
       role: 'member',
       weeklyMeters: 0,
@@ -2436,7 +2519,9 @@ app.post('/api/player/crew/join', async (req, res) => {
   // v90: learn every identity this racer uses so settlement finds this row
   member.aliases = mergeAliases(member.aliases, bindCrewIdentities(cid, ids));
   if (name && typeof name === 'string') member.name = name.slice(0, 16);
-  memPlayerCrew.set(uid, cid);
+  memPlayerCrew.set(ids.uid, cid);
+  memPlayerCrew.set(uid, cid); // the identity the request arrived with, so a stale
+                               // client still resolves to the club it just joined
   refreshLobbyCrewTags(ids); // v90: show the new tag in any live lobby straight away
   // v95: make the membership durable (rule 3 - best-effort; joining still works
   // for this session if the database is unreachable)
@@ -2451,10 +2536,10 @@ app.post('/api/player/crew/join', async (req, res) => {
   if (waited === 'refused') {
     console.warn('[v158.7] club join was not stored: crew=' + cid + ' member=' + normCrewKey(member.uid));
   }
-  res.json({
+  res.json(Object.assign({
     ok: true, crewId: cid, tag: targetCrew.tag, name: targetCrew.name, member,
     durable: sbOn(), stored: waited === 'stored', pending: waited === 'pending'
-  });
+  }, erasedId.freshPid ? { newPid: erasedId.freshPid, reset: true } : {}));
 });
 
 // ---------------------------------------------------------------------------
@@ -2547,14 +2632,21 @@ app.post('/api/player/crew/create', async (req, res) => {
     if (c.tag === cleanTag) return res.status(409).json({ ok: false, error: 'tag_taken' });
   }
 
-  // Remove from old crew (strong aliases only, same as /join)
+  // v160: a browser whose device identity was erased founds the club under a new
+  // key rather than being refused - the same rule as the join. Without it the
+  // club row was written with a leader whose roster row could never be stored,
+  // which is a club with no leader in it.
   const founderIds = { uid, name: idStr(name), pid: idStr(pid), sbUid: idStr(sbUid) };
+  const erasedId = healErasedGuestIdentity(founderIds);
+  if (erasedId.account) return res.status(403).json({ ok: false, error: 'racer_erased' });
+
+  // Remove from old crew (strong aliases only, same as /join)
   const oldCrewId = findCrewIdStrong(founderIds);
   if (oldCrewId && memCrews.has(oldCrewId)) {
     const oldCrew = memCrews.get(oldCrewId);
     const me = findCrewMember(oldCrew, founderIds);
     oldCrew.members = (oldCrew.members || []).filter((m) => m !== me);
-    unbindCrewIdentities(oldCrewId, { uid, name: founderIds.name, pid: founderIds.pid, sbUid: founderIds.sbUid, aliases: me && me.aliases });
+    unbindCrewIdentities(oldCrewId, { uid: founderIds.uid, name: founderIds.name, pid: founderIds.pid, sbUid: founderIds.sbUid, aliases: me && me.aliases });
     if (me) deleteCrewMemberRow(oldCrewId, me).catch(() => {}); // v95
   }
 
@@ -2568,9 +2660,12 @@ app.post('/api/player/crew/create', async (req, res) => {
     badge: (badge && typeof badge === 'string' && /^[a-z0-9-]{1,16}$/.test(badge)) ? badge
          : ((badge && typeof badge === 'string') ? badge.slice(0, 4) : 'bolt'),
     color: (color && typeof color === 'string') ? color : '#ff4444',
-    leaderUid: uid,
+    // v160: the founder's healed identity (founderIds.uid), so a browser whose old
+    // device key was erased leads the club it just founded instead of leaving a
+    // club whose leader row can never be stored.
+    leaderUid: founderIds.uid,
     members: [{
-      uid,
+      uid: founderIds.uid,
       name: (name && typeof name === 'string') ? name.slice(0, 16) : 'RACER',
       role: 'leader',
       weeklyMeters: 0,
@@ -2587,12 +2682,14 @@ app.post('/api/player/crew/create', async (req, res) => {
   };
 
   memCrews.set(crewId, newCrew);
-  memPlayerCrew.set(uid, crewId);
+  memPlayerCrew.set(founderIds.uid, crewId);
+  memPlayerCrew.set(uid, crewId); // and the raw request identity, for this session
   refreshLobbyCrewTags(founderIds); // v90: show the new tag in any live lobby straight away
   // v95: a founded club must outlive the process it was founded in
   persistCrewWithMember(newCrew, newCrew.members[0]).catch(() => {}); // v96: club row first (foreign key)
 
-  res.json({ ok: true, crew: newCrew });
+  res.json(Object.assign({ ok: true, crew: newCrew },
+    erasedId.freshPid ? { newPid: erasedId.freshPid, reset: true } : {}));
 });
 
 app.post('/api/player/crew/claim-milestone', async (req, res) => {
@@ -5382,7 +5479,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v159', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v160', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
@@ -5559,6 +5656,8 @@ module.exports = {
   dropPurgedRows,
   purgeNameIsSoleIdentity,
   purgeRowIdentities,
+  healErasedGuestIdentity,
+  freshGuestPid,
   crewLeaderKeys,
   callerLeadsCrew,
   applyCrewRow,
