@@ -480,6 +480,8 @@ let leaderboard = {};
 try { leaderboard = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); } catch (e) { leaderboard = {}; }
 
 function lbAdd(mapId, entry) {
+  // v158: a deleted racer's client can still send a time; it must not come back
+  if (isPurgedRacer(entry && entry.pid, entry && entry.name)) return;
   const list = leaderboard[mapId] || (leaderboard[mapId] = []);
   // Account-lite: a returning player (same pid) updates their entry instead of
   // adding a duplicate row; keeps the board a true "top players" list.
@@ -2628,8 +2630,28 @@ async function sbSelect(table, query) {
   } catch (e) { sbWarnOnce(table + ':read', 'select from ' + table + ' unreachable: ' + e.message); return null; }
 }
 
+// v158: the identity fields the schema keys a racer by. Every row that names a
+// deleted racer is dropped here, at the one place all of these writes funnel
+// through, rather than at each of the dozen call sites - missions, bounties,
+// revenge, badges, inventory, equipped loadout and club roster rows all write
+// through this function.
+const SB_ID_FIELDS = ['user_id', 'pid', 'owner_id', 'member_key', 'uid', 'from_uid', 'to_uid', 'winner_uid', 'target_id'];
+function dropPurgedRows(rows) {
+  if (!purgedKeys.size && !purgedNames.size) return rows;
+  return rows.filter((r) => {
+    if (!r || typeof r !== 'object') return true;
+    for (const f of SB_ID_FIELDS) {
+      const v = r[f];
+      if (v != null && v !== '' && isPurgedRacer(v)) return false;
+    }
+    return true;
+  });
+}
+
 async function sbUpsertRows(table, rows) {
   if (!sbOn() || !rows || !rows.length) return false;
+  rows = dropPurgedRows(rows);
+  if (!rows.length) return true; // nothing to write, and nothing went wrong
   for (let a = 0; a < 2; a++) {
     try {
       const r = await fetch(SB_URL + '/rest/v1/' + table, {
@@ -2664,12 +2686,235 @@ async function sbDelete(table, query) {
 // next request retries, instead of serving stale RAM for the rest of the process.
 const hydrated = new Set();
 function claimHydration(key) {
+  // v158: a deleted racer must not be able to re-read what was just erased
+  if (isPurgedKey(key)) return false;
   if (hydrated.has(key)) return false;
   if (hydrated.size > 100000) hydrated.clear(); // bounded like every other store
   hydrated.add(key);
   return true;
 }
 function forgetHydration(key) { hydrated.delete(key); }
+
+// ---------------------------------------------------------------------------
+// v158 ACCOUNT DELETION — the in-process half of a purge.
+// ---------------------------------------------------------------------------
+// Deleting the account in Supabase Auth fires `sr_purge_on_auth_delete` on
+// auth.users, which erases every row that names the racer across the game
+// tables (supabase-migration-v158.sql) and leaves a tombstone in
+// public.sr_purged_players. Erasing the rows is only half the job: this process
+// holds the same racer in a dozen Maps, and those Maps are how a deleted
+// account comes back — the next settle would re-insert player_stats, the club
+// roster would keep showing the name, the account-lite board would keep serving
+// the time, and hydrating a period would pull the old rows straight back in.
+//
+// So the tombstones are polled and, for every key on them:
+//   1. every RAM store that mentions the key or the name is swept;
+//   2. claimHydration() refuses the key, so no reader can re-read the rows;
+//   3. settlement refuses to write for the racer, which closes the one path a
+//      race that was already in flight could otherwise use to resurrect them.
+// POST /api/admin/purge runs the SQL purge for an operator who would rather
+// delete from inside the game, and evicts in the same request.
+// ---------------------------------------------------------------------------
+const ADMIN_KEY = String(process.env.ADMIN_KEY || '');
+const PURGE_POLL_MS = 60000;
+const purgedKeys = new Map();   // tombstoned identity -> when we learned of it (ms)
+const purgedNames = new Set();  // display names those tombstones carried (lowercased)
+let purgeCursor = 0;            // ms; tombstones are read from just before this again
+const PURGE_KEY_CAP = 200000;
+
+function purgeNameOf(n) {
+  return String(n == null ? '' : n).trim().toLowerCase().slice(0, 32);
+}
+
+// A cache key is dead if it IS a tombstoned identity or carries one as a
+// segment. Every composite key in this file joins with '|' or ':' and keeps the
+// identity in one of the segments ('stats|<uid>', '<crew>:<tier>:<week>:<key>',
+// and the 'sb:<uuid>' form the client sends), so matching segments catches all
+// of them without every call site having to know about purges.
+function isPurgedKey(k) {
+  if (k == null || k === '' || purgedKeys.size === 0) return false;
+  const s = String(k);
+  if (purgedKeys.has(s)) return true;
+  if (s.startsWith('sb:') && purgedKeys.has(s.slice(3))) return true;
+  if (s.indexOf('|') < 0 && s.indexOf(':') < 0) return false;
+  const segs = s.split(/[|:]/);
+  for (let i = 0; i < segs.length; i++) {
+    if (segs[i] && purgedKeys.has(segs[i])) return true;
+  }
+  return false;
+}
+function isPurgedName(n) {
+  const s = purgeNameOf(n);
+  return !!s && purgedNames.has(s);
+}
+// One call site asks about every identity a request may be holding.
+function isPurgedRacer() {
+  for (let i = 0; i < arguments.length; i++) {
+    const v = arguments[i];
+    if (v == null || v === '') continue;
+    if (isPurgedKey(v) || isPurgedName(v)) return true;
+  }
+  return false;
+}
+
+// One pass over every cache. `matchKey` decides identity keys; `matchName`
+// decides rows that are only known by a display name. Returns the drop count.
+function sweepPurgedMemory(matchKey, matchName) {
+  let dropped = 0;
+  const rowName = (row) => (row && typeof row.name === 'string' ? row.name : '');
+  // a key can BE a display name: the club name hints and the 'name:' identity
+  // form are both keyed by exactly that
+  const hitRow = (k, row) => matchKey(k) ||
+    (matchName && (matchName(k) || (!!rowName(row) && matchName(rowName(row)))));
+  const sweep = (m) => {
+    for (const k of Array.from(m.keys())) if (hitRow(k, m.get(k))) { m.delete(k); dropped++; }
+  };
+  const sweepNested = (m) => {
+    for (const k of Array.from(m.keys())) {
+      const inner = m.get(k);
+      if (hitRow(k, inner)) { m.delete(k); dropped++; continue; }
+      if (inner instanceof Map) sweep(inner);
+    }
+  };
+  sweep(memPlayerStats);
+  sweep(memEquippedBadges);
+  sweep(memPlayerCrew);
+  sweep(memCrewAliases);
+  sweep(memCrewNameHints);
+  sweep(memClaimedCrewMilestones);
+  sweepNested(memDailyComp);
+  sweepNested(memWeeklyComp);
+  sweepNested(memPlayerMissions);
+  sweepNested(memWeeklyBounties);
+
+  // revenge: the whole list when the owner is gone, otherwise just the target
+  for (const k of Array.from(memRevengeTargets.keys())) {
+    if (matchKey(k)) { memRevengeTargets.delete(k); dropped++; continue; }
+    const list = memRevengeTargets.get(k);
+    if (!Array.isArray(list)) continue;
+    const kept = list.filter((t) => !(matchKey(t && t.targetUid) || (matchName && t && t.targetName && matchName(t.targetName))));
+    if (kept.length !== list.length) { dropped += list.length - kept.length; memRevengeTargets.set(k, kept); }
+  }
+
+  // clubs: the roster row, its aliases, and the leadership it held. The lifetime
+  // figures are trimmed by what that member was known to have put in; the club
+  // row in Postgres is the authority and the next boot hydrates the exact values.
+  for (const c of memCrews.values()) {
+    if (!Array.isArray(c.members) || !c.members.length) continue;
+    const before = c.members.length;
+    const gone = c.members.filter((m) => matchKey(m && m.uid) ||
+      (Array.isArray(m && m.aliases) && m.aliases.some((a) => matchKey(a))) ||
+      (matchName && m && m.name && matchName(m.name)));
+    if (!gone.length) continue;
+    c.members = c.members.filter((m) => gone.indexOf(m) < 0);
+    dropped += gone.length;
+    for (const m of gone) {
+      c.weeklyMeters = Math.max(0, (Number(c.weeklyMeters) || 0) - (Number(m.weeklyMeters) || 0));
+      c.totalMeters = Math.max(0, (Number(c.totalMeters) || 0) - (Number(m.totalMeters) || 0));
+      c.weeklyPoints = Math.max(0, (Number(c.weeklyPoints) || 0) - (Number(m.weeklyPoints) || 0));
+      if (c.leaderUid && matchKey(c.leaderUid)) c.leaderUid = null;
+    }
+    if (c.members.length && !c.members.some((m) => m && m.role === 'leader')) {
+      const oldest = c.members.slice().sort((a, b) => String((a && a.joined_at) || '').localeCompare(String((b && b.joined_at) || '')))[0];
+      if (oldest) { oldest.role = 'leader'; c.leaderUid = c.leaderUid || oldest.uid || null; }
+    }
+  }
+
+  // the account-lite board, and the JSON file it would restore itself from
+  let lbChanged = false;
+  for (const mapId of Object.keys(leaderboard)) {
+    const list = leaderboard[mapId];
+    if (!Array.isArray(list)) continue;
+    const kept = list.filter((r) => !(matchKey(r && r.pid) || (matchName && r && r.name && matchName(r.name))));
+    if (kept.length !== list.length) { dropped += list.length - kept.length; leaderboard[mapId] = kept; lbChanged = true; }
+  }
+  if (lbChanged) { try { fs.writeFileSync(LB_FILE, JSON.stringify(leaderboard)); } catch (e) { /* best effort */ } }
+
+  // a hydration already claimed would serve the old rows from RAM; forget it so
+  // the next read goes to the (now empty) database instead
+  for (const k of Array.from(hydrated)) if (matchKey(k)) { hydrated.delete(k); dropped++; }
+  // a deleted account's access token must stop resolving to its uid
+  for (const tok of Array.from(tokCache.keys())) {
+    const hit = tokCache.get(tok);
+    if (hit && matchKey(hit.uid)) { tokCache.delete(tok); dropped++; }
+  }
+  return dropped;
+}
+
+function evictPurged() { return sweepPurgedMemory(isPurgedKey, isPurgedName); }
+
+// Drop one racer this request is about, right now (used by settlement, which
+// must not leave behind what it is not allowed to write).
+function dropRacerMemory() {
+  const ids = [], names = new Set();
+  for (let i = 0; i < arguments.length; i++) {
+    const raw = arguments[i];
+    const s = raw == null ? '' : String(raw).trim();
+    if (s) { ids.push(s); if (!s.startsWith('sb:')) ids.push('sb:' + s); }
+    const n = purgeNameOf(raw);
+    if (n) names.add(n);
+  }
+  if (!ids.length) return 0;
+  return sweepPurgedMemory(
+    (k) => { const s = String(k); return ids.indexOf(s) >= 0 || isPurgedKey(s); },
+    (n) => names.has(purgeNameOf(n))
+  );
+}
+
+function noteTombstones(rows) {
+  let added = 0;
+  for (const r of rows || []) {
+    if (!r || r.key == null || r.key === '') continue;
+    const t = Date.parse(r.purged_at);
+    purgedKeys.set(String(r.key), isNaN(t) ? Date.now() : t);
+    added++;
+    if (Array.isArray(r.names)) for (const n of r.names) { const s = purgeNameOf(n); if (s) purgedNames.add(s); }
+    if (!isNaN(t) && t > purgeCursor) purgeCursor = t;
+  }
+  if (purgedKeys.size > PURGE_KEY_CAP) { purgedKeys.clear(); purgedNames.clear(); purgeCursor = 0; }
+  return added;
+}
+
+// Read the tombstones the purge trigger has written and empty the caches of
+// everything on them. Read from a second before the cursor on purpose: two
+// tombstones written by the same transaction share a timestamp, and re-reading
+// a row costs nothing while missing one leaves the racer in memory.
+async function refreshPurges(force) {
+  if (!sbOn()) return 0;
+  const from = (force || !purgeCursor) ? '' : '&purged_at=gte.' + encodeURIComponent(new Date(purgeCursor - 1000).toISOString());
+  const rows = await sbSelect('sr_purged_players', 'select=key,names,purged_at&order=purged_at.asc&limit=1000' + from);
+  if (!rows || !rows.length) return 0;
+  const added = noteTombstones(rows);
+  const dropped = evictPurged();
+  if (added || dropped) console.log('[v158 purge] learned ' + added + ' tombstone key(s), dropped ' + dropped + ' memory entr' + (dropped === 1 ? 'y' : 'ies') + ' (total ' + purgedKeys.size + ')');
+  return added;
+}
+
+async function sbRpc(fn, body) {
+  if (!sbOn()) return null;
+  try {
+    const r = await fetch(SB_URL + '/rest/v1/rpc/' + fn, {
+      method: 'POST', headers: sbHdr(), body: JSON.stringify(body || {}),
+      signal: AbortSignal.timeout(SB_TIMEOUT_MS * 3)
+    });
+    if (!r.ok) {
+      const detail = await r.text().catch(() => '');
+      sbWarnOnce(fn + ':rpc', 'rpc ' + fn + ' failed: HTTP ' + r.status + ' ' + String(detail).slice(0, 200));
+      return null;
+    }
+    const j = await r.json().catch(() => null);
+    return j == null ? {} : j;
+  } catch (e) { sbWarnOnce(fn + ':rpc', 'rpc ' + fn + ' unreachable: ' + e.message); return null; }
+}
+
+function safeEqual(a, b) {
+  const A = Buffer.from(String(a == null ? '' : a));
+  const B = Buffer.from(String(b == null ? '' : b));
+  if (!A.length || A.length !== B.length) return false;
+  return require('crypto').timingSafeEqual(A, B);
+}
+const purgeSafeKey = (x) => String(x == null ? '' : x).trim().replace(/[^A-Za-z0-9:._-]/g, '').slice(0, 64);
+
 
 function mergeProgressState(cur, row) {
   return {
@@ -3403,6 +3648,16 @@ function sweepMemory() {
   return evicted;
 }
 const memSweep = setInterval(sweepMemory, 600000); // every 10 minutes
+
+// v158: the Supabase dashboard delete is the operator's normal way to remove a
+// racer; its trigger writes a tombstone row, and this is how the running server
+// hears about it. Without Supabase configured there is nothing to poll.
+let purgePoll = null;
+if (sbOn()) {
+  refreshPurges(true).catch(() => {});
+  purgePoll = setInterval(() => { refreshPurges().catch(() => {}); }, PURGE_POLL_MS);
+  if (purgePoll.unref) purgePoll.unref(); // never hold the event loop open (tests, graceful shutdown)
+}
 if (memSweep.unref) memSweep.unref(); // never hold the event loop open (tests, graceful shutdown)
 if (ghostPrune.unref) ghostPrune.unref();
 function ghostLimited(ip) {
@@ -3471,6 +3726,12 @@ async function settleRace(entryOrRoom) {
   for (let i = 0; i < humans.length; i++) {
     const h = humans[i];
     const pos = order.indexOf(h.c) + 1;
+    // v158: if the account was deleted while this race was running, the finish
+    // must not put a single row back - not the stats, not the club membership.
+    const purgeSlot = h.c.slot || (i + 1);
+    const purgedNow = isPurgedRacer(h.uid, entry.uidBySlot && entry.uidBySlot[purgeSlot],
+      entry.pidBySlot && entry.pidBySlot[purgeSlot], h.c && h.c.name);
+    if (purgedNow) dropRacerMemory(h.uid, entry.pidBySlot && entry.pidBySlot[purgeSlot], h.c && h.c.name);
     const st = stats[h.uid] || { rating: 1000, peak_rating: 1000, xp: 0, streak: 0, best_streak: 0, races: 0, wins: 0, podiums: 0, daily_days: 0, last_daily: '', challenges_done: 0 };
     let rd = 0;
     if (rated) {
@@ -3756,7 +4017,7 @@ async function settleRace(entryOrRoom) {
     // redeploy holds five empty seeded presets - so every member's kilometres
     // would silently stop counting until they re-joined their own club.
     const crewId = await findCrewIdDurable(crewIds);
-    if (crewId && memCrews.has(crewId)) {
+    if (crewId && memCrews.has(crewId) && !purgedNow) {
       const cr = memCrews.get(crewId);
       rollCrewWeek(cr); // v96: the first race after Monday opens a new week
       const lapsDone = (h.c.lapTimes ? h.c.lapTimes.length : (h.c.finished ? (room.laps || 3) : 1));
@@ -3823,7 +4084,7 @@ async function settleRace(entryOrRoom) {
     });
 
     let failed = false;
-    if (sbOn()) {
+    if (sbOn() && !purgedNow) {
       const step = (label, fn) => { return withRetry(label + ':' + key, fn).then((ok) => { if (!ok) failed = true; }); };
       await step('history', () => fetch(SB_URL + '/rest/v1/race_history', { method: 'POST',
         headers: Object.assign(sbHdr(), { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
@@ -3862,6 +4123,8 @@ async function settleRace(entryOrRoom) {
       const coinsNew = null; // v115: wallet writes retired
       if (failed) broadcastScreens(entry, { type: 'settle-warn', slot: h.c.slot }); // v79 BUG-018: never silent
     }
+    // whatever this iteration put in RAM for a deleted racer goes with it
+    if (purgedNow) dropRacerMemory(h.uid, entry.pidBySlot && entry.pidBySlot[purgeSlot], h.c && h.c.name);
     rowsOut.push({
         slot: h.c.slot || (i + 1), pos, xp: xpTotal, rd, ratingNew, levelNew: lvlNew, levelUp: lvlNew > lvlOld, pr,
         dailyXp, chDone, coins, coinsNew: null,
@@ -3906,6 +4169,7 @@ async function settleRace(entryOrRoom) {
 
 async function sbUpsert(mapId, entry) {
   if (!sbOn() || !entry.pid || entry.t == null) return;
+  if (isPurgedRacer(entry.pid, entry.name)) return; // v158: erased means erased
   const pid = String(entry.pid);
   try {
     // keep the player's BEST time (read existing, write the minimum)
@@ -3972,7 +4236,7 @@ app.post('/ghost', async (req, res) => {
     const r = await fetch(SB_URL + '/rest/v1/ghosts', {
       method: 'POST',
       headers: { apikey: SB_ROLE, Authorization: 'Bearer ' + SB_ROLE, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-      body: JSON.stringify([{ id, map, name: String(j.name || 'RACER').slice(0, 16), data }]),
+      body: JSON.stringify([{ id, map, name: String(j.name || 'RACER').slice(0, 16), data, owner_key: purgeSafeKey(j.pid) || null }]),
     });
     if (!r.ok) return res.status(500).json({ error: 'db' });
     res.json({ id });
@@ -3991,6 +4255,60 @@ app.get('/ghost', async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'nf' });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: 'db' }); }
+});
+
+
+// ---------------------------------------------------------------------------
+// v158 POST /api/admin/purge — "delete the user, everywhere", from the game.
+// ---------------------------------------------------------------------------
+// Deleting the account in the Supabase dashboard is the normal route and needs
+// nothing from this server (the trigger does the work, the tombstone poll drops
+// the caches). This endpoint is for the operator who is already here: it runs
+// the same SQL purge and evicts in the same request, so the racer is gone from
+// the database and from memory before the response is written.
+//
+// Auth is the service role key the server already holds (Authorization: Bearer
+// <SUPABASE_SERVICE_ROLE>) or ADMIN_KEY when one is configured. Both are secrets
+// only the operator has; the browser never sees them.
+//
+//   { "uid": "<uuid>" }            one account, by auth id
+//   { "pid": "device-pid" }        a guest device
+//   { "name": "RACER" }            legacy rows that only carry a name
+//   { "keys": ["...","..."] }      several at once
+//   { "sweep": true }              every orphan (rows with no auth account)
+// ---------------------------------------------------------------------------
+app.post('/api/admin/purge', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  const auth = String(req.headers.authorization || '');
+  const adminKey = String(req.headers['x-admin-key'] || '');
+  const okRole = !!SB_ROLE && safeEqual(auth, 'Bearer ' + SB_ROLE);
+  const okKey = !!ADMIN_KEY && safeEqual(adminKey, ADMIN_KEY);
+  if (!(okRole || okKey)) return res.status(401).json({ error: 'unauthorized' });
+  if (!sbOn()) return res.status(503).json({ error: 'unavailable' });
+  let j;
+  try { j = JSON.parse((await readCappedBody(req, 8000)) || '{}'); } catch (e) { return res.status(400).json({ error: 'bad' }); }
+
+  if (j.sweep) {
+    const swept = await sbRpc('sr_purge_orphans', {});
+    if (swept === null) return res.status(502).json({ error: 'db' });
+    await refreshPurges(true);
+    return res.json({ ok: true, swept, evicted: evictPurged() });
+  }
+
+  const keys = [j.uid, j.sbUid, j.pid, j.key].concat(Array.isArray(j.keys) ? j.keys : [])
+    .map(purgeSafeKey).filter(Boolean);
+  const names = [j.name].concat(Array.isArray(j.names) ? j.names : [])
+    .map((x) => String(x == null ? '' : x).trim().slice(0, 32)).filter(Boolean);
+  if (!keys.length) return res.status(400).json({ error: 'no_identity' });
+
+  const purged = await sbRpc('sr_purge_identity', { p_keys: keys, p_names: names });
+  if (purged === null) return res.status(502).json({ error: 'db' });
+  // evict now rather than on the next poll: the RPC wrote the tombstones, so
+  // noting them here is the same information the poll would have read
+  noteTombstones(keys.map((k) => ({ key: k, names, purged_at: new Date().toISOString() })));
+  const evicted = evictPurged();
+  console.log('[v158 purge] admin purge ' + keys.join(',') + ' -> ' + JSON.stringify(purged));
+  res.json({ ok: true, keys, names, purged, evicted });
 });
 
 function newRoom(mode, mapId, cap) { // v76: configurable capacity (2..6)
@@ -4840,7 +5158,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v157', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v158', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
@@ -4950,11 +5268,27 @@ module.exports = {
   // fetch (the only way to exercise the Supabase paths without a live project)
   sbOn,
   sbSelect,
+  sbUpsert,
   sbUpsertRows,
   sbDelete,
   sbWarnOnce,
   sbWarned,
   hydrated,
+  claimHydration,
+  forgetHydration,
+  lbAdd,
+  // v158 account deletion - exported so the tests can drive the real sweepers
+  purgedKeys,
+  purgedNames,
+  isPurgedKey,
+  isPurgedName,
+  isPurgedRacer,
+  evictPurged,
+  dropRacerMemory,
+  noteTombstones,
+  refreshPurges,
+  sbRpc,
+  ADMIN_KEY,
   missionsMap,
   bountiesMap,
   mergeProgressState,

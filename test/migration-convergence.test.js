@@ -76,7 +76,10 @@ function serverTables() {
   let m;
   const rest = /rest\/v1\/([a-z_]+)/g;
   while ((m = rest.exec(SERVER)) !== null) out.add(m[1]);
-  const helper = /\bsb[A-Za-z]+\(\s*'([a-z_]{3,})'/g;
+  // sbTable('x') / sbSelect('x') take a table. sbRpc('x') takes a SQL FUNCTION
+  // name, so it is skipped here - otherwise sr_purge_identity would be demanded
+  // of a migration as if it were a table.
+  const helper = /\bsb(?!Rpc\b)[A-Za-z]+\(\s*'([a-z_]{3,})'/g;
   while ((m = helper.exec(SERVER)) !== null) out.add(m[1]);
   out.delete('rpc');           // /rest/v1/rpc/<function>, not a table
   return out;

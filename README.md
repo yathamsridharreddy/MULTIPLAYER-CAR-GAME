@@ -9,7 +9,7 @@
 [![Play Now](https://img.shields.io/badge/▶_PLAY_NOW-LIVE_DEMO-00F0FF?style=for-the-badge&logo=googlechrome&logoColor=05070c)](https://sridhar-drift.vercel.app)
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/yathamsridharreddy/MULTIPLAYER-CAR-GAME)
 
-[![Tests](https://img.shields.io/badge/Tests-582%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
+[![Tests](https://img.shields.io/badge/Tests-597%20passed%20%2F%200%20failed-00f59b?style=flat-square&logo=node.js)](test/)
 [![Simulation](https://img.shields.io/badge/Simulation-30Hz%20Authoritative-ffd479?style=flat-square)](public/js/game-core.js)
 [![Multiplayer](https://img.shields.io/badge/Multiplayer-1--6%20Players%20%2B%20AI-ff2e54?style=flat-square)](server.js)
 [![3D Engine](https://img.shields.io/badge/3D%20Engine-Three.js%20WebGL-00f0ff?style=flat-square)](public/js/game.js)
@@ -210,6 +210,8 @@ precached), so first load pays once and every later race is instant.
 ├── supabase-setup.sql           canonical schema for a NEW database
 ├── supabase-migration-v98.sql   ONE re-runnable script that converges ANY database
 ├── supabase-migration-v99.sql   converges `challenges` for the revenge flow
+├── supabase-migration-v158.sql  deleting a user in Auth really deletes the user
+│                                (the purge machine is also inside v98/setup.sql)
 ├── supabase-migration-v94/96/97 superseded by v98 — kept for history, do not run
 ├── test/                        389 node:test tests (client harnesses + server + SQL)
 └── LICENSE                      proprietary — All Rights Reserved
@@ -239,7 +241,15 @@ Open a second tab — or your phone on the same network at `/controller?room=<CO
 
 ### Database
 - **New project:** run [`supabase-setup.sql`](supabase-setup.sql) once in the SQL Editor.
-- **Existing project:** run [`supabase-migration-v98.sql`](supabase-migration-v98.sql) — one file that converges *any* older shape (creates missing tables, converges all 165 columns and 15 indexes, relaxes identity columns `uuid → text`, recreates policies, widens the club claim key) — then [`supabase-migration-v99.sql`](supabase-migration-v99.sql), which converges the `challenges` table for the revenge request flow. Both are idempotent; v98 **supersedes v94, v96 and v97**.
+- **Existing project:** run [`supabase-migration-v98.sql`](supabase-migration-v98.sql) — one file that converges *any* older shape (creates missing tables, converges all 170 columns and 16 indexes, relaxes identity columns `uuid → text`, recreates policies, widens the club claim key) — then [`supabase-migration-v99.sql`](supabase-migration-v99.sql), which converges the `challenges` table for the revenge request flow. Both are idempotent; v98 **supersedes v94, v96 and v97**.
+- **Already live before v158?** Everything above converges the schema, but the *account
+  deletion* machinery (the trigger on `auth.users`, the purge function and the tombstone
+  table) is what makes deleting a racer in Authentication → Users delete their profile,
+  wallet, ledger, garage, stats, records, history, missions, bounties, badges, seasons,
+  cups, ghosts, leaderboard times, club roster row and club mileage with them. It is in
+  v98 and in `supabase-setup.sql` as well, so re-running v98 is enough; running
+  [`supabase-migration-v158.sql`](supabase-migration-v158.sql) on its own does the same
+  and also sweeps the accounts that were already deleted before it existed.
 - **Verify:** restart the game server and read `GET /health` — `persistence.verdict` should be `"ok"`, `playerStatsKeyType` `"text"`, and `crews` / `crewMembers` / `crewClaims` `"ok"`. Any other value names the exact migration that is missing.
 
 ### Deploy
@@ -262,6 +272,7 @@ Conventions worth knowing: client and server share `game-core.js`; every release
 
 ## 🔖 Version Highlights
 
+- **v158** — deleting a racer deletes the racer. Removing the account in Supabase (Authentication → Users → Delete) removed the auth row and nothing else: their rating, XP, lap records, race history, achievements, coins, missions, bounties, badges, daily and weekly cup rows, ghost laps and leaderboard times all stayed behind, still counting towards their old club's weekly total, and a warm game server could flush some of it back. The cause was deliberate: v97–v99 dropped every foreign key to `auth.users`, because identity columns are text and hold guest keys (a device pid, a display name) that no account owns — a constraint that only ever rejected rows also gave the database nothing to cascade with. So the database gets the purge it should have had: `sr_purge_identity()` erases a racer from every table the game writes, matching any identity they are known by, repairs the clubs they were in (totals stop counting them, leadership passes on, an empty un-seeded club goes), and records a tombstone; an `AFTER DELETE` trigger on `auth.users` calls it, so the dashboard delete is the whole operation; `sr_purge_orphans()` sweeps the accounts that were already deleted. The server polls the tombstone table and drops the racer from its ten in-memory caches — including their club roster row and the account-lite board — refuses to hydrate them again, and refuses to write them back if a race was already running when the account went, because a cache is exactly how a deleted account comes back. `POST /api/admin/purge` runs the same purge from inside the game, for anyone who would rather not open the dashboard.
 - **v157** — the blue car is a deep blue. The second paint in the palette was `0x0a84ff`, an electric azure that read as light blue on the track and in its card; it is now `0x0d47c8`, a deep royal blue. The paint, the card portrait, the lobby entry, the fallback silhouette and the AI rival's car all carry the one colour, and nothing else on the site changed.
 - **v156** — clubs became somewhere you can look around. The directory knew how many racers a club had but never their names, so a club tag on a car in a lobby meant nothing until you joined it yourself. Any racer can now open any club and read its roster: who runs it, every member by name, their role and what each has put in this week, with your own row marked. It is public, so what leaves the relay is only what a club would expect a stranger to see — a display name, a role and a contribution, never the account uuid, device pid or alias list the settlement path runs on. Reachable from the club list (WHO'S IN on every card) and from the championship standings table, and translated like the rest of the site.
 - **v155** — one car per racer, and one racer in charge of the room. Two racers could pick the same car and end up in identical machines on the grid; now a car belongs to whoever is driving it. Arriving in a room claims the first car nobody has, changing into somebody else's is refused, and the losing card is marked with the driver's name and cannot be clicked — so the car list reads as a grid rather than a menu. The room creator owns the circuit, the weather, the lap count and the AI rival: those four are refused at the relay for everyone else, whatever their browser sends, and the wizard shows the room's real values on a locked control rather than pretending. Everyone in the room can still pick a car, and a racer on their own still owns every setting.

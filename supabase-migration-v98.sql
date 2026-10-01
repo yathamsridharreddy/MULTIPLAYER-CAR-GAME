@@ -513,6 +513,19 @@ alter table public.crews                 enable row level security;
 alter table public.crew_members          enable row level security;
 alter table public.crew_milestone_claims enable row level security;
 
+-- v158: the account-deletion ledger. Deleting a racer in Authentication -> Users
+-- fires the trigger further down this file, which erases their rows and records
+-- their identity keys here; the game server polls this table so its in-memory
+-- copies of the same racer are dropped too. No policies: RLS with none keeps it
+-- readable by the service role alone.
+create table if not exists public.sr_purged_players (
+  key       text primary key,
+  names     text[] not null default '{}',
+  purged_at timestamptz not null default now()
+);
+
+alter table public.sr_purged_players enable row level security;
+
 
 -- ----------------------------------------------------------------------------
 -- 3. converge columns
@@ -705,7 +718,11 @@ begin
     ($$crew_milestone_claims$$, $$tier$$, $$alter table public.crew_milestone_claims add column if not exists tier int not null$$, $$alter table public.crew_milestone_claims add column if not exists tier int$$),
     ($$crew_milestone_claims$$, $$member_key$$, $$alter table public.crew_milestone_claims add column if not exists member_key text not null$$, $$alter table public.crew_milestone_claims add column if not exists member_key text$$),
     ($$crew_milestone_claims$$, $$week_key$$, $$alter table public.crew_milestone_claims add column if not exists week_key text not null default ''$$, $$alter table public.crew_milestone_claims add column if not exists week_key text default ''$$),
-    ($$crew_milestone_claims$$, $$claimed_at$$, $$alter table public.crew_milestone_claims add column if not exists claimed_at timestamptz not null default now()$$, $$alter table public.crew_milestone_claims add column if not exists claimed_at timestamptz default now()$$)
+    ($$crew_milestone_claims$$, $$claimed_at$$, $$alter table public.crew_milestone_claims add column if not exists claimed_at timestamptz not null default now()$$, $$alter table public.crew_milestone_claims add column if not exists claimed_at timestamptz default now()$$),
+    ($$ghosts$$, $$owner_key$$, $$alter table public.ghosts add column if not exists owner_key text$$, $$alter table public.ghosts add column if not exists owner_key text$$),
+    ($$sr_purged_players$$, $$key$$, $$alter table public.sr_purged_players add column if not exists key text$$, $$alter table public.sr_purged_players add column if not exists key text$$),
+    ($$sr_purged_players$$, $$names$$, $$alter table public.sr_purged_players add column if not exists names text[] not null default '{}'$$, $$alter table public.sr_purged_players add column if not exists names text[] default '{}'$$),
+    ($$sr_purged_players$$, $$purged_at$$, $$alter table public.sr_purged_players add column if not exists purged_at timestamptz not null default now()$$, $$alter table public.sr_purged_players add column if not exists purged_at timestamptz default now()$$)
     ) as v(tbl, col, ddl_strict, ddl_loose)
   loop
     if to_regclass('public.' || r.tbl) is null then
@@ -751,7 +768,8 @@ begin
     ($$idx_daily_comp_rank$$, $$create index if not exists idx_daily_comp_rank on public.daily_competition (date_key, best_lap_ms asc)$$),
     ($$idx_weekly_comp_rank$$, $$create index if not exists idx_weekly_comp_rank on public.weekly_competition (week_key, points desc, wins_week desc)$$),
     ($$revenge_owner_issued_idx$$, $$create index if not exists revenge_owner_issued_idx on public.player_revenge (owner_id, issued_at desc)$$),
-    ($$crew_members_alias_idx$$, $$create index if not exists crew_members_alias_idx on public.crew_members using gin (aliases)$$)
+    ($$crew_members_alias_idx$$, $$create index if not exists crew_members_alias_idx on public.crew_members using gin (aliases)$$),
+    ($$ghosts_owner_key_idx$$, $$create index if not exists ghosts_owner_key_idx on public.ghosts (owner_key)$$)
     ) as v(nm, ddl)
   loop
     begin
@@ -1168,3 +1186,448 @@ end $$;
 --
 --   curl -s https://<your-backend-host>/health | python3 -m json.tool
 -- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- v158 ACCOUNT DELETION - the purge machine (also shipped as
+-- supabase-migration-v158.sql for databases that already exist)
+-- ----------------------------------------------------------------------------
+-- Deleting a racer in Authentication -> Users used to leave every row they ever
+-- wrote behind. The functions below erase them and a trigger on auth.users calls
+-- one of them, so the dashboard delete is the whole operation. (The tombstone
+-- table is in section 2, its columns and the ghost owner index in sections 3 and
+-- 4.) The same machine ships as supabase-migration-v158.sql for a database that
+-- does not want to re-run this file; the one-time sweep of accounts deleted
+-- before v158 existed is the last statement there, not here.
+-- ----------------------------------------------------------------------------
+-- 10. the purge: every row of one racer, everywhere
+-- ----------------------------------------------------------------------------
+-- p_keys  : every identity this account is known by (account uuid, the
+--           'sb:<uuid>' device form the game writes, device pids, and any
+--           aliases recorded on their club roster row).
+-- p_names : the display names this account raced under. Only used where a table
+--           has a name and no identity column (legacy ghost rows, old
+--           leaderboard rows), because a name is weaker evidence than a key.
+--
+-- Every delete is built dynamically after checking that the table AND the column
+-- exist, so this function never aborts on a database that is missing a table,
+-- and it returns a per-table count so the caller can see what was erased.
+
+create or replace function public.sr_purge_identity(p_keys text[], p_names text[] default '{}')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_keys   text[];
+  v_names  text[];
+  v_rec    record;
+  v_hit    bigint;
+  v_out    jsonb := '{}'::jsonb;
+  v_claims text[];
+  v_crews  text[];
+  -- (the table/column pairs are written as VALUES lists below rather than as
+  --  2-D arrays: plpgsql flattens a multidimensional array into scalars when it
+  --  iterates, which silently hands a string to a record variable)
+begin
+  -- ---- 1. the identity set ------------------------------------------------
+  -- drop nulls and blanks, de-duplicate, and always include the 'sb:<uuid>'
+  -- device form the game writes for a signed-in racer alongside the bare uuid
+  select coalesce(array_agg(distinct t), '{}')
+    into v_keys
+    from (
+      select btrim(k) as t from unnest(coalesce(p_keys, '{}')) as k
+      union
+      select 'sb:' || btrim(k) from unnest(coalesce(p_keys, '{}')) as k
+       where btrim(k) <> '' and btrim(k) !~* '^sb:'
+    ) s
+   where t <> '';
+
+  select coalesce(array_agg(distinct btrim(n)), '{}')
+    into v_names
+    from unnest(coalesce(p_names, '{}')) as n
+   where btrim(n) <> '';
+
+  if v_keys = '{}' then
+    return v_out;
+  end if;
+
+  -- ---- 2. widen the identity set from the club roster ---------------------
+  -- The roster row is the richest record of who a racer is: it carries every
+  -- device pid and display name ever seen for them. It is read FIRST so every
+  -- other table is purged with the full set, not just the key the caller knew.
+  if to_regclass('public.crew_members') is not null then
+    begin
+      select coalesce(array_agg(distinct m.member_key), '{}')
+        into v_claims
+        from public.crew_members m
+       where m.member_key = any(v_keys)
+          or (m.aliases is not null and m.aliases && v_keys)
+          or (v_names <> '{}' and m.name = any(v_names));
+
+      if v_claims <> '{}' then
+        select coalesce(array_agg(distinct a), '{}')
+          into v_keys
+          from (
+            select unnest(v_keys) as a
+            union
+            select unnest(coalesce(m.aliases, '{}')) as a
+              from public.crew_members m
+             where m.member_key = any(v_claims)
+            union
+            select m.member_key from public.crew_members m where m.member_key = any(v_claims)
+          ) s
+         where a is not null and a <> '';
+      end if;
+    exception when undefined_column then
+      v_claims := '{}';
+    end;
+  end if;
+
+  -- ---- 3. one identity column per table -----------------------------------
+  for v_rec in
+    select t.tbl, t.col from (values
+      ('player_stats',           'user_id'),
+      ('player_map_records',     'user_id'),
+      ('race_history',           'user_id'),
+      ('player_achievements',    'user_id'),
+      ('player_seasons',         'user_id'),
+      ('player_wallet',          'user_id'),
+      ('player_inventory',       'user_id'),
+      ('player_equipped',        'user_id'),
+      ('coin_ledger',            'user_id'),
+      ('daily_competition',      'user_id'),
+      ('weekly_competition',     'user_id'),
+      ('season_rewards_claimed', 'user_id'),
+      ('player_missions',        'user_id'),
+      ('weekly_bounties',        'user_id'),
+      ('player_badges',          'user_id'),
+      ('player_revenge',         'owner_id'),
+      ('profiles',               'id'),
+      ('leaderboard',            'pid'),
+      ('ghosts',                 'owner_key')
+    ) as t(tbl, col)
+  loop
+    begin
+      if to_regclass('public.' || v_rec.tbl) is not null then
+        -- ::text on the left: profiles.id is uuid on older databases while every
+        -- other identity column is text, and one purge must work on both
+        execute format('delete from public.%I t where t.%I::text = any($1)', v_rec.tbl, v_rec.col)
+          using v_keys;
+        get diagnostics v_hit = row_count;
+        if v_hit > 0 then
+          v_out := v_out || jsonb_build_object(v_rec.tbl || '.' || v_rec.col, v_hit);
+        end if;
+      end if;
+    exception when undefined_column then
+      null; -- an older database without this column: nothing to purge there
+    end;
+  end loop;
+
+  -- ---- 4. link tables: either side of the link -----------------------------
+  for v_rec in
+    select t.tbl, t.col from (values
+      ('friends',    'from_uid'),
+      ('friends',    'to_uid'),
+      ('challenges', 'from_uid'),
+      ('challenges', 'to_uid'),
+      ('challenges', 'winner_uid')
+    ) as t(tbl, col)
+  loop
+    begin
+      if to_regclass('public.' || v_rec.tbl) is not null then
+        -- ::text on the left: profiles.id is uuid on older databases while every
+        -- other identity column is text, and one purge must work on both
+        execute format('delete from public.%I t where t.%I::text = any($1)', v_rec.tbl, v_rec.col)
+          using v_keys;
+        get diagnostics v_hit = row_count;
+        if v_hit > 0 then
+          v_out := v_out || jsonb_build_object(v_rec.tbl || '.' || v_rec.col, v_hit);
+        end if;
+      end if;
+    exception when undefined_column then
+      null;
+    end;
+  end loop;
+
+  -- ---- 5. names, only where there is no identity to match -----------------
+  -- The shared ghost table is the case this exists for: a racing line saved
+  -- under a name, and rows written before v158 have no owner key. Matching by
+  -- name can only be as precise as the name, so it is done ONLY for keyless
+  -- rows and ONLY for names this account actually raced under. Rows written from
+  -- v158 on carry owner_key and never reach this branch.
+  if v_names <> '{}' then
+    begin
+      if to_regclass('public.ghosts') is not null then
+        execute 'delete from public.ghosts t where t.owner_key is null and t.name = any($1)' using v_names;
+        get diagnostics v_hit = row_count;
+        if v_hit > 0 then
+          v_out := v_out || jsonb_build_object('ghosts.legacy_name', v_hit);
+        end if;
+      end if;
+    exception when undefined_column then
+      null;
+    end;
+
+    begin
+      if to_regclass('public.leaderboard') is not null then
+        execute 'delete from public.leaderboard t where t.pid is null and t.name = any($1)' using v_names;
+        get diagnostics v_hit = row_count;
+        if v_hit > 0 then
+          v_out := v_out || jsonb_build_object('leaderboard.legacy_name', v_hit);
+        end if;
+      end if;
+    exception when undefined_column then
+      null;
+    end;
+  end if;
+
+  -- ---- 6. the clubs -------------------------------------------------------
+  -- Before the roster rows go, the kilometres and points they contributed are
+  -- SUBTRACTED from their club. Otherwise the club keeps a deleted racer's
+  -- weekly total for ever - the "full data from clubs" this migration is for.
+  if v_claims is not null and v_claims <> '{}' and to_regclass('public.crew_members') is not null then
+    begin
+      select coalesce(array_agg(distinct m.crew_id), '{}')
+        into v_crews
+        from public.crew_members m
+       where m.member_key = any(v_claims);
+
+      if to_regclass('public.crew_milestone_claims') is not null then
+        execute 'delete from public.crew_milestone_claims t where t.member_key = any($1)' using v_claims;
+        get diagnostics v_hit = row_count;
+        if v_hit > 0 then
+          v_out := v_out || jsonb_build_object('crew_milestone_claims', v_hit);
+        end if;
+      end if;
+
+      execute $sql$
+        update public.crews c
+           set weekly_meters = greatest(0, c.weekly_meters - agg.wm),
+               total_meters  = greatest(0, c.total_meters  - agg.tm),
+               weekly_points = greatest(0, c.weekly_points - agg.wp)
+          from (
+            select m.crew_id,
+                   coalesce(sum(m.weekly_meters), 0) as wm,
+                   coalesce(sum(m.total_meters), 0)  as tm,
+                   coalesce(sum(m.weekly_points), 0) as wp
+              from public.crew_members m
+             where m.member_key = any($1)
+             group by m.crew_id
+          ) agg
+         where c.id = agg.crew_id
+      $sql$ using v_claims;
+
+      execute 'delete from public.crew_members t where t.member_key = any($1)' using v_claims;
+      get diagnostics v_hit = row_count;
+      if v_hit > 0 then
+        v_out := v_out || jsonb_build_object('crew_members', v_hit);
+      end if;
+
+      -- a club with nobody left in it was that racer's club: it goes with them.
+      -- The built-in clubs are seeded and stay.
+      execute $sql$
+        delete from public.crews c
+         where coalesce(c.seeded, false) = false
+           and not exists (select 1 from public.crew_members m where m.crew_id = c.id)
+      $sql$;
+
+      -- ...and a club whose leader is gone passes to the member who has been
+      -- there longest, rather than pointing at an account that no longer exists
+      execute $sql$
+        update public.crews c
+           set leader_uid = (
+             select m.member_key from public.crew_members m
+              where m.crew_id = c.id
+              order by m.joined_at asc, m.member_key asc
+              limit 1
+           )
+         where exists (select 1 from public.crew_members m where m.crew_id = c.id)
+           and (c.leader_uid is null or c.leader_uid = any($1))
+      $sql$ using v_claims;
+    exception when undefined_column then
+      null;
+    end;
+  end if;
+
+  -- ---- 7. the tombstone ---------------------------------------------------
+  -- The game server keeps copies of these rows in RAM between races; this is how
+  -- it learns to drop them, so a warm process cannot write the racer back.
+  insert into public.sr_purged_players (key, names)
+  select unnest(v_keys), v_names
+  on conflict (key) do update
+    set purged_at = now(),
+        names = (select array(select distinct unnest(public.sr_purged_players.names || excluded.names)));
+
+  return v_out;
+end $$;
+
+comment on function public.sr_purge_identity(text[], text[]) is
+  'v158: erases every row of one racer across the game tables and repairs the clubs they were in.';
+
+-- Supabase's role names, guarded so this file also runs on a plain PostgreSQL
+-- (a local test cluster, a staging copy) where they do not exist.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'revoke all on function public.sr_purge_identity(text[], text[]) from anon';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on function public.sr_purge_identity(text[], text[]) from authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant execute on function public.sr_purge_identity(text[], text[]) to service_role';
+  end if;
+end $$;
+
+
+-- ----------------------------------------------------------------------------
+-- 11. the trigger: deleting the auth user IS the delete
+-- ----------------------------------------------------------------------------
+-- Runs when you delete a user in Authentication -> Users (or via the Admin API).
+-- It gathers every identity the account is known by - the uuid, the sb:<uuid>
+-- device form, the pids and aliases recorded in the club roster, the display
+-- name on their stats and profile - and hands the lot to the purge.
+
+create or replace function public.sr_on_auth_user_delete()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_ids    text[] := array[]::text[];
+  v_keys   text[] := array[]::text[];
+  v_names  text[] := array[]::text[];
+  v_extra  text[];
+  v_names_extra text[];
+begin
+  v_ids  := array[old.id::text, 'sb:' || old.id::text];
+
+  -- the display name(s) this account raced under: the profile, then the name on
+  -- its stats rows. Both are best-effort - an older database may not have them.
+  begin
+    if to_regclass('public.profiles') is not null then
+      execute 'select coalesce(array_agg(distinct p.username), ''{}'') from public.profiles p where p.id::text = $1'
+        into v_extra using old.id::text;
+      v_names := v_names || coalesce(v_extra, '{}');
+    end if;
+  exception when undefined_column then null;
+  end;
+
+  begin
+    if to_regclass('public.player_stats') is not null then
+      execute 'select coalesce(array_agg(distinct s.name), ''{}'') from public.player_stats s where s.user_id = any($1)'
+        into v_extra using v_ids;
+      v_names := v_names || coalesce(v_extra, '{}');
+    end if;
+  exception when undefined_column then null;
+  end;
+
+  -- every identity the club roster remembers this account by: its own roster
+  -- row, the aliases on it, and the name it was listed under
+  begin
+    if to_regclass('public.crew_members') is not null then
+      execute $sql$
+        select coalesce(array_agg(distinct k), '{}'), coalesce(array_agg(distinct n), '{}')
+          from (
+            select m.member_key as k, m.name as n
+              from public.crew_members m
+             where m.member_key = any($1) or (m.aliases is not null and m.aliases && $1)
+            union all
+            select unnest(coalesce(m.aliases, '{}')) as k, m.name as n
+              from public.crew_members m
+             where m.member_key = any($1) or (m.aliases is not null and m.aliases && $1)
+          ) s
+      $sql$ into v_extra, v_names_extra using v_ids;
+      v_keys  := v_keys  || coalesce(v_extra, '{}');
+      v_names := v_names || coalesce(v_names_extra, '{}');
+    end if;
+  exception when undefined_column then null;
+  end;
+
+  perform public.sr_purge_identity(v_ids || v_keys, v_names);
+  return old;
+end $$;
+
+comment on function public.sr_on_auth_user_delete() is
+  'v158: purges a deleted account from every game table. Attached to auth.users.';
+
+-- the trigger is what makes the dashboard delete complete
+drop trigger if exists sr_purge_on_auth_delete on auth.users;
+create trigger sr_purge_on_auth_delete
+  after delete on auth.users
+  for each row execute function public.sr_on_auth_user_delete();
+
+
+-- ----------------------------------------------------------------------------
+-- 12. accounts deleted BEFORE this migration
+-- ----------------------------------------------------------------------------
+-- Everything above only fires from now on. Any account deleted from the
+-- dashboard while this migration did not exist still has its rows, and they are
+-- identified the same way the game identifies them: a key that is a uuid, where
+-- that uuid is no longer in auth.users. Guest rows (a device pid, a display
+-- name) are NOT touched - they were never accounts.
+
+create or replace function public.sr_purge_orphans()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_keys  text[] := array[]::text[];
+  v_names text[] := array[]::text[];
+  v_out   jsonb;
+begin
+  -- candidates from every identity column the game writes
+  begin
+    execute $sql$
+      select coalesce(array_agg(distinct k), '{}'), coalesce(array_agg(distinct n), '{}')
+        from (
+          select s.user_id as k, s.name as n from public.player_stats s
+           where s.user_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          union all
+          select m.member_key, m.name from public.crew_members m
+           where m.member_key ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          union all
+          select p.id::text, p.username from public.profiles p
+           where p.id::text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        ) c
+    $sql$ into v_keys, v_names;
+  exception when undefined_table then
+    return '{}'::jsonb;
+  end;
+
+  if v_keys = '{}' then
+    return '{}'::jsonb;
+  end if;
+
+  -- keep only the keys that no longer answer to an auth user
+  select coalesce(array_agg(k), '{}') into v_keys
+    from unnest(v_keys) as k
+   where not exists (select 1 from auth.users u where u.id::text = k);
+
+  if v_keys = '{}' then
+    return '{}'::jsonb;
+  end if;
+
+  v_out := public.sr_purge_identity(v_keys, v_names);
+  return v_out;
+end $$;
+
+comment on function public.sr_purge_orphans() is
+  'v158: sweeps rows left behind by accounts deleted before the purge trigger existed.';
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'revoke all on function public.sr_purge_orphans() from anon';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on function public.sr_purge_orphans() from authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant execute on function public.sr_purge_orphans() to service_role';
+  end if;
+end $$;

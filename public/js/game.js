@@ -3857,8 +3857,10 @@ if (btBtn) btBtn.addEventListener('click', () => {
   const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
   let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
   if (!g || !g.length) { toast('Enable 👻 Ghost & set a best lap first'); return; }
+  // v158: the ghost carries the identity that uploaded it, so deleting the
+  // account erases their shared ghosts by key and not by display name alone
   btBtn.disabled = true;
-  fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, data: g }) })
+  fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, pid: crewIdentity().pid || '', data: g }) })
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error('x'))))
     .then((j) => {
       let best = null; try { best = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
@@ -3878,7 +3880,7 @@ if (rpBtn) rpBtn.addEventListener('click', () => {
   let g = null; try { g = JSON.parse(localStorage.getItem('sr_ghost_' + mapId) || 'null'); } catch (e) {}
   if (!g || !g.length) { toast('Set a best lap first (enable 👻 Ghost in settings)'); return; }
   rpBtn.disabled = true;
-  fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, data: g }) })
+  fetch(httpBase() + '/ghost', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ map: mapId, name: prefs.name, pid: crewIdentity().pid || '', data: g }) })
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error('unavailable'))))
     .then((j) => { track('share', mapId, { channel: 'replay' }); copyText(location.origin + '/replay?g=' + j.id); toast('🎥 Replay link copied!'); })
     .catch(() => toast('Replays need the Supabase setup'))
@@ -6142,7 +6144,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v157';
+const BUILD = 'v158';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
