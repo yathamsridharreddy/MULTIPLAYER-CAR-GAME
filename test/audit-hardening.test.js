@@ -403,11 +403,7 @@ describe('AUDIT-F6 — the client and the server cannot drift apart', () => {
     const swVers = [...new Set([...sw.matchAll(/\?v=(\d+)/g)].map((m) => m[1]))];
     assert.equal(htmlVers.length, 1, `index.html mixes asset versions: ${htmlVers.join(', ')}`);
     assert.deepEqual(swVers, htmlVers, 'the service worker precaches a different asset version than the page loads');
-    // v166: the cache name is DERIVED from the worker's own build marker, so the
-    // two can never drift; what must hold is that the marker and the page agree.
-    const swBuild = (sw.match(/const BUILD = '(v\d+)';/) || [])[1];
-    assert.equal(swBuild, 'v' + htmlVers[0], 'the worker build marker must match the asset version');
-    assert.match(sw, /const CACHE = 'sridhar-rush-' \+ BUILD;/, 'the cache name must be keyed to that marker');
+    assert.match(sw, new RegExp(`sridhar-rush-v${htmlVers[0]}`), 'the cache name must match the asset version');
   });
 
   test('server.js declares no duplicate top-level function names', () => {

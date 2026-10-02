@@ -473,27 +473,6 @@ h1 span {
   color: var(--boost-emerald);
 }
 
-/* v166 — SAVE FOR OFFLINE: the control that puts the whole game on the device,
-   and the chip that says it is there. Same visual language as the room chips. */
-#sr-offline-btn {
-  border-color: rgba(0, 240, 255, 0.35);
-  color: var(--cyber-cyan, #00f0ff);
-}
-#sr-offline-btn .ico { --ico: var(--cyber-cyan, #00f0ff); }
-#sr-offline-btn:disabled { opacity: 0.55; cursor: default; }
-#sr-offline-chip {
-  font: 700 11px var(--font-tech);
-  letter-spacing: 1px;
-  color: var(--boost-emerald);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-#sr-offline-chip .ico { --ico: var(--boost-emerald); }
-@media (max-width: 820px) {
-  #sr-offline-btn .lbl, #sr-offline-chip .lbl { display: none; }   /* the icon carries it on phones */
-}
-
 #lobby-status {
   font: 600 12px var(--font-tech);
   letter-spacing: 1px;
@@ -1916,7 +1895,6 @@ h1 span {
 /* ---- icon tints: a status dot keeps its meaning now that it is a real glyph ---- */
 .ico-green { color: #25d366; }
 .ico-amber { color: #ffc24a; }
-.ico-cyan  { color: #00f0ff; }   /* v166: the lobby chip while racing offline */
 .ico-flame { color: #ff7a2f; }
 .ico-cyan  { color: var(--cyber-cyan); }
 .ico-muted { color: #8fa2b8; }

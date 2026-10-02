@@ -1028,7 +1028,7 @@ describe('v163 — a tombstone is not the last word on a living account', () => 
     assert.match(GAME_SRC, /guestAfterErase: true/, 'and retries the same click as a guest');
     assert.match(GAME_SRC, /account_check_failed/, 'an unreachable check is named, not guessed');
     assert.match(GAME_SRC, /const retriedAsGuest = /, 'the retry cannot loop for ever');
-    // v165: and if that retry itself is refused, the note must not claim a join
+    // v167: and if that retry itself is refused, the note must not claim a join
     // that did not happen.
     assert.doesNotMatch(GAME_SRC, /You joined as a guest/, 'a failed retry never claims the racer joined');
     assert.match(GAME_SRC, /The old account was signed out first; this retry was as a guest\./, 'it says what actually happened instead');

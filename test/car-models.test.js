@@ -144,19 +144,11 @@ test('v118: eight distinct silhouettes, one per selectable car id', () => {
   }
 });
 
-test('service worker does not precache car models (saved only when asked)', () => {
+test('service worker does not precache car models (runtime cache only)', () => {
   const sw = read('public/sw.js');
-  // v166: the cache name is derived from the worker's BUILD marker.
-  assert.ok(/const BUILD = 'v\d+';/.test(sw) && /const CACHE = 'sridhar-rush-' \+ BUILD;/.test(sw),
-    'cache name is versioned');
-  // 9.6 MB at install is a tax on every visitor. The model is listed in the
-  // HEAVY half (sw-icons.js), which is only fetched by SAVE FOR OFFLINE or by a
-  // race that actually needs it - never by install.
-  const install = sw.slice(0, sw.indexOf('self.addEventListener'));
-  assert.ok(!install.includes('assets/cars'), 'models must not be in the install precache list');
-  const listed = new Function('self', read('public/sw-icons.js') + '; return self.__SR_OFFLINE_FILES;')({});
-  assert.ok(listed.heavy.some((u) => /CarConcept\.gltf$/.test(u)), 'and they are still saved on request');
-  assert.ok(!JSON.stringify(listed.icons).includes('assets/cars'), 'the model is not in the small icon set');
+  assert.ok(/const CACHE = 'sridhar-rush-v\d+'/.test(sw), 'cache name is versioned');
+  const precache = sw.slice(0, sw.indexOf('self.addEventListener'));
+  assert.ok(!precache.includes('assets/cars'), 'models must not be in the precache list');
 });
 
 /* ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap" media="print" onload="this.media='all'"/>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap"/></noscript>
-  <link rel="stylesheet" href="css/style.css?v=166"/>
+  <link rel="stylesheet" href="css/style.css?v=167"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -283,11 +283,9 @@
             <button id="join-room-btn" class="ghost sm"><span class="ico" data-i="key" aria-hidden="true"></span><span data-i18n="joinRoom">JOIN</span></button>
             <button id="leave-room-btn" class="ghost sm" title="Leave this room and join or create another" hidden><span class="ico" data-i="exit" aria-hidden="true"></span><span data-i18n="exitRoom">EXIT ROOM</span></button>
             <button id="install-btn" class="ghost sm" hidden><span class="ico" data-i="install" aria-hidden="true"></span><span data-i18n="install">INSTALL</span></button>
-            <button id="sr-offline-btn" class="ghost sm" title="Save the whole game on this device so it opens with no internet"><span class="ico" data-i="install" aria-hidden="true"></span><span class="lbl">SAVE FOR OFFLINE</span></button>
             <button id="lang-btn" class="ghost sm" title="Language"><span class="ico" data-i="globe" aria-hidden="true"></span><span class="lbl">EN</span></button>
           </div>
           <div id="lobby-conn"><span class="ico ico-amber" data-i="dot" aria-hidden="true"></span><span data-i18n="connecting">connecting…</span></div>
-          <div id="sr-offline-chip" title="Every file the game needs is saved on this device - it opens with no internet" hidden><span class="ico" data-i="check" aria-hidden="true"></span><span class="lbl">SAVED ON THIS DEVICE</span></div>
         </div>
 
         <!-- challenge invitation banner (authenticated) -->
@@ -562,9 +560,6 @@
           <button class="mode3-btn active" data-m3="mp"><span class="ico" data-i="racing-car" aria-hidden="true"></span><span class="m3-name" data-i18n="modeMultiplayer">MULTIPLAYER</span><span class="m3-sub" data-i18n="modeMultiplayerSub">Race against players</span></button>
           <button class="mode3-btn" data-m3="tt"><span class="ico" data-i="stopwatch" aria-hidden="true"></span><span class="m3-name" data-i18n="modeTimeTrial">TIME TRIAL</span><span class="m3-sub" data-i18n="modeTimeTrialSub">Beat your fastest time</span></button>
           <button class="mode3-btn" data-m3="practice"><span class="ico" data-i="gamepad" aria-hidden="true"></span><span class="m3-name" data-i18n="modePractice">PRACTICE</span><span class="m3-sub" data-i18n="modePracticeSub">Learn the track</span></button>
-          <!-- v165: racing with no internet at all. Same track, same car, same
-               laps - the race runs in this page instead of on the server. -->
-          <button class="mode3-btn" data-m3="offline"><span class="ico" data-i="bolt" aria-hidden="true"></span><span class="m3-name">OFFLINE</span><span class="m3-sub">No internet needed</span></button>
         </div>
       </div>
       <div class="overlay-card">
@@ -716,11 +711,11 @@
   </div>
 
   <script defer src="js/vendor/three.min.js"></script>
-  <script defer src="js/vendor/GLTFLoader.js?v=166"></script>
-  <script defer src="js/car-models.js?v=166"></script>
+  <script defer src="js/vendor/GLTFLoader.js?v=167"></script>
+  <script defer src="js/car-models.js?v=167"></script>
   <script defer src="js/vendor/qrcode.js"></script>
-  <script defer src="js/game-core.js?v=166"></script>
-  <script defer src="js/progression.js?v=166"></script>
+  <script defer src="js/game-core.js?v=167"></script>
+  <script defer src="js/progression.js?v=167"></script>
   <script src="js/config.js"></script>
   <script>
   // v119 ACCOUNT GATE: when this deploy has Supabase keys configured, the game
@@ -730,28 +725,21 @@
     try {
       if (!(String(window.SB_U || '').trim() && String(window.SB_A || '').trim())) return;
       if (/auth\.html$/.test(location.pathname)) return;
-      // v165: the gate exists to make racers sign in before they race ONLINE.
-      // Signing in needs the network, so a browser that has none is let through
-      // to offline mode instead of being bounced to a page that cannot load.
-      // (?offline=1 is the OFFLINE button's link, for a browser that is online
-      // but wants to race alone.)
-      if (navigator.onLine === false || /(^|[?&])offline=1(&|$)/.test(location.search)) return;
       var s = null;
       try { s = JSON.parse(localStorage.getItem('sr_sb_session') || 'null'); } catch (e) {}
       if (!s || !s.access_token) location.replace('auth.html?next=' + encodeURIComponent(location.pathname + location.search));
     } catch (e) {}
   })();
   </script>
-  <script defer src="js/account.js?v=166"></script>
-  <script defer src="js/i18n.js?v=166"></script>
-  <script defer src="js/offline-save.js?v=166"></script>
-  <script defer src="js/offline.js?v=166"></script>
-  <script defer src="js/net.js?v=166"></script>
-  <script defer src="js/game.js?v=166"></script>
+  <script defer src="js/account.js?v=167"></script>
+  <script defer src="js/i18n.js?v=167"></script>
+  <script defer src="js/net.js?v=167"></script>
+  <script defer src="js/game.js?v=167"></script>
   <script>
-  // PWA: the service worker is registered EARLY by js/offline-save.js (v166), not
-  // on window.load - a racer who lands and goes offline straight away still gets
-  // the game saved. This block only wires the INSTALL button.
+  // PWA (v36): register service worker + show INSTALL button when the browser allows it
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () {}); });
+  }
   (function () {
     var btn = document.getElementById('install-btn');
     if (!btn) return;

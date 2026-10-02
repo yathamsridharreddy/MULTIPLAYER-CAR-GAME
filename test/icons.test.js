@@ -145,23 +145,18 @@ test('v142: the icon forge is the single source of truth and still runs', () => 
   assert.match(src, /def mono_svg/, 'the forge must emit the mono variants too');
 });
 
-test('v142/v166: the first-paint icons are all on the device', () => {
+test('v142: the service worker precaches the icons the first paint needs', () => {
   const SW = read('public/sw.js');
-  // v166: the two icon sets moved into the generated sw-icons.js (they are saved
-  // in full, so no screen can have a hole in it offline); the union is what must
-  // cover the icons the first paint draws.
-  const listed = new Function('self', read('public/sw-icons.js') + '; return self.__SR_OFFLINE_FILES;')({});
-  const covered = SW + listed.icons.join('\n');
   for (const f of ['weather-sun', 'weather-rain', 'weather-snow', 'weather-night',
     'camera', 'gamepad', 'refresh', 'warning', 'steering-wheel']) {
-    assert.ok(covered.includes(`ico-mono/${f}.svg`), `the mono icon ${f} must be saved (it is drawn on first paint)`);
+    assert.ok(SW.includes(`ico-mono/${f}.svg`), `sw.js should precache the mono icon ${f} (it is drawn on first paint)`);
   }
   for (const f of ['arrow-up', 'arrow-down', 'arrow-left', 'arrow-right', 'nitro']) {
-    assert.ok(covered.includes(`ico/${f}.svg`), `the colour icon ${f} must be saved`);
+    assert.ok(SW.includes(`ico/${f}.svg`), `sw.js should precache the colour icon ${f}`);
   }
-  const build = SW.match(/const BUILD = '(v\d+)'/);
-  assert.ok(build, 'the build marker must be bumped so old caches are dropped');
-  assert.ok(/const CACHE = 'sridhar-rush-' \+ BUILD;/.test(SW), 'cache name must be versioned from it');
+  const cache = SW.match(/const CACHE = '([^']+)'/);
+  assert.ok(cache, 'the cache name must be bumped so old caches are dropped');
+  assert.ok(cache[1].startsWith('sridhar-rush-v'), 'cache name must be versioned: ' + cache[1]);
 });
 
 test('v142: setChip keeps icon and text as siblings so neither erases the other', () => {
@@ -183,16 +178,11 @@ test('v142: build versions stay consistent across every shipping surface', () =>
   const srv = read('server.js');
 
   const build = (g.match(/const BUILD = '(v\d+)'/) || [])[1];
+  const cache = (sw.match(/const CACHE = 'sridhar-rush-(v\d+)'/) || [])[1];
   const srvBuild = (srv.match(/build: '(v\d+)'/) || [])[1];
-  // v166: sw.js keeps ONE literal (its own BUILD) and derives the cache name from
-  // it, so the two can never disagree; this checks the derived name against the
-  // client build instead of a second literal.
-  const swBuild = (sw.match(/const BUILD = '(v\d+)'/) || [])[1];
-  const derived = /const CACHE = 'sridhar-rush-' \+ BUILD;/.test(sw);
 
   assert.ok(build, 'game.js must declare a build');
-  assert.ok(swBuild && derived, 'sw.js must derive its cache name from its own build marker');
-  assert.equal(swBuild, build, 'sw.js cache name must match the build (else stale icons/JS are served)');
+  assert.equal(cache, build, 'sw.js cache name must match the build (else stale icons/JS are served)');
   assert.equal(srvBuild, build, 'server.js /version must match the build (else the client reloads in a loop)');
 
   // every ?v= asset reference must be the same build. Note the two spellings:
