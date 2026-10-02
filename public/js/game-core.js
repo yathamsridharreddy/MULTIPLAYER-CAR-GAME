@@ -124,6 +124,22 @@
     { id: 2, name: 'ISLAND MOTORFEST', theme: 'island', a: 152, b: 76 }   // Crew-style tropical island
   ];
 
+  // v168 — MAP 0: THE ROAD IS THE LIMIT.
+  // The strip beyond the asphalt is not a shoulder, it is a bank. Measured
+  // around the ellipse against the mesh the player sees, the ground beside the
+  // road runs from ~4.6 m ABOVE the asphalt (where the road is a cutting) to
+  // ~1.4 m BELOW it (where it is an embankment), and the coarse terrain mesh
+  // interpolates right up to the road edge. A car allowed out there leaves the
+  // road - it climbs the bank or drops behind the kerb - which is exactly what
+  // "the car is going down the road" looks like from the driver's seat.
+  // So the ellipse keeps the WHOLE CAR on the drawn asphalt: the nose and tail
+  // probes stop AT the road edge (RH), the centre stops half a car width short
+  // of it, and no part of the body can overhang the grass.
+  // Maps 1-4 keep their own spec: a fence is DRAWN at their limit, so the car
+  // stops against something the player can see.
+  MAPS[0].limC = RH - CAR_CAP_R;    // 7.05 - the body edge reaches the asphalt edge
+  MAPS[0].limP = RH;                // 8.00 - nose/tail stop at the asphalt edge
+
   // car classes: stat trade-offs (top speed / acceleration / grip+steer)
   const SLOT_COLS = [0xe10600, 0x0d47c8, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7]; // v76 · v157: the blue is a DEEP blue, not the light azure it was
   // v155: every car the wizard offers, in the order the cards are drawn. The seat
@@ -166,9 +182,15 @@
       th = n.th;
       latDist = Math.abs(n.d);
     } else {
-      th = Math.atan2(z, x);
-      const rad = radialDistToTrack(x, z, track.a, track.b);
-      latDist = Math.abs(rad.d);
+      // v168: the ELLIPSE reads the same projection the barrier clamp uses, and takes
+      // the road's height at the FOOT of the perpendicular - which is the height
+      // ribbon3D draws at that cross-section. Measuring along the ray from the centre
+      // and reading the elevation at the point's own angle put the road corridor up to
+      // ~2.6 m out of line with the drawn ribbon on the diagonals: the coarse terrain
+      // mesh then hung over the asphalt, and the car riding it looked off the road.
+      const pr = ellipseProj(x, z, track.a, track.b);
+      th = Math.atan2(pr.cz, pr.cx);
+      latDist = Math.abs(pr.lat);
     }
     const yRoad = getTrackElevation(track, th);
     let yNat = 0;
@@ -1213,8 +1235,12 @@
     if (!T) return null;
     const dirX = Math.sin(car.heading), dirY = Math.cos(car.heading);
     if (T.type !== 'spline') {
-      // ===== MAP 0 — historic ellipse barrier, numerically UNTOUCHED =====
-      const limC = RH + 2.4, limP = RH + 3.35; // v56: white-line corridor / curb line
+      // ===== MAP 0 — the ellipse barrier =====
+      // v168: the numbers live on the track (MAPS[0].limC/limP) so the server sim
+      // and the client's render clamp read ONE source of truth. The fallback is
+      // the old v56 corridor, for a track object built before this spec.
+      const limC = T.limC != null ? T.limC : RH + 2.4;
+      const limP = T.limP != null ? T.limP : RH + 3.35;
       let crash = null;
       for (let iter = 0; iter < 3; iter++) {
         let maxOver = 0, sign = 1;

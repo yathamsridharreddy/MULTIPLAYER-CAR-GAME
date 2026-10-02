@@ -246,6 +246,55 @@ describe('Authoritative Race Lifecycle & Simulation', () => {
     }
   });
 
+  test('MAP 0 keeps the whole car ON the asphalt: the road edge is the barrier (v168)', () => {
+    // The ellipse used to carry the same corridor as the fenced tracks (limC 10.4,
+    // limP 11.35 - 2.4 to 3.35 m of verge), but nothing is drawn at that edge on
+    // HIGHLAND RUSH: the asphalt ends at RH, the kerb line is at RH + 0.6, and past it
+    // the ground is a bank that runs from metres above the road to metres below it. A
+    // car out there is off the road, which is what the driver sees. So on this map the
+    // asphalt IS the barrier: the nose and tail stop at the road edge and the body
+    // never overhangs the grass.
+    const track = core.MAPS[0];
+    const RH = core.CFG.roadHalf, BODY_HALF = 0.95;      // the car's collision half-width
+    assert.ok(track.limP <= RH,
+      `MAP 0: the nose/tail stop at the asphalt edge (limP ${track.limP} must be <= RH ${RH})`);
+    assert.ok(track.limC + BODY_HALF <= RH,
+      `MAP 0: the body edge stays on the asphalt (limC ${track.limC} + ${BODY_HALF} must be <= RH ${RH})`);
+
+    // and the clamp really enforces it: drive full throttle into the edge at 48 stations a side
+    const dt = 1 / 30;
+    let worstC = 0, worstP = 0;
+    for (let i = 0; i < 48; i++) {
+      const th = (i / 48) * Math.PI * 2;
+      const k = Math.hypot(Math.cos(th) / track.a, Math.sin(th) / track.b);
+      const nx = (Math.cos(th) / track.a) / k, nz = (Math.sin(th) / track.b) / k;
+      for (const side of [1, -1]) {
+        const car = new core.Car(1, track.a, track);
+        car.participating = true;
+        car.x = track.a * Math.cos(th) + side * nx * 4;
+        car.z = track.b * Math.sin(th) + side * nz * 4;
+        car.heading = Math.atan2(side * nx, side * nz);
+        car.vx = side * nx * 30; car.vy = side * nz * 30;
+        for (let t = 0; t < 200; t++) {
+          car.input = { steer: side * 0.35, throttle: 1, brake: 0, handbrake: false, nitro: true };
+          car.update(dt, t * dt, 'racing', [], null);
+        }
+        const c = core.ellipseProj(car.x, car.z, track.a, track.b);
+        const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+        const nose = core.ellipseProj(car.x + fx * 2.6, car.z + fz * 2.6, track.a, track.b);
+        const tail = core.ellipseProj(car.x - fx * 2.4, car.z - fz * 2.4, track.a, track.b);
+        worstC = Math.max(worstC, Math.abs(c.lat));
+        worstP = Math.max(worstP, Math.abs(nose.lat), Math.abs(tail.lat));
+      }
+    }
+    assert.ok(worstC <= track.limC + 0.01,
+      `MAP 0: the car centre never passes limC (worst |lat| ${worstC.toFixed(3)} vs ${track.limC})`);
+    assert.ok(worstP <= track.limP + 0.01,
+      `MAP 0: the nose/tail never pass limP (worst |lat| ${worstP.toFixed(3)} vs ${track.limP})`);
+    assert.ok(worstC + BODY_HALF <= RH + 0.01,
+      `MAP 0: no part of the body overhangs the asphalt (worst body edge ${(worstC + BODY_HALF).toFixed(3)} vs RH ${RH})`);
+  });
+
   // -------------------------------------------------------------------------
   // v92 STEERING SENSITIVITY (Settings slider -> authoritative sim).
   // The slider is a per-driver preference, so the guarantees that matter are:

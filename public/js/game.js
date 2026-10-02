@@ -578,7 +578,7 @@ function updateClouds(dt) {
 // ---------------------------------------------------------------------------
 // THE CAR DRIVES ON THE GROUND THE PLAYER SEES
 // ---------------------------------------------------------------------------
-// build3DTerrain() draws the world as a PlaneGeometry(1600, 1600, 140, 140): one
+// build3DTerrain() draws the world as a PlaneGeometry(1600, 1600, SEGS, SEGS): one
 // height per grid point, and everything between those points is a FLAT TRIANGLE.
 // getSurfaceY() used to place the car on the analytic heightfield instead - and
 // beside the track the two disagree by metres, because the analytic field blends
@@ -590,6 +590,15 @@ function updateClouds(dt) {
 // the geometry build3DTerrain just built. Interpolation inside a cell follows the
 // SAME two triangles the renderer uses ((a,b,d) and (b,c,d), the diagonal from
 // (0,1) to (1,0)), so the car sits exactly on the visible facet - never under it.
+//
+// v168: and the grid is fine enough to respect the ROAD. A cell is W/SEGS across,
+// and a triangle that spans from a flat corridor vertex to a natural one crosses
+// the asphalt at whatever height the interpolation gives. At 140 segments (11.4 m
+// cells) that was up to 1.66 m of hillside drawn OVER the outer lane of Map 0, and
+// the car (which rides the ribbon) then looked like it was in the grass. The
+// terrain is an analytic field, so a finer grid only draws the SAME field more
+// faithfully; at 300 segments (5.3 m cells) nothing overhangs the asphalt by more
+// than ~0.15 m anywhere on any map.
 let terrainSample = null;
 function buildTerrainSample(geo) {
   const pos = geo.attributes.position;
@@ -635,9 +644,17 @@ function getSurfaceY(map, x, z) {
     th = n.th;
     latDist = Math.abs(n.d);
   } else {
-    th = Math.atan2(z, x);
-    const rad = CORE.radialDistToTrack(x, z, map.a, map.b);
-    latDist = Math.abs(rad.d);
+    // v168: the SAME projection the barrier clamp uses, and the road's own cross
+    // section. radialDistToTrack measures along the ray from the ellipse's centre,
+    // which overstates how far out a car is near the diagonals - by metres - so the
+    // height function used to believe a car DRIVING ON THE ASPHALT was already out
+    // on the bank and lifted it up the grass. ellipseProj returns the foot of the
+    // perpendicular AND the lateral distance the physics clamps with; the road's
+    // height at that foot is what ribbon3D drew there (it takes the elevation of
+    // the centreline point, not of the point beside it).
+    const pr = CORE.ellipseProj(x, z, map.a, map.b);
+    th = Math.atan2(pr.cz, pr.cx);
+    latDist = Math.abs(pr.lat);
   }
   const yRoad = CORE.getTrackElevation(map, th) + 0.08;   // the asphalt ribbon's top
   const yGround = drawnGroundY(x, z);                     // the ground as it is drawn
@@ -649,13 +666,21 @@ function getSurfaceY(map, x, z) {
     const wOld = tOld * tOld * (3 - 2 * tOld);
     return (1 - wOld) * yRoad + wOld * yTerr;
   }
-  // On the road: the ribbon. Off it: the drawn ground, with the road surface
-  // ramping out over the shoulder so the car does not step 0.08 at the kerb. The
-  // max() is the whole point - whatever the two disagree about, the car is never
-  // below the ground it is drawn on.
+  // ON THE ROAD THE ROAD IS THE SURFACE (v168). Off the road the drawn ground
+  // wins - that is what stopped the car hiding below the grass - but the terrain
+  // mesh is built from one height per 11.4 m cell, so beside a cutting or an
+  // embankment it interpolates metres above or below the asphalt RIGHT AT the
+  // road edge. Taking the max() of the two there lifted the car up the bank
+  // (measured on Map 0: up to 4.6 m above the road at the cutting, 1.4 m below
+  // at the embankment) instead of driving on the road.
+  // So the surface is the ribbon inside the asphalt, and ramps out to the drawn
+  // ground (+ never below the road) over 1.2 m beyond it. Continuous at the edge,
+  // and the car rides what it is drawn on in both zones.
   const t = Math.min(1, Math.max(0, (latDist - RH) / 1.2));
+  if (t <= 0) return yRoad;
   const w = t * t * (3 - 2 * t);
-  return Math.max(yGround, (1 - w) * yRoad + w * yGround);
+  const yBank = Math.max(yGround, yRoad);          // off-road: never below the ground as drawn
+  return (1 - w) * yRoad + w * yBank;
 }
 
 function ribbon3D(pts, offset, halfW, yOffset, mat, map) {
@@ -726,7 +751,7 @@ function getOffsetPts(map, offset, numPts) {
 // 3D Continuous Terrain Mesh Generator
 // ---------------------------------------------------------------------------
 function build3DTerrain(map, T) {
-  const W = 1600, H = 1600, SEGS = 140;
+  const W = 1600, H = 1600, SEGS = 300;   // v168: 11.4 m cells let the hillside hang over the asphalt
   const geo = new THREE.PlaneGeometry(W, H, SEGS, SEGS);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
@@ -5653,7 +5678,7 @@ window.joinCrewAction = async function(crewId, opts) {
       return window.joinCrewAction(crewId, { guestAfterErase: true });
     }
     const why = (r.body && r.body.error) ? crewJoinErrorText(r.body) : clubHttpText(r.status);
-    // v167: the retry itself failed, so do not tell the racer they joined as a
+    // v168: the retry itself failed, so do not tell the racer they joined as a
     // guest - say what actually happened (the dead account was signed out first).
     setJoinNote('LAST ATTEMPT - ' + why + (retriedAsGuest ? ' The old account was signed out first; this retry was as a guest.' : ''));
     toast(why);
@@ -6398,7 +6423,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v167';
+const BUILD = 'v168';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -7429,8 +7454,10 @@ function placeCar(slot, cs, dt) {
     if (T && T.world) {
       // v68: track-owned spec — identical to the server's barrier limits
       const spline = T.type === 'spline';
-      const limC = spline ? (T.limC != null ? T.limC : RH + 2.4) : RH + 2.4;
-      const limP = spline ? (T.limP != null ? T.limP : RH + 3.35) : RH + 3.35;
+      // v168: one source of truth - the track's own spec (MAPS[0] carries it too
+      // now), so the smoothed display position can never disagree with the sim.
+      const limC = T.limC != null ? T.limC : RH + 2.4;
+      const limP = T.limP != null ? T.limP : RH + 3.35;
       const dirX = Math.sin(v.netH), dirZ = Math.cos(v.netH);
       if (spline && T.nearest) {
         // Maps 1-4: 2-pass converge matching Map 0
