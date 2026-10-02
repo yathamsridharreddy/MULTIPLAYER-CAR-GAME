@@ -575,6 +575,58 @@ function updateClouds(dt) {
 // ---------------------------------------------------------------------------
 // 3D Surface & Track Geometry Engine
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE CAR DRIVES ON THE GROUND THE PLAYER SEES
+// ---------------------------------------------------------------------------
+// build3DTerrain() draws the world as a PlaneGeometry(1600, 1600, 140, 140): one
+// height per grid point, and everything between those points is a FLAT TRIANGLE.
+// getSurfaceY() used to place the car on the analytic heightfield instead - and
+// beside the track the two disagree by metres, because the analytic field blends
+// from the road to the terrain over 6 units while the drawn terrain blends over
+// 26. Measured on Map 0: 28% of the map had the car BELOW the ground it was drawn
+// on, worst case 3.79 m - the car disappeared under the grass it was driving on.
+//
+// So the car now samples the drawn surface itself: this is that grid, read from
+// the geometry build3DTerrain just built. Interpolation inside a cell follows the
+// SAME two triangles the renderer uses ((a,b,d) and (b,c,d), the diagonal from
+// (0,1) to (1,0)), so the car sits exactly on the visible facet - never under it.
+let terrainSample = null;
+function buildTerrainSample(geo) {
+  const pos = geo.attributes.position;
+  const n = Math.round(Math.sqrt(pos.count));      // grid points per side
+  if (!(n > 1) || n * n !== pos.count) { terrainSample = null; return; }
+  const xs = new Float32Array(n);
+  const rows = [];
+  for (let iy = 0; iy < n; iy++) {
+    const base = iy * n;
+    const ys = new Float32Array(n);
+    for (let ix = 0; ix < n; ix++) { xs[ix] = pos.getX(base + ix); ys[ix] = pos.getY(base + ix); }
+    rows.push({ z: pos.getZ(base), ys });
+  }
+  // rows are ordered by z, whichever way the geometry listed them
+  rows.sort((a, b) => a.z - b.z);
+  const zs = new Float32Array(n);
+  const y = new Float32Array(n * n);
+  for (let iy = 0; iy < n; iy++) { zs[iy] = rows[iy].z; y.set(rows[iy].ys, iy * n); }
+  terrainSample = { n, xs, zs, y };
+}
+// the drawn ground at (x,z), or null outside the terrain / before it is built
+function drawnGroundY(x, z) {
+  const G = terrainSample;
+  if (!G) return null;
+  const cellX = G.xs[1] - G.xs[0], cellZ = G.zs[1] - G.zs[0];
+  const ix = Math.floor((x - G.xs[0]) / cellX);
+  const iy = Math.floor((z - G.zs[0]) / cellZ);
+  if (!(cellX > 0) || !(cellZ > 0) || ix < 0 || iy < 0 || ix >= G.n - 1 || iy >= G.n - 1) return null;
+  const u = (x - G.xs[ix]) / cellX, v = (z - G.zs[iy]) / cellZ;
+  const ya = G.y[iy * G.n + ix], yd = G.y[iy * G.n + ix + 1];
+  const yb = G.y[(iy + 1) * G.n + ix], ye = G.y[(iy + 1) * G.n + ix + 1];
+  if (!(u >= 0 && v >= 0 && u <= 1 && v <= 1)) return null;
+  return (u + v <= 1)
+    ? ya + u * (yd - ya) + v * (yb - ya)
+    : ye + (1 - u) * (yb - ye) + (1 - v) * (yd - ye);
+}
+
 function getSurfaceY(map, x, z) {
   if (!map) return 0;
   let th = 0, latDist = 0;
@@ -587,12 +639,23 @@ function getSurfaceY(map, x, z) {
     const rad = CORE.radialDistToTrack(x, z, map.a, map.b);
     latDist = Math.abs(rad.d);
   }
-  const yRoad = CORE.getTrackElevation(map, th) + 0.08;
-  if (latDist <= RH + 1.2) return yRoad;
-  const yTerr = CORE.getTerrainHeight(map, x, z);
-  const t = Math.min(1, (latDist - (RH + 1.2)) / 6.0);
+  const yRoad = CORE.getTrackElevation(map, th) + 0.08;   // the asphalt ribbon's top
+  const yGround = drawnGroundY(x, z);                     // the ground as it is drawn
+  if (yGround == null) {
+    // no terrain built yet (the very first frames): the analytic field is all there is
+    if (latDist <= RH + 1.2) return yRoad;
+    const yTerr = CORE.getTerrainHeight(map, x, z);
+    const tOld = Math.min(1, (latDist - (RH + 1.2)) / 6.0);
+    const wOld = tOld * tOld * (3 - 2 * tOld);
+    return (1 - wOld) * yRoad + wOld * yTerr;
+  }
+  // On the road: the ribbon. Off it: the drawn ground, with the road surface
+  // ramping out over the shoulder so the car does not step 0.08 at the kerb. The
+  // max() is the whole point - whatever the two disagree about, the car is never
+  // below the ground it is drawn on.
+  const t = Math.min(1, Math.max(0, (latDist - RH) / 1.2));
   const w = t * t * (3 - 2 * t);
-  return (1 - w) * yRoad + w * yTerr;
+  return Math.max(yGround, (1 - w) * yRoad + w * yGround);
 }
 
 function ribbon3D(pts, offset, halfW, yOffset, mat, map) {
@@ -697,6 +760,7 @@ function build3DTerrain(map, T) {
   }
   geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geo.computeVertexNormals();
+  buildTerrainSample(geo); // v164: the surface the car is placed on, read off the mesh
 
   const mat = new THREE.MeshStandardMaterial({
     map: grassTexture(T.ground || (T.night ? "#141821" : "#41702f")),
@@ -6332,7 +6396,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v163';
+const BUILD = 'v164';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
