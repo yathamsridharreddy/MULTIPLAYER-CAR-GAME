@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap" media="print" onload="this.media='all'"/>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap"/></noscript>
-  <link rel="stylesheet" href="css/style.css?v=165"/>
+  <link rel="stylesheet" href="css/style.css?v=166"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -283,9 +283,11 @@
             <button id="join-room-btn" class="ghost sm"><span class="ico" data-i="key" aria-hidden="true"></span><span data-i18n="joinRoom">JOIN</span></button>
             <button id="leave-room-btn" class="ghost sm" title="Leave this room and join or create another" hidden><span class="ico" data-i="exit" aria-hidden="true"></span><span data-i18n="exitRoom">EXIT ROOM</span></button>
             <button id="install-btn" class="ghost sm" hidden><span class="ico" data-i="install" aria-hidden="true"></span><span data-i18n="install">INSTALL</span></button>
+            <button id="sr-offline-btn" class="ghost sm" title="Save the whole game on this device so it opens with no internet"><span class="ico" data-i="install" aria-hidden="true"></span><span class="lbl">SAVE FOR OFFLINE</span></button>
             <button id="lang-btn" class="ghost sm" title="Language"><span class="ico" data-i="globe" aria-hidden="true"></span><span class="lbl">EN</span></button>
           </div>
           <div id="lobby-conn"><span class="ico ico-amber" data-i="dot" aria-hidden="true"></span><span data-i18n="connecting">connecting…</span></div>
+          <div id="sr-offline-chip" title="Every file the game needs is saved on this device - it opens with no internet" hidden><span class="ico" data-i="check" aria-hidden="true"></span><span class="lbl">SAVED ON THIS DEVICE</span></div>
         </div>
 
         <!-- challenge invitation banner (authenticated) -->
@@ -714,11 +716,11 @@
   </div>
 
   <script defer src="js/vendor/three.min.js"></script>
-  <script defer src="js/vendor/GLTFLoader.js?v=165"></script>
-  <script defer src="js/car-models.js?v=165"></script>
+  <script defer src="js/vendor/GLTFLoader.js?v=166"></script>
+  <script defer src="js/car-models.js?v=166"></script>
   <script defer src="js/vendor/qrcode.js"></script>
-  <script defer src="js/game-core.js?v=165"></script>
-  <script defer src="js/progression.js?v=165"></script>
+  <script defer src="js/game-core.js?v=166"></script>
+  <script defer src="js/progression.js?v=166"></script>
   <script src="js/config.js"></script>
   <script>
   // v119 ACCOUNT GATE: when this deploy has Supabase keys configured, the game
@@ -740,16 +742,16 @@
     } catch (e) {}
   })();
   </script>
-  <script defer src="js/account.js?v=165"></script>
-  <script defer src="js/i18n.js?v=165"></script>
-  <script defer src="js/offline.js?v=165"></script>
-  <script defer src="js/net.js?v=165"></script>
-  <script defer src="js/game.js?v=165"></script>
+  <script defer src="js/account.js?v=166"></script>
+  <script defer src="js/i18n.js?v=166"></script>
+  <script defer src="js/offline-save.js?v=166"></script>
+  <script defer src="js/offline.js?v=166"></script>
+  <script defer src="js/net.js?v=166"></script>
+  <script defer src="js/game.js?v=166"></script>
   <script>
-  // PWA (v36): register service worker + show INSTALL button when the browser allows it
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-    window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () {}); });
-  }
+  // PWA: the service worker is registered EARLY by js/offline-save.js (v166), not
+  // on window.load - a racer who lands and goes offline straight away still gets
+  // the game saved. This block only wires the INSTALL button.
   (function () {
     var btn = document.getElementById('install-btn');
     if (!btn) return;

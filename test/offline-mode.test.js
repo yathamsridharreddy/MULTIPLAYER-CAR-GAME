@@ -187,7 +187,7 @@ test('the client picks the local transport - and offline never dials a socket', 
   assert.match(GAME, /if \(offlineRequested\(\) && netLocal\) \{ dropOnlineLink\(\); return netLocal; \}/,
     'and chosen first - and picking it drops a relay link the page had already opened');
   assert.match(GAME, /function dropOnlineLink\(\)/, 'there is one place that hangs up on the relay');
-  assert.match(GAME, /if \(prefs\.mode3 === 'offline'\) dropOnlineLink\(\);/,
+  assert.match(GAME, /if \(prefs\.mode3 === 'offline'\) \{\s*\n\s*dropOnlineLink\(\);/,
     'the OFFLINE button hangs up at the click, not at START');
   assert.match(GAME, /let netOnline = null;/, 'the online link is not even constructed until it is needed');
   assert.match(GAME, /t === netLocal && !t\.isOpen\(\)/, 'pressing START on a fresh offline link opens it instead of dropping the message');

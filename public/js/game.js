@@ -3475,7 +3475,14 @@ applyQuality(prefs.quality);
       prefs.mode3 = b.dataset.m3; savePrefs();
       document.querySelectorAll('.mode3-btn').forEach((x) => x.classList.toggle('active', x === b));
       const bt = $('bot-toggle'); if (bt) bt.checked = prefs.mode3 === 'mp';
-      if (prefs.mode3 === 'offline') dropOnlineLink();   // v165: race alone, no socket
+      if (prefs.mode3 === 'offline') {
+        dropOnlineLink();   // v165: race alone, no socket
+        // v166: racing alone is half of it - the game itself should also OPEN with
+        // no internet. Say so once, while the racer is still online and can act.
+        if (window.SROfflineSave && window.SROfflineSave.supported() && !window.SROfflineSave.isReady()) {
+          toast('Tip: SAVE FOR OFFLINE (top of the lobby) puts the whole game on this device, so it opens with no internet too.');
+        }
+      }
     });
   });
   // v59 garage — cosmetic-only customization
@@ -6413,9 +6420,12 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v165';
+const BUILD = 'v166';
 (function () {
   try {
+    // v166: with no connection there is nothing to compare against, and reloading
+    // a page you cannot fetch is exactly how an offline game breaks itself.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     const cfg = window.SERVER_URL || 'local';
     const base = cfg === 'local' ? location.origin : cfg.replace(/\/$/, '');
     fetch(base + '/version').then((r) => r.json()).then((v) => {
@@ -6461,6 +6471,51 @@ const BUILD = 'v165';
 // wizard, the HUD, the lap counter and the camera do not know the difference.
 function offlineRequested() {
   return (prefs && prefs.mode3 === 'offline') || (typeof navigator !== 'undefined' && navigator.onLine === false);
+}
+
+// v166: a cold start with no connection lands here: the racer did not choose
+// offline, the device simply has none. Say so, preselect the mode they are about
+// to race in, and let the app be usable - the whole game is on the device.
+function paintOfflineBoot() {
+  if (typeof navigator === 'undefined' || navigator.onLine !== false) return;
+  const conn = $('lobby-conn');
+  if (conn) { setIcoTone(conn, 'ico-cyan'); setIcoLabel(conn, 'offline — no internet'); }
+  if (prefs.mode3 !== 'offline') {
+    prefs.mode3 = 'offline'; savePrefs();
+    document.querySelectorAll('.mode3-btn').forEach((x) => x.classList.toggle('active', x.dataset.m3 === 'offline'));
+    toast('📴 No internet — OFFLINE mode is selected. You can race on this device.');
+  }
+}
+if (typeof document !== 'undefined') {
+  // paint NOW (this file is deferred, so the markup exists) and again when the DOM
+  // is ready: whichever comes first wins, the other is a no-op. Waiting only for
+  // DOMContentLoaded is a trap - whoever loads this later misses the event.
+  paintOfflineBoot();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paintOfflineBoot);
+}
+
+// v166: the connection can die (or come back) IN THE MIDDLE of a session. The
+// transport is re-picked on both events - a racer who walks into a tunnel keeps
+// driving on the local room, and a racer whose wifi returns is told the browser
+// will hold their time on the device until they are back in the lobby.
+if (typeof window !== 'undefined') {
+  window.addEventListener('offline', () => {
+    paintOfflineBoot();
+    if (prefs.mode3 === 'offline') return;            // already racing locally
+    const running = latest && (latest.state === 'racing' || latest.state === 'countdown');
+    if (running) {
+      toast('📴 Offline — this race carries on without the relay; your time stays on this device.');
+    } else {
+      pickTransport();
+      toast('📴 No internet — OFFLINE mode is ready when you are.');
+    }
+  });
+  window.addEventListener('online', () => {
+    if (prefs.mode3 === 'offline' || !netOnline || netOnline.isOpen()) return;
+    netOnline = new RoomLink(netHandlers);            // the relay is reachable again
+    sendHello();
+    toast('🌐 Back online — rooms and clubs are reachable again.');
+  });
 }
 
 const netHandlers = {
@@ -6632,7 +6687,12 @@ const netHandlers = {
   },
   onStatus(s) {
     setNetBanner(s === 'connected');
-    const lc = $('lobby-conn'); setIcoTone(lc, s === 'connected' ? 'ico-green' : (s === 'connecting' ? 'ico-amber' : 'ico-red')); setIcoLabel(lc, s === 'connected' ? 'connected' : (s === 'connecting' ? 'connecting…' : 'reconnecting…'));
+    const lc = $('lobby-conn');
+    // v166: the local room has no connection, and saying "connected" over it would
+    // be a lie the racer can see through the moment they tap CLUBS.
+    const tone = s === 'connected' ? 'ico-green' : (s === 'offline' ? 'ico-cyan' : (s === 'connecting' ? 'ico-amber' : 'ico-red'));
+    setIcoTone(lc, tone);
+    setIcoLabel(lc, s === 'connected' ? 'connected' : (s === 'offline' ? 'offline — no internet' : (s === 'connecting' ? 'connecting…' : 'reconnecting…')));
   }
 };
 

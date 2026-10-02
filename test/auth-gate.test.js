@@ -133,8 +133,20 @@ test('service worker precaches the gate but never the injected config', () => {
   assert.ok(sw.includes("'/auth.html'"), 'gate precached');
   // version-agnostic: pinning a literal here means every release breaks this file
   assert.ok(/\/js\/auth\.js\?v=\d+/.test(sw), 'gate controller precached');
-  assert.ok(sw.includes("NOCACHE = ['/js/config.js'"), 'config stays live');
-  assert.ok(/const CACHE = 'sridhar-rush-v\d+'/.test(sw), 'cache name is versioned');
+  // v166: config.js (the deploy's Supabase keys) is still never served stale - it
+  // has its own branch that hits the network FIRST and only falls back to a saved
+  // copy when there is no network at all (an offline boot cannot fetch it, and an
+  // empty-key copy is what lets the gate stand down and the game open).
+  assert.ok(sw.includes("url.pathname === '/js/config.js'"), 'config has its own branch');
+  const cfgBranch = sw.slice(sw.indexOf("url.pathname === '/js/config.js'"));
+  const branch = cfgBranch.slice(0, cfgBranch.indexOf('// 3.'));
+  assert.ok(branch.indexOf('await fetch(req)') < branch.indexOf("cache.match('/js/config.js')"),
+    'the network is asked first, the saved copy is only the offline fallback');
+  assert.ok(branch.includes('window.SB_U=""'),
+    'and an offline boot gets a safe empty config instead of a broken one');
+  assert.ok(!/NOCACHE = \[[^\]]*config\.js/.test(sw), 'config is not left to the plain cache-first path');
+  const swBuild = (sw.match(/const BUILD = '(v\d+)';/) || [])[1];
+  assert.ok(swBuild && /const CACHE = 'sridhar-rush-' \+ BUILD;/.test(sw), 'cache name is versioned');
 });
 
 test('v121: the server refuses guest handshakes; controllers stay open', () => {

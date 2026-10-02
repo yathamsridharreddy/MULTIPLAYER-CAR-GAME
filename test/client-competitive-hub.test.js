@@ -313,7 +313,12 @@ describe('build markers', () => {
     assert.equal('v' + assetV[1], clientBuild[1], 'the asset version must match the build');
 
     const sw = fs.readFileSync(path.join(__dirname, '../public/sw.js'), 'utf8');
-    assert.match(sw, new RegExp("const CACHE = 'sridhar-rush-v" + assetV[1] + "'"),
+    // v166: the worker derives its cache name from its own BUILD marker (one
+    // literal, not two that can drift); the marker itself must match the page.
+    const swBuild = /const BUILD = '(v\d+)';/.exec(sw);
+    assert.ok(swBuild, 'sw.js must carry a BUILD marker');
+    assert.equal(swBuild[1], 'v' + assetV[1], 'the worker build must match the asset version');
+    assert.match(sw, /const CACHE = 'sridhar-rush-' \+ BUILD;/,
       'the service-worker cache must be keyed to the same version');
     assert.ok(!new RegExp('\\?v=' + (Number(assetV[1]) - 1) + '\\b').test(html + sw),
       'no previous-version asset may be left in the page or the precache list');

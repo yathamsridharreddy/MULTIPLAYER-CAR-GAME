@@ -36,6 +36,7 @@ const SCRIPTS = [
   'js/config.js',
   'js/account.js',
   'js/i18n.js',
+  'js/offline-save.js',          // index.html loads it before offline.js
   'js/offline.js',
   'js/net.js',
   'js/game.js'
@@ -163,6 +164,21 @@ function boot(opts) {
 
   const run = (rel) => { const el = window.document.createElement('script'); el.textContent = read('public/' + rel); window.document.head.appendChild(el); };
   const expose = (src) => { const el = window.document.createElement('script'); el.textContent = src; window.document.head.appendChild(el); };
+  if (opts.sw) {
+    // a browser that CAN save for offline: the page hands the job to a worker,
+    // which reports back. This is the real path, minus the real worker.
+    expose(`(function () {
+      var posted = [], listeners = [];
+      window.__swPosted = posted;
+      var sw = {
+        controller: { postMessage: function (m) { posted.push(m); } },
+        addEventListener: function (t, f) { if (t === 'message') listeners.push(f); },
+        register: function () { return Promise.resolve({ scope: '/' }); }
+      };
+      Object.defineProperty(navigator, 'serviceWorker', { value: sw, configurable: true });
+      window.__swFire = function (data) { listeners.forEach(function (f) { f({ data: data }); }); };
+    })();`);
+  }
   expose(FAKE_RENDERER);
   run('js/vendor/three.min.js');
   expose('THREE.WebGLRenderer = window.__FAKE_RENDERER;');
@@ -220,11 +236,17 @@ test('a device with no internet races OFFLINE end to end, and never dials', { sk
   const { dom, window, errors, sockets, calls } = boot({ onLine: false });   // cold start, aeroplane mode
   t.after(() => dom.window.close());
 
-  // choose OFFLINE exactly as the wizard does, then press START. AI off, so the
-  // race is the racer alone: the finish (and the device best) cannot depend on
-  // how well the test drives against the bots - the bots get their own test.
-  window.eval("prefs.mode3 = 'offline'; prefs.name = 'SRIDHAR'; prefs.pid = 'pdev1'; prefs.laps = 1; prefs.bot = 0;");
+  // No connection at boot: the page must choose OFFLINE by itself and say so -
+  // the racer did not tap anything, their phone simply has no network.
+  assert.equal(window.eval('prefs.mode3'), 'offline', 'a cold start with no internet selects OFFLINE');
   assert.equal(window.eval('offlineRequested()'), true, 'the page knows this is an offline race');
+  assert.equal(window.document.querySelector('.mode3-btn[data-m3="offline"]').classList.contains('active'), true,
+    'and the mode row shows it');
+  assert.match(window.document.getElementById('lobby-conn').textContent, /offline/i, 'the lobby says why');
+
+  // AI off, so the race is the racer alone: the finish (and the device best)
+  // cannot depend on how the test drives against the bots - they get their own test.
+  window.eval("prefs.name = 'SRIDHAR'; prefs.pid = 'pdev1'; prefs.laps = 1; prefs.bot = 0;");
   window.document.getElementById('start-btn').click();
   await settle(250);
 
@@ -312,6 +334,63 @@ test('an online browser that picks OFFLINE drops the relay socket', { skip: SKIP
   assert.ok(local && local.room, 'the race is running on the local transport');
   assert.equal(window.eval('net._online()'), null, 'still no relay link');
   local.close();
+});
+
+test('SAVE FOR OFFLINE is a real control in the lobby', { skip: SKIP }, async (t) => {
+  const { dom, window, errors } = boot({});
+  t.after(() => dom.window.close());
+  const btn = window.document.getElementById('sr-offline-btn');
+  assert.ok(btn, 'the save control is on the page');
+  assert.match(btn.textContent, /SAVE FOR OFFLINE/, 'and names what it does');
+  const chip = window.document.getElementById('sr-offline-chip');
+  assert.ok(chip, 'the "saved on this device" chip exists');
+  assert.equal(chip.hidden, true, 'and is hidden until the game really is saved');
+
+  // jsdom has no service worker. A browser that cannot save must SAY so rather
+  // than sit there looking broken.
+  const api = window.SROfflineSave;
+  assert.ok(api, 'the saver module is on the page');
+  assert.equal(api.supported(), false, 'this environment cannot save');
+  assert.equal(btn.disabled, true, 'so the control stands down instead of pretending');
+  assert.equal(api.status().total, 0, 'and nothing is claimed to be saved');
+  assert.equal(api.save(), false, 'asking it anyway refuses');
+  await settle(20);
+  assert.match(window.document.getElementById('toast').textContent, /installed app|Offline saving/,
+    'and says what offline saving needs');
+  assert.deepEqual(errors, [], 'clicking it never throws: ' + errors.join(' | '));
+});
+
+test('the save flow reports progress and says when the game is complete', { skip: SKIP }, async (t) => {
+  const { dom, window, errors } = boot({ sw: true });
+  t.after(() => dom.window.close());
+  const api = window.SROfflineSave;
+  const btn = window.document.getElementById('sr-offline-btn');
+  const chip = window.document.getElementById('sr-offline-chip');
+  const toastText = () => window.document.getElementById('toast').textContent;
+  assert.equal(api.supported(), true, 'this browser can save for offline');
+  assert.equal(btn.disabled, false, 'the control is usable');
+
+  btn.click();
+  await settle(30);
+  assert.ok(window.__swPosted.some((m) => m.type === 'sr-offline-save'), 'the worker is asked to save');
+  assert.equal(window.__swPosted[0].type, 'sr-offline-save', 'and the click is heard the moment it happens');
+  assert.match(toastText(), /keep this page open/, 'the racer is told it is working');
+  assert.match(btn.textContent, /SAVING/, 'and the button shows it is busy: ' + btn.textContent);
+
+  window.__swFire({ type: 'sr-offline-progress', done: 100, total: 200 });
+  await settle(20);
+  assert.match(btn.textContent, /50%/, 'progress is visible on the control: ' + btn.textContent);
+
+  window.__swFire({ type: 'sr-offline-done', ok: true, done: 200, total: 200, failed: [] });
+  await settle(20);
+  assert.match(toastText(), /Saved/, 'the finish is announced');
+  assert.doesNotMatch(btn.textContent, /SAVING/, 'and the control is usable again');
+
+  window.__swFire({ type: 'sr-offline-status', build: 'v166', have: 200, total: 200, ready: true });
+  await settle(20);
+  assert.equal(chip.hidden, false, 'the "saved on this device" chip appears only now');
+  assert.equal(api.isReady(), true, 'and the page knows the game is on the device');
+  assert.deepEqual(errors, [], 'with no uncaught error on the way: ' + errors.join(' | '));
 });
 
 test('the account gate stands down offline, and still gates online', () => {

@@ -137,7 +137,10 @@
     }
     this.closedByUser = false;
     this.open = true;
-    this.status('connected');
+    // v166: NOT "connected" - there is no connection, and the lobby must say so.
+    // The chip reads OFFLINE, so a racer never wonders why clubs and rooms are
+    // quiet while the race itself is running perfectly.
+    this.status('offline');
     this._buildRoom();
     // the two messages the client needs to consider itself seated in a room
     this._emit({ type: 'welcome', role: 'screen', slot: this.slot, code: LOCAL_ROOM, mode: 'race', controllers: {}, snapshot: this.room.snapshot() });
