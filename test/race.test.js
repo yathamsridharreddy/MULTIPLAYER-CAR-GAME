@@ -246,22 +246,26 @@ describe('Authoritative Race Lifecycle & Simulation', () => {
     }
   });
 
-  test('MAP 0 keeps the whole car ON the asphalt: the road edge is the barrier (v168)', () => {
-    // The ellipse used to carry the same corridor as the fenced tracks (limC 10.4,
-    // limP 11.35 - 2.4 to 3.35 m of verge), but nothing is drawn at that edge on
-    // HIGHLAND RUSH: the asphalt ends at RH, the kerb line is at RH + 0.6, and past it
-    // the ground is a bank that runs from metres above the road to metres below it. A
-    // car out there is off the road, which is what the driver sees. So on this map the
-    // asphalt IS the barrier: the nose and tail stop at the road edge and the body
-    // never overhangs the grass.
+  test('MAP 0 stops the car at the DRAWN fence (v169), not short of it', () => {
+    // v168 pulled Map 0's limit in to the asphalt edge, which fixed the car sinking off
+    // the road but also stopped it 3.35 m short of the barrier the player can see - the
+    // wall line the client builds at RH + 3.65. The fix belongs in the ground, not in the
+    // limit: the terrain's flat corridor now covers the whole drivable width, so the
+    // car can use the road and its shoulder at the road's own height and the limit is
+    // the fence again (the v56 corridor). This pins both halves.
     const track = core.MAPS[0];
-    const RH = core.CFG.roadHalf, BODY_HALF = 0.95;      // the car's collision half-width
-    assert.ok(track.limP <= RH,
-      `MAP 0: the nose/tail stop at the asphalt edge (limP ${track.limP} must be <= RH ${RH})`);
-    assert.ok(track.limC + BODY_HALF <= RH,
-      `MAP 0: the body edge stays on the asphalt (limC ${track.limC} + ${BODY_HALF} must be <= RH ${RH})`);
+    const RH = core.CFG.roadHalf;
+    const WALL_OFF = 3.65, WALL_HALF = 0.25;           // the client's barrier pass
+    const fenceInner = RH + WALL_OFF - WALL_HALF;
+    assert.ok(track.limP <= fenceInner,
+      `MAP 0: the nose/tail stop inside the drawn fence (limP ${track.limP} vs inner face ${fenceInner})`);
+    assert.ok(track.limP > fenceInner - 0.5,
+      `MAP 0: and they reach it, not the middle of the road (limP ${track.limP})`);
+    assert.ok(track.limC + 0.95 <= fenceInner,
+      `MAP 0: no part of the body passes the fence (limC ${track.limC} + 0.95 vs ${fenceInner})`);
+    assert.ok(track.limC >= RH + 2, `MAP 0: the car can leave the asphalt for the shoulder (limC ${track.limC})`);
 
-    // and the clamp really enforces it: drive full throttle into the edge at 48 stations a side
+    // and the clamp really enforces it: drive full throttle into the fence at 48 stations a side
     const dt = 1 / 30;
     let worstC = 0, worstP = 0;
     for (let i = 0; i < 48; i++) {
@@ -291,8 +295,7 @@ describe('Authoritative Race Lifecycle & Simulation', () => {
       `MAP 0: the car centre never passes limC (worst |lat| ${worstC.toFixed(3)} vs ${track.limC})`);
     assert.ok(worstP <= track.limP + 0.01,
       `MAP 0: the nose/tail never pass limP (worst |lat| ${worstP.toFixed(3)} vs ${track.limP})`);
-    assert.ok(worstC + BODY_HALF <= RH + 0.01,
-      `MAP 0: no part of the body overhangs the asphalt (worst body edge ${(worstC + BODY_HALF).toFixed(3)} vs RH ${RH})`);
+    assert.ok(worstP <= fenceInner, `MAP 0: the body stays inside the drawn fence (worst ${worstP.toFixed(3)})`);
   });
 
   // -------------------------------------------------------------------------

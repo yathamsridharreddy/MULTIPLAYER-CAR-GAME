@@ -124,21 +124,23 @@
     { id: 2, name: 'ISLAND MOTORFEST', theme: 'island', a: 152, b: 76 }   // Crew-style tropical island
   ];
 
-  // v168 — MAP 0: THE ROAD IS THE LIMIT.
-  // The strip beyond the asphalt is not a shoulder, it is a bank. Measured
-  // around the ellipse against the mesh the player sees, the ground beside the
-  // road runs from ~4.6 m ABOVE the asphalt (where the road is a cutting) to
-  // ~1.4 m BELOW it (where it is an embankment), and the coarse terrain mesh
-  // interpolates right up to the road edge. A car allowed out there leaves the
-  // road - it climbs the bank or drops behind the kerb - which is exactly what
+  // v169 — MAP 0: the fence is the limit, and the shoulder is LEVEL with the road.
+  // The strip between the asphalt and the fence used to be a bank: measured around
+  // the ellipse against the mesh the player sees, the ground there runs from metres
+  // ABOVE the asphalt (where the road is a cutting) to metres BELOW it (where it is
+  // an embankment), because the terrain field measured "how far off the road" along
+  // the ray from the middle of the oval while the barrier measured a true
+  // perpendicular - and because its flat corridor stopped at RH + 1.2. A car out
+  // there therefore climbed the grass or dropped behind the kerb, which is what
   // "the car is going down the road" looks like from the driver's seat.
-  // So the ellipse keeps the WHOLE CAR on the drawn asphalt: the nose and tail
-  // probes stop AT the road edge (RH), the centre stops half a car width short
-  // of it, and no part of the body can overhang the grass.
-  // Maps 1-4 keep their own spec: a fence is DRAWN at their limit, so the car
-  // stops against something the player can see.
-  MAPS[0].limC = RH - CAR_CAP_R;    // 7.05 - the body edge reaches the asphalt edge
-  MAPS[0].limP = RH;                // 8.00 - nose/tail stop at the asphalt edge
+  // Now the corridor is flattened over the whole drivable width (see
+  // getTerrainHeight), so the shoulder is the same height as the asphalt, and the
+  // limit is the DRAWN fence: the wall line sits at RH + 3.65 (inner face 11.4,
+  // built in the client's barrier pass), so the nose/tail stop at 11.35 - the v56
+  // corridor - and the car can use the full width of the road again.
+  // Maps 1-4 keep their own spec: a fence is DRAWN at their limit too.
+  MAPS[0].limC = RH + 2.4;          // 10.40 - the old corridor, unchanged
+  MAPS[0].limP = RH + 3.35;         // 11.35 - nose/tail stop just inside the fence
 
   // car classes: stat trade-offs (top speed / acceleration / grip+steer)
   const SLOT_COLS = [0xe10600, 0x0d47c8, 0xffd400, 0x00a651, 0xff6a00, 0x7b2ff7]; // v76 · v157: the blue is a DEEP blue, not the light azure it was
@@ -205,7 +207,12 @@
     } else {
       yNat = 8.0 * Math.sin(x * 0.014 + 0.5) * Math.cos(z * 0.016 - 0.3) + 13.0 * Math.sin(x * 0.006 - z * 0.008) + 4.5 * Math.cos((x + z) * 0.024);
     }
-    const roadMargin = RH + 1.2;
+    // v169: on the ellipse the flat corridor runs out past the fence (RH + 3.65), so
+    // the whole strip the car may drive - asphalt, kerb line, grass shoulder - and the
+    // ground the fence stands on are all level with the road. The spline tracks keep
+    // their own margin. Beyond the corridor the hillside blends in as before.
+    const ellipseTrack = !(track.type === 'spline' && track.nearest);
+    const roadMargin = ellipseTrack ? RH + 9.0 : RH + 1.2;
     const blendDist = 26.0;
     if (latDist <= roadMargin) return yRoad - 0.08;
     if (latDist >= roadMargin + blendDist) return yNat;

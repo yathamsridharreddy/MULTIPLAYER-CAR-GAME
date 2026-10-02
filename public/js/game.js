@@ -666,21 +666,21 @@ function getSurfaceY(map, x, z) {
     const wOld = tOld * tOld * (3 - 2 * tOld);
     return (1 - wOld) * yRoad + wOld * yTerr;
   }
-  // ON THE ROAD THE ROAD IS THE SURFACE (v168). Off the road the drawn ground
-  // wins - that is what stopped the car hiding below the grass - but the terrain
-  // mesh is built from one height per 11.4 m cell, so beside a cutting or an
-  // embankment it interpolates metres above or below the asphalt RIGHT AT the
-  // road edge. Taking the max() of the two there lifted the car up the bank
-  // (measured on Map 0: up to 4.6 m above the road at the cutting, 1.4 m below
-  // at the embankment) instead of driving on the road.
-  // So the surface is the ribbon inside the asphalt, and ramps out to the drawn
-  // ground (+ never below the road) over 1.2 m beyond it. Continuous at the edge,
-  // and the car rides what it is drawn on in both zones.
+  // On the road: the ribbon. Off it: the drawn ground, with the road surface
+  // ramping out over the shoulder so the car does not step 0.08 at the kerb. The
+  // max() is the whole point - whatever the two disagree about, the car is never
+  // below the ground it is drawn on.
+  // v169: and on Map 0 that is now enough to keep it on the road, because the
+  // terrain's flat corridor covers the full drivable width: the shoulder is level
+  // with the asphalt out to the fence, so the max() can no longer lift the car onto
+  // a bank (it used to be metres above the road at the cutting) or leave it hanging
+  // where the ground dives (metres below it at the embankment). The corridor is
+  // aligned with the ribbon too - same projection, same cross-section - so the two
+  // surfaces agree about where the road is, which is what made the car look off the
+  // road while it was still on the asphalt.
   const t = Math.min(1, Math.max(0, (latDist - RH) / 1.2));
-  if (t <= 0) return yRoad;
   const w = t * t * (3 - 2 * t);
-  const yBank = Math.max(yGround, yRoad);          // off-road: never below the ground as drawn
-  return (1 - w) * yRoad + w * yBank;
+  return Math.max(yGround, (1 - w) * yRoad + w * yGround);
 }
 
 function ribbon3D(pts, offset, halfW, yOffset, mat, map) {
@@ -6423,7 +6423,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v168';
+const BUILD = 'v169';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

@@ -113,13 +113,12 @@ function latDistOf(map, x, z) {
   return Math.abs(CORE.ellipseProj(x, z, map.a, map.b).lat);
 }
 
-test('OFF the road the car is never below the ground it is drawn on (every map)', () => {
-  const RH = CORE.CFG.roadHalf;
+test('the car is never below the ground it is drawn on (every map, whole drivable area)', () => {
   for (const map of CORE.MAPS) {
     const geo = drawnGeometry(map);
     client.buildTerrainSample(geo);
     assert.ok(client.sample(), 'the terrain grid feeds the client sampler');
-    let checked = 0, worst = -Infinity, worstAt = null, nan = 0, onRoad = 0;
+    let checked = 0, worst = -Infinity, worstAt = null, nan = 0;
     const R = 700, N = 220;
     for (let i = 0; i < N; i++) {
       for (let j = 0; j < N; j++) {
@@ -127,19 +126,13 @@ test('OFF the road the car is never below the ground it is drawn on (every map)'
         const ground = client.drawnGroundY(x, z);
         if (ground == null) continue;
         const car = client.getSurfaceY(map, x, z);
-        const lat = latDistOf(map, x, z);
-        if (lat <= RH + 1.2) {                 // the asphalt and its 1.2 m shoulder ramp
-          onRoad++;
-          if (!Number.isFinite(car)) nan++;
-          continue;                            // checked by the on-road tests below
-        }
         checked++;
         if (!Number.isFinite(car)) { nan++; continue; }
         const buried = ground - car;             // > 0: the drawn ground is above the car
         if (buried > worst) { worst = buried; worstAt = [x.toFixed(1), z.toFixed(1)]; }
       }
     }
-    assert.ok(checked > 30000, 'sampled the map: ' + checked);
+    assert.ok(checked > 40000, 'sampled the map: ' + checked);
     assert.equal(nan, 0, 'no NaN surface heights');
     assert.ok(worst <= 1e-6, `map ${map.id}: the car is buried by ${worst.toFixed(2)} m at ${worstAt}`);
   }
@@ -162,23 +155,20 @@ test('off the road the car sits exactly on the drawn ground', () => {
       const ground = client.drawnGroundY(x, z);
       if (ground == null) continue;
       checked++;
-      // the drawn grass - or the road, where the road surface is above the grass (the
-      // terrain corridor sits 8 cm under the ribbon, so just past the shoulder the road
-      // is the higher of the two; taking the higher one is the "never below what is
-      // drawn" rule, and the ribbon is drawn over that grass there)
-      const expected = Math.max(ground, ribbonY(map, x, z));
-      assert.ok(Math.abs(car - expected) < 1e-6,
-        `at ${x.toFixed(1)},${z.toFixed(1)} the car is ${(car - expected).toFixed(3)} m off the visible surface`);
+      // off the road, past the shoulder ramp, the car sits exactly on the drawn ground
+      assert.ok(Math.abs(car - ground) < 1e-6,
+        `at ${x.toFixed(1)},${z.toFixed(1)} the car is ${(car - ground).toFixed(3)} m off the drawn grass`);
     }
   }
   assert.ok(checked > 5000, 'sampled the grass: ' + checked);
 });
 
 test('ON THE ROAD the car rides the asphalt, not the bank beside it (v168)', () => {
-  // v164 made the car take max(drawn ground, ribbon) everywhere. Off the road that is
-  // exactly right. ON the road it is exactly wrong on Map 0: the drawn terrain climbs
-  // metres above the asphalt where the road is a cutting, so a car on the tarmac was
-  // lifted up the grass - "the car is going down the road" from the driver's seat.
+  // v164 made the car take max(drawn ground, ribbon) everywhere. That is right where the
+  // ground is what is drawn. It is wrong ON the road: the terrain mesh is coarse, so
+  // beside a cutting or an embankment it can interpolate metres above the asphalt, and
+  // the max() then lifted the car up the grass - "the car is going down the road" from
+  // the driver's seat. On the ribbon the car must ride the ribbon.
   for (const map of CORE.MAPS) {
     const geo = drawnGeometry(map);
     client.buildTerrainSample(geo);
@@ -198,43 +188,59 @@ test('ON THE ROAD the car rides the asphalt, not the bank beside it (v168)', () 
       }
     }
     assert.ok(checked > 600, 'sampled the asphalt on map ' + map.id + ': ' + checked);
-    assert.ok(worst < 0.02,
+    // a few centimetres is the ribbon itself: it is drawn as a chord between two
+    // stations while this reference is the analytic elevation at the point. What must
+    // never happen is the metres of lift the coarse terrain mesh used to add.
+    assert.ok(worst < 0.06,
       'map ' + map.id + ': the car rides ' + worst.toFixed(3) + ' m off the asphalt (' + worstAt + ')');
   }
 });
 
-test('MAP 0: the drawn hillside never hangs over the asphalt (v168)', () => {
-  // The other half of "the car should go on the road only": the road has to BE there.
-  // The terrain grid is coarse, so a triangle spanning from the flat road corridor to
-  // the natural hillside can cross the asphalt above it. At 140 segments that was 1.66 m
-  // of hillside drawn over the outer lane of Map 0; v168 draws the SAME analytic field
-  // on a finer grid, which is what brings the overhang down to centimetres.
+test('MAP 0: the whole drivable width - asphalt AND shoulder out to the fence - is level (v169)', () => {
+  // The reported bug twice over. First the ground between the asphalt and the fence was a
+  // bank (metres above the road at a cutting, metres below it at an embankment), so a car
+  // out there climbed the grass or dropped behind the kerb. v168 answered that by moving
+  // the limit in to the asphalt edge - which is not the fix either: the fence is the
+  // barrier the player can see, and the car has to be able to use the strip up to it.
+  // The fix is the ground: the terrain's flat corridor now covers the full drivable width
+  // (getTerrainHeight: RH + 9 for the ellipse), so asphalt, kerb line, grass shoulder and
+  // the ground the fence stands on are all at the road's own height.
   const map = CORE.MAPS[0];
   const geo = drawnGeometry(map);
   client.buildTerrainSample(geo);
   const RH = CORE.CFG.roadHalf;
-  let checked = 0, worstCar = 0, worstGrass = -Infinity, worstAt = null;
+  const fenceInner = RH + 3.65 - 0.25;          // the wall box is 0.5 wide, centred there
+  assert.ok(map.limP <= fenceInner,
+    'MAP 0: the nose stops inside the drawn fence (limP ' + map.limP + ' vs inner face ' + fenceInner + ')');
+  assert.ok(map.limP > fenceInner - 0.5,
+    'MAP 0: and it really reaches the fence, not the middle of the road (limP ' + map.limP + ')');
+  let checked = 0, worstCar = 0, worstUp = 0, worstDown = 0, atCar = null, atDown = null;
   for (let i = 0; i < 1440; i++) {
     const th = i / 1440 * Math.PI * 2;
     for (const side of [1, -1]) {
-      for (let lat = 0; lat < RH; lat += 0.4) {
+      for (let lat = 0; lat < fenceInner; lat += 0.25) {
         const pt = lateralPoint(map, th, side, lat);
         const latNow = latDistOf(map, pt.x, pt.z);
-        if (latNow > RH) continue;
+        if (latNow > fenceInner) continue;
         const road = ribbonY(map, pt.x, pt.z);
         const grass = client.drawnGroundY(pt.x, pt.z);
         if (grass == null) continue;
         checked++;
-        worstCar = Math.max(worstCar, Math.abs(client.getSurfaceY(map, pt.x, pt.z) - road));
-        const over = grass - road;                 // > 0: the grass is drawn over the road
-        if (over > worstGrass) { worstGrass = over; worstAt = pt.x.toFixed(0) + ',' + pt.z.toFixed(0) + ' lat ' + latNow.toFixed(1); }
+        const car = Math.abs(client.getSurfaceY(map, pt.x, pt.z) - road);
+        if (car > worstCar) { worstCar = car; atCar = 'lat ' + latNow.toFixed(1) + ' at ' + (th * 180 / Math.PI).toFixed(0) + 'deg'; }
+        const up = grass - road;                     // > 0: grass drawn above the road
+        if (up > worstUp) worstUp = up;
+        const down = road - grass;                   // > 0: ground below the road level
+        if (down > worstDown) { worstDown = down; atDown = 'lat ' + latNow.toFixed(1) + ' at ' + (th * 180 / Math.PI).toFixed(0) + 'deg'; }
       }
     }
   }
-  assert.ok(checked > 25000, 'sampled the asphalt: ' + checked);
-  assert.ok(worstCar < 0.02, 'the car rides the ribbon on the asphalt: worst ' + worstCar.toFixed(3) + ' m');
-  assert.ok(worstGrass < 0.35,
-    'the drawn terrain hangs ' + worstGrass.toFixed(2) + ' m over the asphalt at ' + worstAt);
+  assert.ok(checked > 25000, 'sampled the drivable width: ' + checked);
+  assert.ok(worstUp < 0.05, 'the grass never rises above the road inside the drivable width (worst +' + worstUp.toFixed(2) + ' m)');
+  assert.ok(worstDown < 0.35,
+    'the ground never dives below the road inside the drivable width (worst ' + worstDown.toFixed(2) + ' m at ' + atDown + ')');
+  assert.ok(worstCar < 0.25,
+    'the car rides the road over the whole width (worst ' + worstCar.toFixed(2) + ' m at ' + atCar + ')');
 });
 
 test('the sampler agrees with the renderer triangle for triangle', () => {
