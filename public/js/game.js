@@ -2149,8 +2149,18 @@ function ttHudUpdate(mine) {
   if (el._hz && nowT - el._hz < 100) return; // v66: 10 Hz, not per-frame
   el._hz = nowT;
   const mapId = (latest.map != null) ? latest.map : builtMapId;
-  let pb = null; try { pb = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
-  let line2 = pb != null ? 'PB ' + fmtTime(pb) : (TT.practice ? 'PRACTICE — no records' : 'PB —');
+  let pb = null;
+  if (offlineRequested()) {
+    // v165: offline, the only meaningful best is this device's own - the online PB
+    // belongs to a server we are not talking to, and showing it would be a lie.
+    const ob = (window.SROffline && SROffline.bestFor) ? SROffline.bestFor(mapId) : null;
+    pb = (ob && ob.time != null) ? ob.time : null;
+  } else {
+    try { pb = JSON.parse(localStorage.getItem('sr_best_' + mapId) || 'null'); } catch (e) {}
+  }
+  let line2 = pb != null ? (offlineRequested() ? 'OFFLINE BEST ' : 'PB ') + fmtTime(pb)
+    : (offlineRequested() ? 'OFFLINE — your best is saved on this device'
+      : (TT.practice ? 'PRACTICE — no records' : 'PB —'));
   let line3 = el.dataset.cmp || '';
   // v62 live current-lap vs best-lap
   if (mine && latest) {
@@ -3465,6 +3475,7 @@ applyQuality(prefs.quality);
       prefs.mode3 = b.dataset.m3; savePrefs();
       document.querySelectorAll('.mode3-btn').forEach((x) => x.classList.toggle('active', x === b));
       const bt = $('bot-toggle'); if (bt) bt.checked = prefs.mode3 === 'mp';
+      if (prefs.mode3 === 'offline') dropOnlineLink();   // v165: race alone, no socket
     });
   });
   // v59 garage — cosmetic-only customization
@@ -5653,7 +5664,9 @@ window.joinCrewAction = async function(crewId, opts) {
       return window.joinCrewAction(crewId, { guestAfterErase: true });
     }
     const why = (r.body && r.body.error) ? crewJoinErrorText(r.body) : clubHttpText(r.status);
-    setJoinNote('LAST ATTEMPT - ' + why + (retriedAsGuest ? ' You joined as a guest.' : ''));
+    // v165: the retry itself failed, so do not tell the racer they joined as a
+    // guest - say what actually happened (the dead account was signed out first).
+    setJoinNote('LAST ATTEMPT - ' + why + (retriedAsGuest ? ' The old account was signed out first; this retry was as a guest.' : ''));
     toast(why);
     return;
   }
@@ -5849,6 +5862,10 @@ setTimeout(pollLobbyExtras, 1200);
 // v43: also carries client-side crash reports so /stats shows them remotely
 let lastErrSent = '';
 function track(e, map, m) {
+  // v165: a racer who chose OFFLINE (or whose device has no connection) sends
+  // nothing at all - not even the aggregate counters. The race and its time stay
+  // on the device; there is no internet to reach anyway.
+  if (typeof offlineRequested === 'function' && offlineRequested()) return;
   if (e === 'err') { if (m === lastErrSent) return; lastErrSent = m; } // no beacon loops on repeat errors
   try {
     const pId = (typeof prefs !== 'undefined' && prefs && prefs.pid) ? prefs.pid : null;
@@ -6396,7 +6413,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v164';
+const BUILD = 'v165';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -6433,7 +6450,20 @@ const BUILD = 'v164';
   } catch (e) {}
 })();
 
-const net = new RoomLink({
+// ---------------------------------------------------------------------------
+// v165 OFFLINE MODE - which transport does this browser race on?
+// ---------------------------------------------------------------------------
+// Two triggers, both deliberate: the racer picked OFFLINE in the mode row, or the
+// browser has no connection at all (navigator.onLine === false) - a phone in a
+// tunnel should still be able to drive, and it should say so rather than hang on a
+// socket that can never open. Everything downstream is identical: SROfflineLink
+// runs the same RaceRoom at the same 30 Hz and emits the same messages, so the
+// wizard, the HUD, the lap counter and the camera do not know the difference.
+function offlineRequested() {
+  return (prefs && prefs.mode3 === 'offline') || (typeof navigator !== 'undefined' && navigator.onLine === false);
+}
+
+const netHandlers = {
   onWelcome(msg) {
     if (msg.role === 'lobby' || msg.type === 'lobby_welcome' || !msg.code || msg.slot === 0) {
       mySlot = 0; roomCode = '·····';
@@ -6604,7 +6634,57 @@ const net = new RoomLink({
     setNetBanner(s === 'connected');
     const lc = $('lobby-conn'); setIcoTone(lc, s === 'connected' ? 'ico-green' : (s === 'connecting' ? 'ico-amber' : 'ico-red')); setIcoLabel(lc, s === 'connected' ? 'connected' : (s === 'connecting' ? 'connecting…' : 'reconnecting…'));
   }
-});
+};
+
+// ---- one interface, two transports ----------------------------------------
+// game.js only ever calls net.connect / net.send / net.isOpen / net.close, so the
+// offline link is a drop-in. The online link is built lazily on the first connect
+// so an offline racer never even opens a socket.
+let netOnline = null;
+const netLocal = (typeof SROfflineLink === 'function') ? new SROfflineLink(netHandlers) : null;
+// v165: choosing OFFLINE means the relay is not ours anymore. A browser that is
+// online while racing alone must open no socket at all, so the link is dropped
+// (and its reconnect timer stopped) the moment the racer picks the mode.
+function dropOnlineLink() {
+  if (!netOnline) return;
+  try { netOnline.close(); } catch (e) {}
+  netOnline = null;
+}
+function pickTransport() {
+  if (offlineRequested() && netLocal) { dropOnlineLink(); return netLocal; }
+  if (!netOnline) netOnline = new RoomLink(netHandlers);
+  return netOnline;
+}
+const net = {
+  get ws() { return pickTransport().ws; },
+  get open() { return pickTransport().open; },
+  get delay() { return pickTransport().delay; },
+  set delay(v) { pickTransport().delay = v; },
+  get closedByUser() { return pickTransport().closedByUser; },
+  set closedByUser(v) { const t = pickTransport(); t.closedByUser = v; if (netOnline && t !== netOnline) netOnline.closedByUser = v; },
+  connect(hello) { return pickTransport().connect(hello); },
+  reconnect(hello) { return pickTransport().reconnect(hello); },
+  send(msg) {
+    const t = pickTransport();
+    // v165: picking OFFLINE (or losing the network) switches the transport, and the
+    // first thing the racer does is press START. A local link that has never been
+    // connected would drop that message on the floor, so open it here with the same
+    // hello the online link gets - and if we were sitting in an online room, leave it
+    // properly first (the racer chose to race alone).
+    if (t === netLocal && !t.isOpen() && msg && msg.type !== 'hello') {
+      try { if (netOnline && netOnline.isOpen()) netOnline.close(); } catch (e) {}
+      t.connect(Object.assign({ type: 'hello', role: 'screen', room: null }, identityPayload()));
+    }
+    return t.send(msg);
+  },
+  close() { return pickTransport().close(); },
+  isOpen() { const t = pickTransport(); return !!(t.isOpen && t.isOpen()); },
+  status(s) { const t = pickTransport(); if (t.status) t.status(s); },
+  _local: () => netLocal,
+  _online: () => netOnline
+};
+
+// the offline link answers its own pings; the periodic ping stays harmless either way
 setInterval(() => { if (net.isOpen()) net.send({ type: 'ping', t: performance.now() }); }, 2000);
 
 // v61 TT overlay actions
@@ -6622,7 +6702,9 @@ const ttShare = $('tt-share'); if (ttShare) ttShare.addEventListener('click', ()
 function sendHello() {
   // v121: on configured deploys a racer account is mandatory. Never dial the
   // relay as a guest - hand the browser back to the gate instead.
-  if (window.SRAccount && SRAccount.available() && !SRAccount.loggedIn()) {
+  // v165: ...online. Offline there is no account to check and nothing to sign in
+  // to, and bouncing to auth.html would need the internet we do not have.
+  if (!offlineRequested() && window.SRAccount && SRAccount.available() && !SRAccount.loggedIn()) {
     location.replace('auth.html?next=' + encodeURIComponent(location.pathname + location.search));
     return;
   }
@@ -7694,8 +7776,11 @@ $('start-btn').addEventListener('click', () => {
   clearCount();
   ensureAudio();
   const mode3 = prefs.mode3 || 'mp';
-  TT.on = mode3 !== 'mp'; TT.practice = mode3 === 'practice'; TT.done = false;
-  if (TT.on) { net.send({ type: 'bot', bot: false }); net.send({ type: 'record', record: !TT.practice }); }
+  const isOfflineRace = mode3 === 'offline';
+  TT.on = mode3 !== 'mp'; TT.practice = mode3 === 'practice' || isOfflineRace; TT.done = false;
+  // v165: an offline race keeps whatever the racer set on the bots toggle (the local
+  // room can run the same AI the server does), and it records nothing anywhere.
+  if (TT.on) { net.send({ type: 'bot', bot: isOfflineRace ? !!prefs.bot : false }); net.send({ type: 'record', record: !TT.practice }); }
   else net.send({ type: 'record', record: true });
   net.send(startPayload()); // v93 carries the chosen track + identity
   const p = Pget();
