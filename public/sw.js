@@ -9,17 +9,17 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v173';
+const CACHE = 'sridhar-rush-v174';
 
 const CORE = [
   '/', '/controller', '/auth.html',
-  '/css/style.css?v=173', '/css/controller.css?v=173',
-  '/js/game-core.js?v=173', '/js/progression.js?v=173', '/js/net.js?v=173', '/js/audio.js?v=173', '/js/game.js?v=173', '/js/controller.js?v=173', '/js/account.js?v=173', '/js/i18n.js?v=173', '/js/auth.js?v=173',
+  '/css/style.css?v=174', '/css/controller.css?v=174',
+  '/js/game-core.js?v=174', '/js/progression.js?v=174', '/js/net.js?v=174', '/js/audio.js?v=174', '/js/game.js?v=174', '/js/controller.js?v=174', '/js/account.js?v=174', '/js/i18n.js?v=174', '/js/auth.js?v=174',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
   '/js/vendor/post/RenderPass.js', '/js/vendor/post/UnrealBloomPass.js',
-  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=173',
+  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=174',
   '/icon.svg', '/img/icon-192.png', '/img/icon-512.png', '/img/icon-512-maskable.png', '/img/apple-touch-icon.png',
   // v147: the four weather-condition pictures (dry tarmac, rain, neon night, snow)
   '/img/weather/dry.webp', '/img/weather/wet.webp', '/img/weather/night.webp', '/img/weather/blizzard.webp',
@@ -65,10 +65,16 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.startsWith('/assets/audio/') || req.headers.get('range')) return;
 
   if (req.mode === 'navigate') {
-    // HTML: fresh when online, cached copy when offline
+    // HTML: fresh when online, cached copy when offline.
+    // v174 AUDIT: only a GOOD answer is stored. A 500 (or a deploy-time error
+    // page) used to be cached under the page's own URL, so the next offline visit
+    // served the error as if it were the app.
     e.respondWith(
       fetch(req)
-        .then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req.url, copy)); return res; })
+        .then((res) => {
+          if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req.url, copy)); }
+          return res;
+        })
         .catch(() => caches.match(req).then((hit) => hit || caches.match('/')))
     );
     return;

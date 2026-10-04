@@ -4222,6 +4222,7 @@ function applyRoomLocks() {
   const locked = seatedInRoom && !amHost;
   const groups = [
     ['#map-cards .map-card', locked],
+    ['.mode-btn', locked],            // v174: race mode is the room's, like the circuit
     ['#weather-cards .weather-btn', locked],
     ['.laps-btn', locked],
     ['#bot-toggle', locked],
@@ -6187,7 +6188,10 @@ function renderProfile() {
   if (wb && p.last && Date.now() - p.last > 12 * 3600 * 1000 && !window.__wbShown) {
     window.__wbShown = true;
     wb.hidden = false;
-    wb.innerHTML = icoSpan('sparkle') + ' WELCOME BACK! ' + (p.rival ? 'Rival ' + p.rival.name + ' is ' + (p.rival.t != null ? fmtTime(p.rival.t) : '') + ' · ' : '') + 'Streak ' + p.streak + ' · Daily challenge available!';
+    // v174 AUDIT: p.rival.name is whatever another racer typed into the name
+    // field (and what was persisted in prefs), so it must be escaped before it
+    // goes through innerHTML - every sibling sink here already does.
+    wb.innerHTML = icoSpan('sparkle') + ' WELCOME BACK! ' + (p.rival ? 'Rival ' + escapeHtml(p.rival.name) + ' is ' + (p.rival.t != null ? fmtTime(p.rival.t) : '') + ' · ' : '') + 'Streak ' + p.streak + ' · Daily challenge available!';
   }
 }
 function renderRival(p) {
@@ -6545,7 +6549,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v173';
+const BUILD = 'v174';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -6757,9 +6761,9 @@ const net = new RoomLink({
 setInterval(() => { if (net.isOpen()) net.send({ type: 'ping', t: performance.now() }); }, 2000);
 
 // v61 TT overlay actions
-const ttAgain = $('tt-again'); if (ttAgain) ttAgain.addEventListener('click', () => { $('tt-overlay').classList.add('hidden'); TT.done = false; net.send({ type: 'restart' }); });
-const ttExit = $('tt-exit'); if (ttExit) ttExit.addEventListener('click', () => { $('tt-overlay').classList.add('hidden'); TT.on = false; TT.practice = false; net.send({ type: 'reset' }); const pb2 = $('practice-bar'); if (pb2) pb2.hidden = true; });
-const ttLb = $('tt-lb'); if (ttLb) ttLb.addEventListener('click', () => { $('tt-overlay').classList.add('hidden'); TT.on = false; net.send({ type: 'reset' }); });
+const ttAgain = $('tt-again'); if (ttAgain) ttAgain.addEventListener('click', () => { $('tt-overlay').classList.add('hidden'); TT.done = false; if (backToLobbyAction()) return; net.send({ type: 'restart' }); });
+const ttExit = $('tt-exit'); if (ttExit) ttExit.addEventListener('click', () => { $('tt-overlay').classList.add('hidden'); TT.on = false; TT.practice = false; const pb2 = $('practice-bar'); if (pb2) pb2.hidden = true; if (backToLobbyAction()) return; net.send({ type: 'reset' }); });
+const ttLb = $('tt-lb'); if (ttLb) ttLb.addEventListener('click', () => { $('tt-overlay').classList.add('hidden'); TT.on = false; if (backToLobbyAction()) return; net.send({ type: 'reset' }); });
 const prx = $('practice-exit'); if (prx) prx.addEventListener('click', () => { const te = $('tt-exit'); if (te) te.click(); });
 const ttShare = $('tt-share'); if (ttShare) ttShare.addEventListener('click', () => {
   const mapId = (latest && latest.map != null) ? latest.map : builtMapId;
@@ -6834,6 +6838,16 @@ function exitRoom() {
   const sb = $('slot-badge'); if (sb) sb.style.display = 'none';
   toast((typeof tI18n === 'function' ? tI18n('leftRoom') : null) || '🚪 Left the room — create or join another');
   track('room_exit', selectedMap, { room: from });
+}
+// v174 AUDIT: mode / restart / reset belong to the room creator (the relay now
+// enforces that too). A visiting racer who wants out of the race - the results
+// screen's CHANGE CIRCUIT / LOBBY / EXIT, or TRY AGAIN - leaves the room instead
+// of dragging every other racer back to the lobby with them. `leave` is the
+// supported path: the relay answers lobby_welcome and the local reset completes
+// there, so nobody is left staring at a dead results screen.
+function backToLobbyAction() {
+  if (seatedInRoom && !amHost) { exitRoom(); return true; }
+  return false;
 }
 function ensureRoomCreated() {
   if (!roomCode || roomCode === '·····') {
@@ -8427,11 +8441,21 @@ if (rstBtn) rstBtn.addEventListener('click', () => { // v61 quick restart (no re
   clearCount();
   const ov = $('tt-overlay'); if (ov) ov.classList.add('hidden');
   TT.done = false;
+  if (backToLobbyAction()) return;                       // v174
   net.send({ type: 'restart' });
 });
 const trkBtn = $('track-btn');
-if (trkBtn) trkBtn.addEventListener('click', () => { clearAutoRematchTimer(); clearCount(); $('results').classList.add('hidden'); net.send({ type: 'reset' }); const nb = $('next-btn'); if (nb) setTimeout(() => nb.click(), 150); });
-$('menu-btn').addEventListener('click', () => { clearAutoRematchTimer(); clearCount(); $('results').classList.add('hidden'); net.send({ type: 'reset' }); });
+if (trkBtn) trkBtn.addEventListener('click', () => {
+  clearAutoRematchTimer(); clearCount(); $('results').classList.add('hidden');
+  if (backToLobbyAction()) return;                       // v174
+  net.send({ type: 'reset' });
+  const nb = $('next-btn'); if (nb) setTimeout(() => nb.click(), 150);
+});
+$('menu-btn').addEventListener('click', () => {
+  clearAutoRematchTimer(); clearCount(); $('results').classList.add('hidden');
+  if (backToLobbyAction()) return;                       // v174: visitors leave, hosts reset
+  net.send({ type: 'reset' });
+});
 document.querySelectorAll('.map-card').forEach((b) => b.addEventListener('click', () => {
   selectedMap = parseInt(b.dataset.map, 10);
   document.querySelectorAll('.map-card').forEach((x) => x.classList.toggle('active', x === b));
@@ -8487,7 +8511,10 @@ if (joinRoomBtn) {
   joinRoomBtn.addEventListener('pointerdown', (e)=>{ try{ e.preventDefault(); }catch(_){} _jrHandler(); }, {passive:false});
 }
 const exitBtn = $('exit-btn');
-if (exitBtn) exitBtn.addEventListener('click', () => net.send({ type: 'reset' }));
+if (exitBtn) exitBtn.addEventListener('click', () => {
+  if (backToLobbyAction()) return;                       // v174
+  net.send({ type: 'reset' });
+});
 const leaveRoomBtn = $('leave-room-btn');
 if (leaveRoomBtn) leaveRoomBtn.addEventListener('click', () => exitRoom()); // v91
 syncRoomButtons();

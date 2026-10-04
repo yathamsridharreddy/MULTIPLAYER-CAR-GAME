@@ -50,6 +50,22 @@
   const CAR_CAP_L = 1.6, CAR_CAP_R = 0.95;
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  // v174 AUDIT. Two classes of wire value used to slip past a plain truthiness
+  // test and reach the shared simulation:
+  //   * own() - `MAPS['__proto__']`, `CAR_CLASSES['constructor']` and friends are
+  //     truthy, so a hostile frame could hand a room Object.prototype as its
+  //     track or a car a class with no physics numbers (NaN cars, and a tick
+  //     that threw inside the server's 30 Hz loop).
+  //   * num() - `clamp('abc', -1, 1)` is NaN, so one bad controller frame used to
+  //     poison a car's whole state vector (the snapshot then shipped nulls).
+  const own = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k);
+  const num = (v, fallback) => { const x = Number(v); return isFinite(x) ? x : (fallback || 0); };
+  // A track id must be a real, own, integer key of MAPS - anything else is 0.
+  function realMapId(id) { const i = (typeof id === 'number') ? id : parseInt(id, 10); return (Number.isInteger(i) && own(MAPS, i)) ? i : null; }
+  // Racer-visible text from a socket: keep every printable character (unicode,
+  // emoji, punctuation) but drop control codes and angle brackets, so no
+  // downstream HTML sink can ever be handed a tag.
+  const cleanText = (s, max) => String(s).replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, max);
   // capsule-vs-circle collision against every world collider (tires, trees,
   // buildings). Contact matches the visible car body from every angle, so
   // nothing invisible stops the car and the nose can never punch through.
@@ -339,14 +355,14 @@
       this.startX = track.a + (this.slot === 1 ? -2.8 : 2.8);
     }
 
-    setClass(key) { if (CAR_CLASSES[key]) this.cls = CAR_CLASSES[key]; }
+    setClass(key) { if (own(CAR_CLASSES, key)) this.cls = CAR_CLASSES[key]; } // v174: own keys only
     // v92 STEERING SENSITIVITY. The client sends its slider value; it is clamped
     // here because nothing from a socket is trusted. The gain term only ever
     // REDUCES lock from the baseline, so cranking the slider up buys a quicker
     // wheel but never extra cornering grip over a default driver.
     setSens(v) { const n = parseFloat(v); this.sens = isFinite(n) ? clamp(n, 0.5, 1.5) : 1; }
     setMeta(name, color, pid) {
-      if (name) this.name = String(name).slice(0, 14);
+      if (name) { const c = cleanText(name, 14); if (c) this.name = c; } // v174: strip tags/control codes
       if (typeof color === 'number' && isFinite(color)) this.color = Math.floor(color) & 0xffffff; // v65 sanitize
       if (pid) this.pid = String(pid).slice(0, 24); // stable account-lite id
     }
@@ -357,7 +373,7 @@
       // silently dropped here and never reached any screen. cos.b is the new
       // body-shell index (0..5, see SRCos.BODIES).
       if (cos) this.cos = { decal: cos.decal | 0, wheels: cos.wheels | 0, trail: cos.trail | 0, neon: cos.neon | 0, sp: cos.sp | 0, b: Math.max(0, Math.min(5, cos.b | 0)) };
-      if (title) this.title = String(title).slice(0, 10);
+      if (title) { const ct = cleanText(title, 10); if (ct) this.title = ct; } // v174: same rule as names
     }
 
     resetState(raceTime) {
@@ -397,6 +413,17 @@
     speedKmh() { return Math.abs(this.forwardSpeed()) * 3.6; }
 
     totalProgress() { return this.lap * PI2 + this.progress; }
+
+    // v174 AUDIT: nothing non-finite may survive a tick. NaN passes through every
+    // clamp, JSON turns it into `null` on the wire, and every screen then draws a
+    // car at null coordinates. Recover by putting the car back on the grid.
+    // Returns true when a recovery happened.
+    guardFinite(time) {
+      if (isFinite(this.x) && isFinite(this.z) && isFinite(this.heading) &&
+          isFinite(this.vx) && isFinite(this.vy) && isFinite(this.slip)) return false;
+      this.resetState(time);
+      return true;
+    }
 
     update(dt, time, raceState, colliders, room) {
       const ev = { crash: null, lap: null, finish: null };
@@ -443,7 +470,7 @@
       }
 
       const lat = this.vx * rightX + this.vy * rightY;
-      const wGrip = (room && room.weather && WEATHER_CONDITIONS[room.weather]) ? (WEATHER_CONDITIONS[room.weather].gripMul || 1.0) : 1.0;
+      const wGrip = (room && own(WEATHER_CONDITIONS, room.weather)) ? (WEATHER_CONDITIONS[room.weather].gripMul || 1.0) : 1.0; // v174
       const grip = (inp.handbrake ? CFG.gripHandbrake : CFG.grip * this.cls.grip) * wGrip;
       const latAfter = lat * Math.max(0, 1 - grip * dt);
       const fwd = this.vx * dirX + this.vy * dirY;
@@ -509,6 +536,10 @@
         this.progress += PI2;
       }
 
+      // v174 AUDIT: last line of defence - see guardFinite(). Told to the race as
+      // a respawn, which every client already knows how to draw.
+      if (this.guardFinite(time)) ev.respawn = { slot: this.slot };
+
       return ev;
     }
   }
@@ -522,8 +553,9 @@
     constructor(code, mode, mapId, maxSlots, weather) {
       this.code = code;
       this.mode = ['coop','elim','drift'].includes(mode) ? mode : 'race';
-      this.mapId = (mapId != null && MAPS[mapId]) ? mapId : 0;
-      this.weather = (weather && WEATHER_CONDITIONS[weather]) ? weather : 'dry';
+      const wantMap = realMapId(mapId); // v174: own keys only - '__proto__' is not a circuit
+      this.mapId = wantMap == null ? 0 : wantMap;
+      this.weather = (weather && own(WEATHER_CONDITIONS, weather)) ? weather : 'dry';
       this.track = MAPS[this.mapId];
       this.state = 'waiting';
       this.botSkill = 1; // v45: PRO by default = byte-identical historic bot unless a client opts to ROOKIE
@@ -552,7 +584,7 @@
 
     setWeather(w) {
       if (this.state !== 'waiting') return false;
-      if (WEATHER_CONDITIONS[w]) {
+      if (own(WEATHER_CONDITIONS, w)) { // v174: own keys only
         this.weather = w;
         return true;
       }
@@ -593,9 +625,10 @@
 
     setMap(mapId) {
       if (this.state !== 'waiting') return false;
-      if (!MAPS[mapId]) return false;
-      this.mapId = mapId;
-      this.track = MAPS[mapId];
+      const id = realMapId(mapId); // v174: own keys only
+      if (id == null) return false;
+      this.mapId = id;
+      this.track = MAPS[id];
       this.pickups = pickupSpots(this.track).map((p) => ({ x: p.x, z: p.z, type: p.type, on: true, t: 0 })); // v59
       this.cars.forEach((c) => { c.setTrack(this.track); c.resetState(0); });
       return true;
@@ -605,12 +638,12 @@
     setSeat(slot, on) { if (slot >= 1 && slot <= this.cap) this.seats[slot] = !!on; } // v76 human screen seat
 
     setInput(slot, input) {
-      let steer = clamp(input.steer || 0, -1, 1);
+      let steer = clamp(num(input.steer), -1, 1); // v174: numbers only, never NaN
       if (Math.abs(steer) < 0.06) steer = 0; // dead-zone: kills joystick/gyro noise so the car tracks straight
       this.inputs[slot] = {
         steer,
-        throttle: clamp(input.throttle || 0, 0, 1),
-        brake: clamp(input.brake || 0, 0, 1),
+        throttle: clamp(num(input.throttle), 0, 1),
+        brake: clamp(num(input.brake), 0, 1),
         handbrake: !!input.handbrake,
         nitro: !!input.nitro
       };
@@ -724,7 +757,12 @@
     botInput() { return this.botInputFor(this.cars[1]); }
 
     update(dt) {
-      if (this.state === 'waiting' || this.state === 'finished') return;
+      if (this.state === 'waiting' || this.state === 'finished') {
+        // v174 AUDIT: a room that is not simulating still publishes snapshots
+        // (the lobby grid, the results screen), so its cars are still checked.
+        for (const car of this.cars) car.guardFinite(this.raceTime);
+        return;
+      }
       this.raceTime += dt;
       this.lastActivity = Date.now();
 
@@ -749,7 +787,7 @@
       const colliders = this.track.world.colliders;
 
       for (const car of this.cars) {
-        if (this.mode === 'coop' && car.slot === 2) continue;
+        if (this.mode === 'coop' && car.slot === 2) { car.guardFinite(this.raceTime); continue; } // v174: skipped, not unguarded
         const ev = car.update(dt, this.raceTime, this.state, colliders, this);
         if (ev.crash) this.events.push({ type: 'crash', slot: car.slot, x: r3(ev.crash.x), z: r3(ev.crash.z), s: r3(ev.crash.s) });
         if (ev.pu) this.events.push({ type: 'pu', slot: ev.pu.slot, ptype: ev.pu.type }); // v59
@@ -1036,7 +1074,7 @@
     if (speed >= 0 && this.nitroActive) cap += CFG.nitroCapBonus;
     if ((speed > 0 && speed > cap) || (speed < 0 && speed < cap)) { this.vx -= dirX * (speed - cap); this.vy -= dirY * (speed - cap); speed = cap; }
     const lat = this.vx * rightX + this.vy * rightY;
-    const weatherGripMod = (room && room.weather && WEATHER_CONDITIONS[room.weather]) ? (WEATHER_CONDITIONS[room.weather].gripMul || 1.0) : 1.0;
+    const weatherGripMod = (room && own(WEATHER_CONDITIONS, room.weather)) ? (WEATHER_CONDITIONS[room.weather].gripMul || 1.0) : 1.0; // v174
     const grip = (inp.handbrake ? CFG.gripHandbrake : CFG.grip * this.cls.grip) * weatherGripMod;
     const latAfter = lat * Math.max(0, 1 - grip * dt);
     const fwd = this.vx * dirX + this.vy * dirY;
@@ -1086,6 +1124,11 @@
       if (this.lap >= this.maxLaps) { this.finished = true; this.finishTime = time - this.goTime; ev.finish = { t: this.finishTime }; }
       else { ev.lap = { n: this.lap, t, isFinalNext: this.lap === this.maxLaps - 1 }; }
     } else if (this.progress <= -1) { this.progress += 1; }
+    // v174 AUDIT: this is the SECOND physics implementation (spline circuits, i.e.
+    // maps 1-4) and it is reached through a patched Car.update, so the NaN backstop
+    // at the end of the ellipse code never ran here - four of the five tracks would
+    // have kept a non-finite car forever. Same rule: recover, tell the race.
+    if (this.guardFinite(time)) ev.respawn = ev.respawn || { slot: this.slot };
     return ev;
   };
   const _carUpdate = Car.prototype.update;

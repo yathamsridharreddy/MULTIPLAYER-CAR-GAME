@@ -1,0 +1,10 @@
+# SRIDHAR RUSH — https://sridhar-drift.vercel.app
+# The game itself is public; the machine endpoints are not useful to crawlers.
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /health
+Disallow: /version
+Disallow: /a
+Disallow: /stats
+Disallow: /ws

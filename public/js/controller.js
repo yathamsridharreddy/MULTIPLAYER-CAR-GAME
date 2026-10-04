@@ -32,6 +32,15 @@ function hapticEvents(d, prev) {
 const hPrev = { state: '', speed: null, nitro: false };
 
 // ---- virtual joysticks ----
+// v174 AUDIT: the pad sends its STATE every 33 ms, so a control that never
+// receives its release is not a cosmetic glitch - the car keeps steering,
+// boosting or handbraking until the phone is reloaded. The release handlers used
+// to live only on the element that was pressed, which is correct only while
+// pointer capture is held: if setPointerCapture() is unavailable (older WebKit)
+// and the finger lifts outside the zone, no pointerup ever reaches it. Every
+// control now also listens on the window, on lostpointercapture, and is force
+// released by releaseAll() (window blur / pagehide / tab hidden).
+const stickReleases = [];
 function makeStick(zoneId, knobId, onMove) {
   const zone = $(zoneId), knob = $(knobId);
   const R = 46;
@@ -51,12 +60,17 @@ function makeStick(zoneId, knobId, onMove) {
   }
   zone.addEventListener('pointermove', (e) => { if (e.pointerId === activeId) move(e); });
   const end = (e) => {
-    if (e.pointerId !== activeId) return;
+    if (e && e.pointerId != null && e.pointerId !== activeId) return;   // another finger's event
+    if (activeId === null) return;                                      // already released
     activeId = null; zone.classList.remove('active');
     knob.style.transform = 'translate(0px, 0px)'; onMove(0, 0);
   };
   zone.addEventListener('pointerup', end);
   zone.addEventListener('pointercancel', end);
+  zone.addEventListener('lostpointercapture', end);   // v174: capture can be taken away at any time
+  window.addEventListener('pointerup', end);          // v174: the finger may lift outside the zone
+  window.addEventListener('pointercancel', end);
+  stickReleases.push(() => end(null));
 }
 makeStick('zone-left', 'knob-left', (x) => { if (!state.gyro) state.steer = x; });
 makeStick('zone-right', 'knob-right', (_, y) => { state.throttle = clamp(-y, 0, 1); state.brake = clamp(y, 0, 1); });
@@ -77,15 +91,26 @@ function enableGyro() {
 function disableGyro() { state.gyro = false; state.steer = 0; window.removeEventListener('deviceorientation', onGyro); }
 
 // ---- buttons ----
+const heldButtons = new Set();
 function holdButton(id, down, up) {
   const el = $(id);
+  const release = (e) => {
+    if (el._holdPid == null) return;                                   // not held
+    if (e && e.pointerId != null && e.pointerId !== el._holdPid) return; // another finger's event
+    el._holdPid = null;
+    el.classList.remove('pressed'); heldButtons.delete(el);
+    if (up) up();
+  };
   el.addEventListener('pointerdown', (e) => {
     try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    el._holdPid = e.pointerId; heldButtons.add(el);
     el.classList.add('pressed'); vibrate(14); down(); e.preventDefault();
   });
-  const release = () => { el.classList.remove('pressed'); if (up) up(); };
   el.addEventListener('pointerup', release);
   el.addEventListener('pointercancel', release);
+  el.addEventListener('lostpointercapture', release);   // v174
+  window.addEventListener('pointerup', release);        // v174
+  window.addEventListener('pointercancel', release);
 }
 holdButton('btn-hb', () => { state.hb = true; }, () => { state.hb = false; });
 holdButton('btn-nitro', () => { state.nitro = true; vibrate(30); }, () => { state.nitro = false; });
@@ -159,6 +184,23 @@ const net = new RoomLink({
   }
 });
 
+// v174 AUDIT: the single "let go of everything" path. It zeroes the pad state,
+// both sticks, every held button, and pushes the zeroed frame straight away - so a
+// phone that is locked, backgrounded, swiped away or loses focus cannot leave a
+// car driving itself on the track.
+function releaseAll() {
+  state.steer = state.throttle = state.brake = 0;
+  state.hb = state.nitro = false;
+  heldButtons.forEach((el) => el.classList.remove('pressed'));
+  heldButtons.clear();
+  for (const rel of stickReleases) rel();
+  if (net.isOpen() && !state.full && state.slot != null) {
+    try { net.send({ type: 'input', steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false }); } catch (e) {}
+  }
+}
+window.addEventListener('blur', releaseAll);
+window.addEventListener('pagehide', releaseAll);
+
 function showJoinScreen(err) { $('join-screen').style.display = 'flex'; $('pads').classList.add('locked'); if (err) $('join-error').textContent = err; }
 function ctrlPid() { try { let p = localStorage.getItem('sr_ctrl_pid'); if (!p) { p = 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('sr_ctrl_pid', p); } return p; } catch (e) { return null; } } // v77 BUG-008
 function joinRoom(code, slot) {
@@ -192,8 +234,7 @@ let ctrlHiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     ctrlHiddenAt = performance.now();
-    state.steer = state.throttle = state.brake = 0; state.hb = state.nitro = false;
-    try { net.send({ type: 'input', steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false }); } catch (e) {}
+    releaseAll();          // v174: also clears the sticks and held buttons
     return;
   }
   const away = ctrlHiddenAt ? (performance.now() - ctrlHiddenAt) : 0;

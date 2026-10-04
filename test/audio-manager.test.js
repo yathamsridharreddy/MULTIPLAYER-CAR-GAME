@@ -220,7 +220,9 @@ test('v173 audio: initialises one context and one mixer, and re-ensuring is a no
     SRAudio.ensure(); SRAudio.ensure();
     assert.equal(SRAudio.stats().contexts, 1, 'only one AudioContext is ever built');
     assert.equal(fake.graph.created.gain, gainsBefore, 're-ensuring builds no new nodes');
-    assert.equal(SRAudio.version, 'v173');
+    // the audio library must ship the SAME build marker as the app that calls it
+    const gameBuild = (read('public/js/game.js').match(/const BUILD = '(v\d+)'/) || [])[1];
+    assert.equal(SRAudio.version, gameBuild);
   } finally { restore(); }
 });
 
@@ -1075,14 +1077,15 @@ test('v173 audio: the build stamp is consistent across every surface that caches
   const html = read('public/index.html');
   const srv = read('server.js');
   const build = (game.match(/const BUILD = '(v\d+)'/) || [])[1];
-  assert.equal(build, 'v173', 'the audio release is a version bump (returning users must fetch the new client)');
+  assert.ok(/^v\d+$/.test(build), 'game.js must carry a build marker');
+  assert.ok(Number(build.slice(1)) >= 173, 'the audio release bumped the build (returning users must fetch the new client)');
   assert.equal((sw.match(/const CACHE = 'sridhar-rush-(v\d+)'/) || [])[1], build);
   assert.equal((srv.match(/build: '(v\d+)'/) || [])[1], build);
-  assert.equal((game.match(/const BUILD = '(v\d+)'/) || [])[1], 'v173');
-  for (const m of html.matchAll(/\?v=(\d+)/g)) assert.equal(m[1], '173', 'stale asset ref in index.html');
-  for (const m of sw.matchAll(/\?v=(\d+)/g)) assert.equal(m[1], '173', 'stale asset ref in sw.js');
+  assert.equal((game.match(/const BUILD = '(v\d+)'/) || [])[1], build);
+  for (const m of html.matchAll(/\?v=(\d+)/g)) assert.equal(m[1], String(build).slice(1), 'stale asset ref in index.html');
+  for (const m of sw.matchAll(/\?v=(\d+)/g)) assert.equal(m[1], String(build).slice(1), 'stale asset ref in sw.js');
   for (const f of ['auth.html', 'controller.html', 'replay.html']) {
-    for (const m of read('public/' + f).matchAll(/\?v=(\d+)/g)) assert.equal(m[1], '173', 'stale asset ref in ' + f);
+    for (const m of read('public/' + f).matchAll(/\?v=(\d+)/g)) assert.equal(m[1], String(build).slice(1), 'stale asset ref in ' + f);
   }
 });
 
@@ -1092,7 +1095,7 @@ test('v173 audio: the service worker never precaches audio and never intercepts 
   assert.ok(!/assets\/audio/.test(core), 'the samples are NOT precached');
   assert.ok(/url\.pathname\.startsWith\('\/assets\/audio\/'\) \|\| req\.headers\.get\('range'\)/.test(sw),
     'audio and any Range request bypass the cache entirely');
-  assert.ok(/js\/audio\.js\?v=173/.test(core), 'but the audio MANAGER itself is precached like the rest of the client');
+  assert.ok(/js\/audio\.js\?v=\d+/.test(core), 'but the audio MANAGER itself is precached like the rest of the client');
 });
 
 test('v173 audio: index.html loads audio.js before the code that calls it', () => {

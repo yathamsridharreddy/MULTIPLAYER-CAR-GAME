@@ -128,8 +128,15 @@ function sanitizeGhostData(raw) {
 // ---------------------------------------------------------------------------
 const AN_FILE = path.join(__dirname, 'analytics.json');
 const CLASS_TELE = { velocity: { pick: 0, win: 0, fin: 0, posSum: 0, tSum: 0 }, accelerator: { pick: 0, win: 0, fin: 0, posSum: 0, tSum: 0 }, grip: { pick: 0, win: 0, fin: 0, posSum: 0, tSum: 0 } };
-function classPick(cls) { const c = CLASS_TELE[cls]; if (c) c.pick++; }
-function classResult(cls, pos, t, won) { const c = CLASS_TELE[cls]; if (!c) return; c.fin++; c.posSum += pos; if (t != null) c.tSum += t; if (won) c.win++; }
+// v174 AUDIT: a truthiness lookup on a wire string resolved `CLASS_TELE['__proto__']`
+// to Object.prototype, and `c.pick++` then wrote NaN onto it - global prototype
+// pollution from a single `hello` frame. Own keys only.
+function classPick(cls) { if (!Object.prototype.hasOwnProperty.call(CLASS_TELE, cls)) return; CLASS_TELE[cls].pick++; }
+function classResult(cls, pos, t, won) {
+  if (!Object.prototype.hasOwnProperty.call(CLASS_TELE, cls)) return;
+  const c = CLASS_TELE[cls];
+  c.fin++; c.posSum += pos; if (t != null) c.tSum += t; if (won) c.win++;
+}
 
 let AN = {
   counts: {
@@ -445,6 +452,15 @@ app.get(['/controller', '/join', '/phone'], (req, res) => {
   const room = req.query.room ? `?room=${encodeURIComponent(req.query.room)}` : '';
   res.redirect('/controller.html' + room);
 });
+// v174 AUDIT: /replay was only ever a Vercel rewrite (vercel.json), so on the
+// Node hosting paths (render.yaml, the Docker image, local `npm start`) every
+// shared replay link - the client builds `${origin}/replay?g=ID` - answered 404,
+// and sw.js precaches '/replay', so the failed request also aborted the offline
+// precache. Same alias, on the server this time.
+app.get(['/replay'], (req, res) => {
+  const g = req.query.g ? `?g=${encodeURIComponent(req.query.g)}` : '';
+  res.redirect('/replay.html' + g);
+});
 app.get(['/game', '/screen'], (req, res) => {
   const room = req.query.room ? `?room=${encodeURIComponent(req.query.room)}` : '';
   res.redirect('/' + room);
@@ -482,7 +498,12 @@ try { leaderboard = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); } catch (e) { 
 function lbAdd(mapId, entry) {
   // v158: a deleted racer's client can still send a time; it must not come back
   if (isPurgedRacer(entry && entry.pid, entry && entry.name)) return;
-  const list = leaderboard[mapId] || (leaderboard[mapId] = []);
+  // v174 AUDIT: only a REAL integer circuit key may own a board. `leaderboard`
+  // is a plain object, so `leaderboard['__proto__']` used to hand back
+  // Object.prototype - `.slice` is not a function, and the throw happened inside
+  // the 30 Hz tick loop, which stopped EVERY room on the server from simulating.
+  mapId = (Number.isInteger(mapId) && mapId >= 0 && mapId < 1000) ? mapId : 0;
+  const list = (Object.prototype.hasOwnProperty.call(leaderboard, mapId) && Array.isArray(leaderboard[mapId])) ? leaderboard[mapId] : (leaderboard[mapId] = []);
   // Account-lite: a returning player (same pid) updates their entry instead of
   // adding a duplicate row; keeps the board a true "top players" list.
   if (entry.pid) {
@@ -499,7 +520,13 @@ function lbAdd(mapId, entry) {
   leaderboard[mapId] = list.slice(0, 20);
   try { fs.writeFileSync(LB_FILE, JSON.stringify(leaderboard)); } catch (e) {}
 }
-function lbGet(mapId) { return (leaderboard[mapId] || []).slice(0, 5); }
+function lbGet(mapId) {
+  // v174 AUDIT: never trust the key to index the store - return an empty board
+  // for anything that is not a real, own array (see lbAdd).
+  if (!Number.isInteger(mapId) || !Object.prototype.hasOwnProperty.call(leaderboard, mapId)) return [];
+  const rows = leaderboard[mapId];
+  return Array.isArray(rows) ? rows.slice(0, 5) : [];
+}
 
 // ---------------------------------------------------------------------------
 // v39 "alive lobby": global recent-finishes feed + daily challenge.
@@ -634,7 +661,7 @@ app.get('/api/leaderboard', async (req, res) => {
       } catch (e) {}
     }
     if (!rows.length) {
-      const mem = (leaderboard[mapId] || []).slice();
+      const mem = (Array.isArray(leaderboard[mapId]) ? leaderboard[mapId] : []).slice(); // v174: array-only read
       mem.sort((a, b) => (a.t == null ? 1e9 : a.t) - (b.t == null ? 1e9 : b.t));
       rows = mem.map((x, idx) => ({
         rank: idx + 1,
@@ -4609,7 +4636,7 @@ app.get('/lb', async (req, res) => {
   const mapId = isNaN(m) ? 0 : m;
   const daily = req.query.daily === '1';
   if (sbOn()) { const rows = await sbTop(mapId, daily); if (rows) return res.json(rows); }
-  let rows = leaderboard[mapId] || [];
+  let rows = Array.isArray(leaderboard[mapId]) ? leaderboard[mapId] : []; // v174: array-only read
   if (daily) rows = rows.filter((r) => (r.ts || 0) >= startOfTodayUTC());
   res.json(rows.slice(0, 5));
 });
@@ -4832,6 +4859,14 @@ wss.on('connection', (ws) => {
 
   ws.on('message', (raw) => {
     client.isAlive = true;             // v141: any traffic proves the peer is there
+    // v174 AUDIT: the 180/s throttle only ever counted `input` frames, so every
+    // OTHER type was unbounded - and they are the expensive ones (a `meta` frame
+    // rebroadcasts the lobby to every screen, `restart` resets a whole race). A
+    // generous per-socket budget caps that amplification without touching real
+    // play: input tops out near 60/s and pings are one every few seconds.
+    const sec = Math.floor(Date.now() / 1000);
+    if (client._frameSec !== sec) { client._frameSec = sec; client._frames = 0; }
+    if (++client._frames > MAX_FRAMES_PER_SEC) { client._overBudget = (client._overBudget || 0) + 1; return; } // NB: not _dropped - that flag guards the close/error reaper
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
     Promise.resolve(handleMessage(client, msg)).catch(() => {});
@@ -4856,6 +4891,7 @@ wss.on('connection', (ws) => {
 // misbehaving". A ping every 20 s with a terminate on a missed pong hands the
 // socket to the existing close path, which frees the slot and tells the room.
 const HEARTBEAT_MS = 20000;
+const MAX_FRAMES_PER_SEC = 400; // v174: per-socket ceiling across every message type
 const wsHeartbeat = setInterval(() => {
   for (const ws of wss.clients) {
     const c = clientsByWs.get(ws);
@@ -5042,7 +5078,12 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
         sendJSON(client.ws, { type: 'lobby_welcome', role: 'lobby', online: clientsByWs.size, activeRooms: rooms.size });
         return;
       } else {
-        entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race', msg.map, msg.mode === 'coop' ? 2 : 6); // v76
+        // v174 AUDIT: this is the one room-creation path that passed the raw wire
+        // value as the circuit. `map:'__proto__'` built a room whose track was
+        // Object.prototype; the 30 Hz tick then threw on every frame (lbGet),
+        // which froze every other race on the server. Validate it like `case 'map'`.
+        const helloMap = validMapId(msg.map);
+        entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race', helloMap == null ? 0 : helloMap, msg.mode === 'coop' ? 2 : 6); // v76
       }
       if (msg.role === 'spec') {
         if (entry.specs.size >= 16) { sendJSON(client.ws, { type: 'error', code: 'spec-full' }); setTimeout(() => { try { client.ws.close(); } catch (e) {} }, 300); return; } // v79 N-07
@@ -5206,9 +5247,14 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
     case 'record':
       if (client.entry && client.role === 'screen') client.entry.noRecord = msg.record === false;
       break;
-    case 'restart':
-      if (client.entry && client.role === 'screen') client.entry.room.restart();
+    case 'restart': {
+      if (client.entry && client.role === 'screen') {
+        const en = client.entry;
+        if (client.slot !== hostSlot(en)) { hostRefusal(client, en, 'restart'); break; } // v174: same authority
+        en.room.restart();
+      }
       break;
+    }
 
     case 'input': {
       const nowSec = Math.floor(Date.now() / 1000);
@@ -5274,13 +5320,29 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
       }
       break;
 
-    case 'mode':
-      if (client.entry && client.role === 'screen') client.entry.room.setMode(msg.mode);
+    // v174 AUDIT: mode / restart / reset are room-state transitions, and until now
+    // ANY screen in the room could fire them. One visitor could therefore change
+    // the mode, restart the race under everyone's wheels, or reset the whole room
+    // to the lobby mid-race (resetToWaiting has no state guard). The v155 rule -
+    // the creator owns the race setup - now covers the transitions too; everyone
+    // else is told why, using the same refusal the settings already send.
+    case 'mode': {
+      if (client.entry && client.role === 'screen') {
+        const en = client.entry;
+        if (client.slot !== hostSlot(en)) { hostRefusal(client, en, 'mode'); break; }
+        en.room.setMode(msg.mode);
+      }
       break;
+    }
 
-    case 'reset':
-      if (client.entry && client.role === 'screen') client.entry.room.resetToWaiting();
+    case 'reset': {
+      if (client.entry && client.role === 'screen') {
+        const en = client.entry;
+        if (client.slot !== hostSlot(en)) { hostRefusal(client, en, 'reset'); break; }
+        en.room.resetToWaiting();
+      }
       break;
+    }
 
     case 'leave': {
       // v91: explicit room exit. The socket stays open and the racer is parked
@@ -5463,61 +5525,72 @@ const tickInterval = setInterval(() => {
   const now = Date.now();
 
   for (const [code, entry] of rooms) {
-    const room = entry.room;
-    room.update(dt);
-    if (entry.screens.size === 0) room.events.length = 0; // v77 BUG-004: unwatched rooms must not accumulate events
-    const hasHumans = entry.screens.size > 0 || entry.controllers.size > 0;
-    if (hasHumans) entry.lastHuman = now;
+    try {
+      const room = entry.room;
+      room.update(dt);
+      if (entry.screens.size === 0) room.events.length = 0; // v77 BUG-004: unwatched rooms must not accumulate events
+      const hasHumans = entry.screens.size > 0 || entry.controllers.size > 0;
+      if (hasHumans) entry.lastHuman = now;
 
-    // v73: race sequencing + one-time authoritative settlement per race
-    if (room.state === 'countdown' && entry.lastState !== 'countdown') { entry.raceSeq = (entry.raceSeq || 0) + 1; entry._settled = false; }
-    entry.lastState = room.state;
-    if (room.state === 'finished' && !entry._settled) { entry._settled = true; settleRace(entry); }
+      // v73: race sequencing + one-time authoritative settlement per race
+      if (room.state === 'countdown' && entry.lastState !== 'countdown') { entry.raceSeq = (entry.raceSeq || 0) + 1; entry._settled = false; }
+      entry.lastState = room.state;
+      if (room.state === 'finished' && !entry._settled) { entry._settled = true; settleRace(entry); }
 
-    // record finishes to the per-map leaderboard (once per car per race)
-    for (const car of room.cars) {
-      if (car.finished && car.finishTime != null && !car._lb) {
-        car._lb = true;
-        { // v64 class result telemetry
-          const order = room.standings(); const pos = order.indexOf(car) + 1;
-          classResult(car.clsKey || 'velocity', pos || order.length, car.finishTime, pos === 1);
-        }
-        if (!entry.noRecord) {
-          lbAdd(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime, best: car.best, ts: now });
-        sbUpsert(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime });
-        }
-        recentAdd({ name: car.name, map: room.mapId, t: car.finishTime, ts: now });
-      }
-    }
-
-    if (entry.screens.size > 0) {
-      // Bandwidth: the lobby is idle -> 5 Hz is plenty there; races keep the
-      // full 30 Hz so gameplay quality is unchanged. Leaderboard piggybacks
-      // at 1 Hz instead of every snapshot (clients cache the last one).
-      const inRace = room.state !== 'waiting';
-      const sendNow = inRace ? (!LOW_BW || tickCount % 2 !== 0) : tickCount % 6 === 0; // v71: 15 Hz snapshots in lean mode (was 10)
-      if (sendNow) {
-        const snapObj = room.snapshot();
-        if (tickCount % 30 === 0 || !entry.lbSent) { snapObj.lb = lbGet(room.mapId); entry.lbSent = true; }
-        const snap = JSON.stringify(snapObj);
-        for (const s of entry.specs) { // v64 spectators receive snapshots too
-          if (s.readyState === 1) { try { s.send(snap); } catch (e) {} }
-        }
-        for (const s of entry.screens) {
-          if (s.readyState === 1) { try { s.send(snap); } catch (e) {} }
+      // record finishes to the per-map leaderboard (once per car per race)
+      for (const car of room.cars) {
+        if (car.finished && car.finishTime != null && !car._lb) {
+          car._lb = true;
+          { // v64 class result telemetry
+            const order = room.standings(); const pos = order.indexOf(car) + 1;
+            classResult(car.clsKey || 'velocity', pos || order.length, car.finishTime, pos === 1);
+          }
+          if (!entry.noRecord) {
+            lbAdd(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime, best: car.best, ts: now });
+          sbUpsert(room.mapId, { name: car.name, pid: car.pid || null, t: car.finishTime });
+          }
+          recentAdd({ name: car.name, map: room.mapId, t: car.finishTime, ts: now });
         }
       }
-    }
 
-    // telemetry to phones every 5 ticks (~6.7 Hz), 10 in lean mode
-    if (tickCount % (LOW_BW ? 10 : 5) === 0 && entry.controllers.size > 0) {
-      for (const [ws, slot] of entry.controllers) controllerTelemetry(entry, ws, slot);
-    }
+      if (entry.screens.size > 0) {
+        // Bandwidth: the lobby is idle -> 5 Hz is plenty there; races keep the
+        // full 30 Hz so gameplay quality is unchanged. Leaderboard piggybacks
+        // at 1 Hz instead of every snapshot (clients cache the last one).
+        const inRace = room.state !== 'waiting';
+        const sendNow = inRace ? (!LOW_BW || tickCount % 2 !== 0) : tickCount % 6 === 0; // v71: 15 Hz snapshots in lean mode (was 10)
+        if (sendNow) {
+          const snapObj = room.snapshot();
+          if (tickCount % 30 === 0 || !entry.lbSent) { snapObj.lb = lbGet(room.mapId); entry.lbSent = true; }
+          const snap = JSON.stringify(snapObj);
+          for (const s of entry.specs) { // v64 spectators receive snapshots too
+            if (s.readyState === 1) { try { s.send(snap); } catch (e) {} }
+          }
+          for (const s of entry.screens) {
+            if (s.readyState === 1) { try { s.send(snap); } catch (e) {} }
+          }
+        }
+      }
 
-    // garbage-collect abandoned rooms
-    if (entry.screens.size === 0 && entry.controllers.size === 0 && (now - (entry.room.lastActivity || 0) > 60 * 1000 || now - (entry.lastHuman || 0) > IDLE_ROOM_MS)) {
-      rooms.delete(code); // v77 BUG-004: bots can no longer keep abandoned rooms alive
-      console.log(`[room ${code}] closed (idle)`);
+      // telemetry to phones every 5 ticks (~6.7 Hz), 10 in lean mode
+      if (tickCount % (LOW_BW ? 10 : 5) === 0 && entry.controllers.size > 0) {
+        for (const [ws, slot] of entry.controllers) controllerTelemetry(entry, ws, slot);
+      }
+
+      // garbage-collect abandoned rooms
+      if (entry.screens.size === 0 && entry.controllers.size === 0 && (now - (entry.room.lastActivity || 0) > 60 * 1000 || now - (entry.lastHuman || 0) > IDLE_ROOM_MS)) {
+        rooms.delete(code); // v77 BUG-004: bots can no longer keep abandoned rooms alive
+        console.log(`[room ${code}] closed (idle)`);
+      }
+    } catch (e) {
+      // v174 AUDIT: an exception here used to abort the whole for-loop, so ONE
+      // corrupt room silently froze every other race on the server (the process
+      // survived via uncaughtException, burning CPU and logging forever). Contain
+      // the damage to the offending room and say so, once per room per 5 s.
+      if (!entry._tickErrAt || now - entry._tickErrAt > 5000) {
+        entry._tickErrAt = now;
+        console.error(`[room ${code}] tick error (room skipped this tick):`, (e && e.message) || e);
+      }
     }
   }
 }, TICK_MS);
@@ -5554,7 +5627,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v173', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v174', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
@@ -5607,6 +5680,10 @@ module.exports = {
   loadAnalytics,
   joinRoom,
   handleMessage,
+  lbGet,
+  lbAdd,
+  validMapId,
+  classPick,
   handleLeave,
   leaveCurrentRoom,
   newRoom,

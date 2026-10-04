@@ -357,6 +357,7 @@ window.SRI18N = {
     ctrlRotate: 'Rotate your phone for the best layout',
 
     // Replay Viewer
+    replayPosition: 'REPLAY POSITION',
     ghostReplay: 'GHOST REPLAY',
     raceThisGhost: 'RACE THIS GHOST'
   },
@@ -712,6 +713,7 @@ window.SRI18N = {
     ctrlRotate: 'సరైన లేఅవుట్ కోసం ఫోన్‌ను తిప్పండి',
 
     // Replay Viewer
+    replayPosition: 'రీప్లే స్థానం',
     ghostReplay: 'ఘోస్ట్ రీప్లే',
     raceThisGhost: 'ఈ ఘోస్ట్‌తో రేస్ చేయండి'
   },
@@ -1067,6 +1069,7 @@ window.SRI18N = {
     ctrlRotate: 'सर्वोत्तम लेआउट के लिए फ़ोन घुमाएं',
 
     // Replay Viewer
+    replayPosition: 'रीप्ले स्थिति',
     ghostReplay: 'घोस्ट रीप्ले',
     raceThisGhost: 'इस घोस्ट से रेस करें'
   },
@@ -1422,6 +1425,7 @@ window.SRI18N = {
     ctrlRotate: 'Gira el móvil para la mejor experiencia',
 
     // Replay Viewer
+    replayPosition: 'POSICIÓN DE REPETICIÓN',
     ghostReplay: 'REPETICIÓN FANTASMA',
     raceThisGhost: 'CORRER CONTRA ESTE FANTASMA'
   }

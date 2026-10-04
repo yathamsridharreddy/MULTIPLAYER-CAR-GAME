@@ -14,6 +14,13 @@
       const s = window.tI18n(el.getAttribute('data-i18n'));
       if (s) el.textContent = s;
     });
+    // v174 AUDIT: the scrub slider had no accessible name at all - a screen
+    // reader announced a bare "slider". Translated aria-label support, plus the
+    // percentage as the value text below.
+    document.querySelectorAll('[data-i18n-aria]').forEach((el) => {
+      const s = window.tI18n(el.getAttribute('data-i18n-aria'));
+      if (s) el.setAttribute('aria-label', s);
+    });
   }
   if (!id) { err('No replay id in the link.'); return; }
 
@@ -27,6 +34,7 @@
     .then(start)
     .catch(() => err('Replay not found (the link may be old).'));
 
+  const pos0 = (v) => Math.round(Number(v) || 0);   // keep the frame loop's change-guard honest
   function start(g) {
     // v63: invalid replay data can never crash the client
     const data = (Array.isArray(g.data) ? g.data : []).filter((s) => Array.isArray(s) && s.length >= 3 && s.every((v) => typeof v === 'number' && isFinite(v))).slice(0, 4000);
@@ -107,8 +115,16 @@
       ctx.fillRect(-5, -9, 10, 18);
       ctx.restore();
 
-      $('hud').textContent = (g.name || 'RACER') + '  ·  ' + t.toFixed(1) + 's / ' + lastT.toFixed(1) + 's';
-      scrub.value = Math.round((t / lastT) * 1000);
+      // v174: this runs 60x a second - only touch the DOM when the text or the
+      // slider position actually changed (same reason the game HUD is diffed).
+      const hudText = (g.name || 'RACER') + '  ·  ' + t.toFixed(1) + 's / ' + lastT.toFixed(1) + 's';
+      if (scrub._hud !== hudText) { scrub._hud = hudText; $('hud').textContent = hudText; }
+      const pos = Math.round((t / lastT) * 1000);
+      if (scrub._pos !== pos) {
+        scrub._pos = pos;
+        scrub.value = pos;
+        scrub.setAttribute('aria-valuetext', Math.round((t / lastT) * 100) + '%');
+      }
       requestAnimationFrame(frame);
     }
 
@@ -117,7 +133,7 @@
       playing = !playing; $('play').textContent = playing ? '⏸' : '▶';
     });
     $('spd').addEventListener('click', () => { speed = speed === 1 ? 2 : 1; $('spd').textContent = '×' + speed; });
-    scrub.addEventListener('input', () => { t = (scrub.value / 1000) * lastT; idx = 0; trail.length = 0; });
+    scrub.addEventListener('input', () => { t = (scrub.value / 1000) * lastT; idx = 0; trail.length = 0; scrub._pos = pos0(scrub.value); });
 
     requestAnimationFrame(frame);
   }
