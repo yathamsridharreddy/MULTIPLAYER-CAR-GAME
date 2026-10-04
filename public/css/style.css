@@ -4250,3 +4250,130 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 .clb-crew-btn:hover { background: rgba(255, 255, 255, .06); }
 .clb-crew-peek { color: #7ee7ff; opacity: .55; }
 .clb-crew-btn:hover .clb-crew-peek { opacity: 1; }
+
+/* ==========================================================================
+   v173 AUDIO MIXER — MASTER / MUSIC / SFX sliders (Settings tab)
+   Same visual language as the v92 sensitivity slider, and the same --fill
+   convention (game.js writes 0%..100% on every input event).
+   ========================================================================== */
+.vol-block {
+  margin: 2px 0 14px;
+  padding: 12px 14px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, rgba(255, 212, 121, 0.06), rgba(0, 240, 255, 0.02)),
+    var(--bg-glass-inset);
+}
+
+.vol-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+}
+
+.vol-row:last-child { margin-bottom: 4px; }
+
+.vol-title {
+  font: 900 11px var(--font-display);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #e8f4ff;
+}
+
+.vol-val {
+  font: 900 14px var(--font-display);
+  color: var(--cyber-cyan);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px var(--cyber-cyan-glow);
+}
+
+#set-vol-master,
+#set-vol-music,
+#set-vol-sfx {
+  grid-column: 1 / -1;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+
+#set-vol-master::-webkit-slider-runnable-track,
+#set-vol-music::-webkit-slider-runnable-track,
+#set-vol-sfx::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg,
+      var(--cyber-cyan) 0%,
+      var(--cyber-cyan) var(--fill, 70%),
+      rgba(255, 255, 255, 0.12) var(--fill, 70%),
+      rgba(255, 255, 255, 0.12) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 14px rgba(0, 240, 255, 0.16);
+}
+
+#set-vol-master::-webkit-slider-thumb,
+#set-vol-music::-webkit-slider-thumb,
+#set-vol-sfx::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -7px;
+  border-radius: 50%;
+  border: 2px solid #04121a;
+  background: radial-gradient(circle at 34% 28%, #ffffff 0%, #c9f7ff 42%, #00c6da 100%);
+  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.16), 0 0 16px var(--cyber-cyan-glow);
+  transition: box-shadow 0.16s ease, transform 0.1s ease;
+}
+
+#set-vol-master:active::-webkit-slider-thumb,
+#set-vol-music:active::-webkit-slider-thumb,
+#set-vol-sfx:active::-webkit-slider-thumb { transform: scale(1.12); }
+
+#set-vol-master::-moz-range-track,
+#set-vol-music::-moz-range-track,
+#set-vol-sfx::-moz-range-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+#set-vol-master::-moz-range-progress,
+#set-vol-music::-moz-range-progress,
+#set-vol-sfx::-moz-range-progress {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--cyber-cyan);
+}
+
+#set-vol-master::-moz-range-thumb,
+#set-vol-music::-moz-range-thumb,
+#set-vol-sfx::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #04121a;
+  background: radial-gradient(circle at 34% 28%, #ffffff 0%, #c9f7ff 42%, #00c6da 100%);
+}
+
+#set-vol-master:focus,
+#set-vol-music:focus,
+#set-vol-sfx:focus { outline: none; }
+#set-vol-master:focus-visible::-webkit-slider-thumb,
+#set-vol-music:focus-visible::-webkit-slider-thumb,
+#set-vol-sfx:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--velocity-gold); outline-offset: 3px; }
+
+@media (max-width: 520px) {
+  .vol-block { padding: 10px 12px 6px; }
+  #set-vol-master, #set-vol-music, #set-vol-sfx { height: 40px; }
+}

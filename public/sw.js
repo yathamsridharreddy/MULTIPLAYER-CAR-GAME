@@ -9,17 +9,17 @@
    - /js/config.js, /version, /health, /lb -> never cached (live server data)
    - WebSocket traffic is untouched (service workers cannot see it)
    ========================================================================== */
-const CACHE = 'sridhar-rush-v169';
+const CACHE = 'sridhar-rush-v173';
 
 const CORE = [
   '/', '/controller', '/auth.html',
-  '/css/style.css?v=169', '/css/controller.css?v=169',
-  '/js/game-core.js?v=169', '/js/progression.js?v=169', '/js/net.js?v=169', '/js/game.js?v=169', '/js/controller.js?v=169', '/js/account.js?v=169', '/js/i18n.js?v=169', '/js/auth.js?v=169',
+  '/css/style.css?v=173', '/css/controller.css?v=173',
+  '/js/game-core.js?v=173', '/js/progression.js?v=173', '/js/net.js?v=173', '/js/audio.js?v=173', '/js/game.js?v=173', '/js/controller.js?v=173', '/js/account.js?v=173', '/js/i18n.js?v=173', '/js/auth.js?v=173',
   '/js/vendor/three.min.js', '/js/vendor/qrcode.js',
   '/js/vendor/post/CopyShader.js', '/js/vendor/post/LuminosityHighPassShader.js',
   '/js/vendor/post/ShaderPass.js', '/js/vendor/post/EffectComposer.js',
   '/js/vendor/post/RenderPass.js', '/js/vendor/post/UnrealBloomPass.js',
-  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=169',
+  '/manifest.webmanifest', '/manifest-controller.webmanifest', '/replay', '/js/replay.js?v=173',
   '/icon.svg', '/img/icon-192.png', '/img/icon-512.png', '/img/icon-512-maskable.png', '/img/apple-touch-icon.png',
   // v147: the four weather-condition pictures (dry tarmac, rain, neon night, snow)
   '/img/weather/dry.webp', '/img/weather/wet.webp', '/img/weather/night.webp', '/img/weather/blizzard.webp',
@@ -57,6 +57,12 @@ self.addEventListener('fetch', (e) => {
   let url; try { url = new URL(req.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return;      // external requests untouched
   if (NOCACHE.includes(url.pathname) || url.pathname.startsWith('/api/')) return;           // live endpoints untouched
+  // v173: the twelve racing samples are streamed by the browser's media stack.
+  // A cache-first rule would (a) store a 206 Partial Content answer from a Range
+  // request as if it were the whole file, and (b) hide the seekable byte ranges
+  // race.mp3 needs. Audio is therefore NEVER intercepted: no precache, no
+  // runtime cache, and Range requests reach the server untouched.
+  if (url.pathname.startsWith('/assets/audio/') || req.headers.get('range')) return;
 
   if (req.mode === 'navigate') {
     // HTML: fresh when online, cached copy when offline

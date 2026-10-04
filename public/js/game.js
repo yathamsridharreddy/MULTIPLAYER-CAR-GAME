@@ -52,9 +52,10 @@ function lerpAngle(a, b, t) {
 function loadPrefs() {
   try { return Object.assign({
     name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
-    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: 'en', hdLobby: true, sens: 1
+    quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: 'en', hdLobby: true, sens: 1,
+    volMaster: 100, volMusic: 70, volSfx: 100   // v173 mixer
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
-  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true, sens: 1 }; }
+  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true, sens: 1, volMaster: 100, volMusic: 70, volSfx: 100 }; }
 }
 let prefs = loadPrefs();
 function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
@@ -62,6 +63,24 @@ try {
   if (!localStorage.getItem('sr_prefs') && prefs.botSkill == null) { prefs.botSkill = 0; savePrefs(); }
 } catch (e) {}
 if (prefs.botSkill == null) prefs.botSkill = 1;
+// v173 audio mixer: a hand-edited or stale localStorage value must never reach
+// the Web Audio graph as NaN/out-of-range, so clamp at the source (the audio
+// manager clamps again - a slider is not a security boundary, but it is a place
+// where a typo in devtools used to be able to kill all sound).
+(function clampVolumePrefs() {
+  const clampPct = (v, d) => { const n = Number(v); return isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : d; };
+  prefs.volMaster = clampPct(prefs.volMaster, 100);
+  prefs.volMusic = clampPct(prefs.volMusic, 70);
+  prefs.volSfx = clampPct(prefs.volSfx, 100);
+})();
+// v173: hand the audio manager the SAME preference store the rest of the game
+// uses, so the mixer has one persistence path (sr_prefs) - not a second one.
+if (typeof window !== 'undefined' && window.SRAudio && window.SRAudio.attachPrefs) {
+  window.SRAudio.attachPrefs({
+    read: () => prefs,
+    write: (v) => { prefs.volMaster = v.master; prefs.volMusic = v.music; prefs.volSfx = v.sfx; savePrefs(); }
+  });
+}
 // v92 steering sensitivity: a hand-edited or stale localStorage value must never
 // reach the wire out of range - the server clamps too, but normalise at the source.
 if (!(prefs.sens >= 0.5 && prefs.sens <= 1.5)) prefs.sens = 1;
@@ -3168,17 +3187,58 @@ function renderMain() {
 }
 let fxInitPending = false;
 
-// audio: master mute + simple synth music loop
+// ---------------------------------------------------------------------------
+// v173 audio: ONE mixer, ONE music decision.
+//
+//   window.SRAudio (public/js/audio.js) owns the AudioContext, the master /
+//   music / SFX buses and the twelve real samples. Everything the game plays
+//   goes through those buses, which is why the three settings sliders move the
+//   real samples AND the legacy synth sounds that remain as fallbacks.
+//
+//   The synth loop below is the LOBBY bed (the UX it always had). During a race
+//   the real track - race.mp3, streamed - takes over, so the two never play at
+//   the same time.
+// ---------------------------------------------------------------------------
 let musicNodes = null;
+
+function sampleAudio() { return (typeof window !== 'undefined' && window.SRAudio) || null; }
+
+function volumePrefs() {
+  return {
+    master: prefs.volMaster == null ? 100 : prefs.volMaster,
+    music: prefs.volMusic == null ? 70 : prefs.volMusic,
+    sfx: prefs.volSfx == null ? 100 : prefs.volSfx
+  };
+}
+
+function raceIsAudible() {
+  return !!(latest && (latest.state === 'countdown' || latest.state === 'racing'));
+}
+
+// the bus the legacy synth music bed connects to (same slider as race.mp3)
+function synthMusicBus() {
+  const A = sampleAudio();
+  const bus = A && A.buses && A.buses.music ? A.buses.music() : null;
+  return bus || (audio && audio.master) || null;
+}
+
 function setAudio() {
-  if (audio && audio.master) audio.master.gain.value = prefs.mute ? 0 : 0.7;
-  if (prefs.music && audio && !musicNodes) startMusic();
-  if (!prefs.music && musicNodes) { stopMusic(); }
+  const A = sampleAudio();
+  if (A) {
+    A.setMuted(!!prefs.mute);
+    A.setVolumes(volumePrefs());
+  }
+  if (audio && audio.master && !A) audio.master.gain.value = prefs.mute ? 0 : 0.7;
+  const wantBed = !!prefs.music && !prefs.mute && !raceIsAudible();
+  if (wantBed && audio && !musicNodes) startMusic();
+  if (!wantBed && musicNodes) stopMusic();
 }
 function startMusic() {
   if (!audio || musicNodes) return;
   const ctx = audio.ctx;
-  const mg = ctx.createGain(); mg.gain.value = 0.085; mg.connect(audio.master);   // low background music
+  const bus = synthMusicBus();
+  if (!bus) return;
+  const mg = ctx.createGain(); mg.gain.value = 0.085; mg.connect(bus);   // low background music
   const BPM = 118, SPB = 60 / BPM, EIGHTH = SPB / 2;
   const chords = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]; // Am F C G
   const m2f = (m) => 440 * Math.pow(2, (m - 69) / 12);
@@ -3507,8 +3567,41 @@ applyQuality(prefs.quality);
       const fbtn = $('friends-btn'); if (fbtn) fbtn.hidden = !isAuth;
     });
   });
-  const muteEl = $('set-mute'); if (muteEl) { muteEl.checked = !!prefs.mute; muteEl.addEventListener('change', () => { prefs.mute = muteEl.checked; savePrefs(); setAudio(); }); }
+  const muteEl = $('set-mute'); if (muteEl) { muteEl.checked = !!prefs.mute; muteEl.addEventListener('change', () => { prefs.mute = muteEl.checked; savePrefs(); ensureAudio(); setAudio(); }); }
   const musicEl = $('set-music'); if (musicEl) { musicEl.checked = !!prefs.music; musicEl.addEventListener('change', () => { prefs.music = musicEl.checked; savePrefs(); ensureAudio(); setAudio(); }); }
+  // v173 mixer: MASTER / MUSIC / SFX, 0-100, persisted in sr_prefs and applied
+  // to the SRAudio buses, so they move the real samples and every legacy synth
+  // sound at once. Moving a slider is also a user gesture, so it unlocks audio.
+  const volumeSliders = [
+    ['set-vol-master', 'volMaster', 'out-vol-master', 'masterVolume'],
+    ['set-vol-music', 'volMusic', 'out-vol-music', 'musicVolume'],
+    ['set-vol-sfx', 'volSfx', 'out-vol-sfx', 'sfxVolume']
+  ];
+  volumeSliders.forEach(([id, key, outId, labelKey]) => {
+    const el = $(id); if (!el) return;
+    const out = $(outId);
+    const paint = () => {
+      const v = prefs[key] == null ? (key === 'volMusic' ? 70 : 100) : prefs[key];
+      el.value = String(v);
+      el.style.setProperty('--fill', v + '%');
+      if (out) out.textContent = v + '%';
+      el.setAttribute('aria-valuetext', v + '%');
+    };
+    el.addEventListener('input', () => {
+      let v = parseInt(el.value, 10);
+      if (!isFinite(v)) v = 100;
+      prefs[key] = Math.max(0, Math.min(100, v));
+      ensureAudio();          // slider touch is a gesture: safe place to unlock
+      savePrefs();
+      paint();
+      setAudio();
+    });
+    el.addEventListener('change', () => {
+      const name = (typeof tI18n === 'function' ? tI18n(labelKey) : null) || labelKey;
+      toast(name + ': ' + prefs[key] + '%');
+    });
+    paint();
+  });
   const fpsEl = $('set-fps'); if (fpsEl) { fpsEl.checked = !!prefs.fpsmeter; fpsEl.addEventListener('change', () => { prefs.fpsmeter = fpsEl.checked; savePrefs(); }); }
   const rmEl = $('set-rm'); if (rmEl) { rmEl.checked = !!prefs.rm; rmEl.addEventListener('change', () => { prefs.rm = rmEl.checked; savePrefs(); }); }
   const cbEl = $('set-cb'); if (cbEl) { cbEl.checked = !!prefs.cb; cbEl.addEventListener('change', () => { prefs.cb = cbEl.checked; savePrefs(); }); }
@@ -4280,14 +4373,35 @@ function standingsFrom(snap) {
 const ordinal = (n) => ['1st', '2nd', '3rd'][n - 1] || n + 'th';
 
 let shakeAmp = 0;
-function onCrashFX(x, z, strength) {
+// v173 crash audio: the real crash_01/crash_02 takes, alternating, rate limited
+// and attenuated for rivals - and the v169 low thud stays as the fallback for
+// the case where the sample system (or the asset) is not there at all.
+function playCrashSfx(strength, isLocal, x, z) {
+  const A = sampleAudio();
+  if (A && A.sampleState && A.sampleState('crash_1') === 'failed') {
+    if (strength > 0.35) beep(75, 0.12, 'sine', 0.18);   // legacy fallback thud
+    return false;
+  }
+  if (A && A.crash) {
+    let opts;
+    if (isLocal) opts = { local: true };
+    else {
+      const d = Math.hypot(camera.position.x - x, camera.position.z - z);
+      opts = { local: false, distance: d };
+    }
+    if (A.crash(strength, opts)) return true;
+  }
+  if (strength > 0.35 && (!A || !A.crash)) beep(75, 0.12, 'sine', 0.18);
+  return false;
+}
+function onCrashFX(x, z, strength, isLocal) {
   spawnSparks(x, z, strength);
   shakeAmp = Math.min(0.35, shakeAmp + 0.05 + strength * 0.15);
   const f = $('hitflash');
   f.style.opacity = Math.min(0.55, 0.2 + strength * 0.4);
   clearTimeout(onCrashFX._t);
   onCrashFX._t = setTimeout(() => { f.style.opacity = 0; }, 140);
-  if (strength > 0.35) beep(75, 0.12, 'sine', 0.18);
+  playCrashSfx(strength, !!isLocal, x, z);
 }
 function toast(text) {
   const el = $('toast'); el.textContent = text; el.classList.add('show');
@@ -4334,6 +4448,11 @@ function soundUiClick() {
 }
 function soundCountdownTick(isGo) {
   if (prefs.mute) return;
+  // v173: race_start.mp3 IS the 3-2-1-GO (measured onsets 0.02 / 1.02 / 2.03 /
+  // 3.02 s). It claims the countdown before the first "3" is shown, so no
+  // synthetic 440 Hz tick can ever land in front of it.
+  const A = sampleAudio();
+  if (A && A.countdown && A.countdown.owned()) return;
   try {
     ensureAudio(); if (!audio || !audio.ctx) return;
     const ctx = audio.ctx, t = ctx.currentTime;
@@ -6366,9 +6485,12 @@ function drawQR(url) {
 function processEvents(snap) {
   for (const e of snap.events || []) {
     switch (e.type) {
-      case 'count': showCount(String(e.n)); beep(440, 0.16, 'sine', 0.22); break;
-      case 'go': showCount(tI18n('countdownGo') || 'GO!'); beep(880, 0.35, 'sine', 0.25); ghostStart(snap.map != null ? snap.map : builtMapId); v60OnGo(); break;
-      case 'crash': onCrashFX(e.x, e.z, e.s); if (e.slot === mySlot) v60OnCrashMine(); break;
+      // v173: showCount() is the ONE place a countdown sound is chosen (real
+      // sample while it owns the count, legacy tick otherwise). The old extra
+      // beep() calls here were a second, stacking countdown voice.
+      case 'count': showCount(String(e.n)); break;
+      case 'go': showCount(tI18n('countdownGo') || 'GO!'); ghostStart(snap.map != null ? snap.map : builtMapId); v60OnGo(); break;
+      case 'crash': onCrashFX(e.x, e.z, e.s, e.slot === mySlot); if (e.slot === mySlot) v60OnCrashMine(); break;
       case 'lap':
         if (e.slot === mySlot) { ghostSave(snap.map != null ? snap.map : builtMapId, !!e.best); recordPlayDay(); achCheck({ map: snap.map, lapT: e.t }); }
         if (e.slot === mySlot && e.best) v60OnBestLap(snap.map != null ? snap.map : builtMapId, e.t);
@@ -6423,7 +6545,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v169';
+const BUILD = 'v173';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -6788,9 +6910,32 @@ function resetSnapshotBuffer() {
 }
 
 function ingestSnapshot(snap) {
+  const prevState = latest ? latest.state : null;
+  const newRace = !!(snap && snap.state === 'countdown' && prevState !== 'countdown');
   // v111: a fresh countdown means a fresh race - drop every held key so no
   // stale nitro/steering from the previous session drives this one
-  if (snap && snap.state === 'countdown' && (!latest || latest.state !== 'countdown')) keys.clear();
+  if (newRace) keys.clear();
+  // v173: claim the countdown BEFORE processEvents() shows the first "3", so
+  // race_start.mp3 starts first and the synthetic 440 Hz tick never fires.
+  const A = sampleAudio();
+  if (A) {
+    if (newRace) {
+      if (A.countdown && A.countdown.begin) A.countdown.begin();   // begin() ensures + resumes
+
+      if (A.engine && A.engine.setActive) A.engine.setActive(true);
+      if (A.preload) A.preload(['engine_roar', 'engine_accel', 'engine_rev', 'race_start']);
+    }
+    // music: the real race track only while a race is live; the synth lobby bed
+    // is restored (via setAudio) as soon as the room is waiting or finished.
+    const racing = snap && (snap.state === 'countdown' || snap.state === 'racing');
+    if (racing) {
+      if (A.engine && A.engine.setActive) A.engine.setActive(true);
+      if (A.music && A.music.wanted && !A.music.wanted()) A.music.play('race');
+    } else {
+      if (A.engine && A.engine.setActive) A.engine.setActive(false);
+      if (A.music && A.music.wanted && A.music.wanted()) A.music.stop({ fade: 1.1 });
+    }
+  }
   const now = performance.now();
   if (snaps.length > 0) {
     snapGaps.push(now - snaps[snaps.length - 1].t);
@@ -6804,6 +6949,7 @@ function ingestSnapshot(snap) {
   snaps.push({ t: now, snap });
   if (snaps.length > 150) snaps.splice(0, snaps.length - 150);
   latest = snap;
+  if (A && prevState !== snap.state) setAudio();   // lobby bed out of a race, back in the lobby
   processEvents(snap);
 
   // rebuild world when the room's map changes (while waiting)
@@ -6882,6 +7028,10 @@ let kbAccum = 0;
 
 // v80 mobile solo on-screen touch controls
 const touchInput = { l: 0, r: 0, u: 0, d: 0, nitro: false };
+// v173: on-screen pedals feed their own brake memory; the two sources are merged
+// in localBrakeAmount() so a keyboard player who taps the pedal is not zeroed out.
+let localTouchBrake = 0;
+function refreshTouchBrake() { localTouchBrake = touchInput.d ? 1 : 0; }
 function wireTouchBtn(id, downFn, upFn) {
   const el = $(id);
   if (!el) return;
@@ -6904,7 +7054,7 @@ function wireTouchBtn(id, downFn, upFn) {
 wireTouchBtn('tc-left', () => { touchInput.l = 1; }, () => { touchInput.l = 0; });
 wireTouchBtn('tc-right', () => { touchInput.r = 1; }, () => { touchInput.r = 0; });
 wireTouchBtn('tc-gas', () => { touchInput.u = 1; }, () => { touchInput.u = 0; });
-wireTouchBtn('tc-brake', () => { touchInput.d = 1; }, () => { touchInput.d = 0; });
+wireTouchBtn('tc-brake', () => { touchInput.d = 1; refreshTouchBrake(); }, () => { touchInput.d = 0; refreshTouchBrake(); });
 wireTouchBtn('tc-nitro', () => { touchInput.nitro = true; }, () => { touchInput.nitro = false; });
 
 // USB/BT gamepad (additive — only used when a pad is connected, keyboard still works)
@@ -6943,6 +7093,9 @@ function maybeSendKeyboard(dt) {
     handbrake = handbrake || gp.handbrake;
     nitro = nitro || gp.nitro;
   }
+  // v173: the wire carries no brake flag, so remember the racer's own pedal for
+  // the brake edge (updateAudio); the handbrake counts as braking too.
+  localKeyBrake = Math.max(brake, handbrake ? 0.6 : 0);
   net.send({ type: 'input', steer, throttle, brake, handbrake, nitro });
 }
 
@@ -7268,13 +7421,27 @@ function distCurve(k) {
   return c;
 }
 function ensureAudio() {
-  if (audio) { if (audio.ctx.state === 'suspended') audio.ctx.resume(); return; }
+  const A = sampleAudio();
+  if (A && A.ensure) A.ensure();               // v173: one shared context + mixer
+  if (audio) {
+    if (A && A.unlock) A.unlock();
+    if (audio.ctx.state === 'suspended') { try { audio.ctx.resume(); } catch (e) {} }
+    return;
+  }
   const Ctx = window.AudioContext || window.webkitAudioContext;
-  if (!Ctx) return;
-  const ctx = new Ctx();
-  const master = ctx.createGain(); master.gain.value = 0.65; master.connect(ctx.destination);
-  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 6;
-  master.disconnect(); master.connect(comp); comp.connect(ctx.destination);
+  const ctx = (A && A.ctx && A.ctx()) || (Ctx ? new Ctx() : null);
+  if (!ctx) return;
+  if (A && A.unlock) A.unlock();
+  // v173: the legacy oscillator sounds hang off SRAudio's SFX bus, so the mixer
+  // sliders and the mute toggle move them exactly like the real samples. If the
+  // audio manager is missing the old gain -> compressor -> destination chain is
+  // rebuilt here, so v169 behaviour survives on its own.
+  let master = (A && A.buses && A.buses.sfx) ? A.buses.sfx() : null;
+  if (!master) {
+    master = ctx.createGain(); master.gain.value = 0.65;
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 6;
+    master.connect(comp); comp.connect(ctx.destination);
+  }
 
   // High-Fidelity Supercar Engine Synthesizer:
   // Combines warm sub-bass rumble, tuned triangle body, and smooth lowpass filtration.
@@ -7355,13 +7522,105 @@ function winJingle(isFirst = true) {
     o.start(); o.stop(ctx.currentTime + 0.45);
   }, i * 130));
 }
+/* v173 local-input memory: the brake edge needs the racer's OWN pedal, which
+   never reaches the wire (the snapshot carries throttle, not brake). Filled by
+   maybeSendKeyboard() and by the on-screen touch pedals; when the racer drives
+   from a phone there is no local input here, and the deceleration heuristic in
+   decelAmount() covers it. */
+let localKeyBrake = 0;                        // localTouchBrake is declared with the touch pads
+function localBrakeAmount() { return Math.max(localKeyBrake, localTouchBrake); }
+let brkPrevV = 0, brkPrevT = 0;
+function decelAmount(v) {
+  const t = performance.now();
+  const dt = (t - brkPrevT) / 1000;
+  brkPrevT = t;
+  const dv = v - brkPrevV;
+  brkPrevV = v;
+  if (dt <= 0 || dt > 0.4) return 0;             // tab hiccup is not braking
+  const decel = -dv / dt;                        // m/s^2, positive while slowing
+  return clamp((decel - 4) / 12, 0, 1);
+}
+
+/* v173 opponent pass-by: a rival crossing from behind me to ahead of me, close
+   enough that the noise belongs on screen. Driven by the same race-progress
+   numbers the HUD and standings already use - no new tracking, no per-frame
+   cost beyond six comparisons, and the 2.5 s cooldown plus the "meaningful gap"
+   threshold live in the audio manager. */
+const PASS_BY_MIN_GAP = 0.0012;     // fraction of total race progress
+const PASS_BY_MAX_DIST = 60;        // metres
+let passByPrev = null;
+let passByAccum = 0;
+function checkPassBy(dt) {
+  if (!latest || latest.state !== 'racing' || !latest.cars) { passByPrev = null; passByAccum = 0; return; }
+  passByAccum += dt;
+  if (passByAccum < 0.1) return;    // 10 Hz is plenty: this is an event, not a mixer
+  passByAccum = 0;
+  const me = latest.cars[mySlot - 1];
+  const A = sampleAudio();
+  if (!me || me.p !== 1 || !A || !A.passBy) { passByPrev = null; return; }
+  const myPr = me.pr || 0;
+  if (!passByPrev) passByPrev = { me: myPr, slots: {} };
+  const st = passByPrev;
+  for (let i = 0; i < latest.cars.length; i++) {
+    const c = latest.cars[i];
+    if (!c || c.s === mySlot || c.p !== 1) continue;
+    const p1 = c.pr || 0;
+    const p0 = st.slots[c.s];
+    st.slots[c.s] = p1;
+    if (p0 == null) continue;
+    if (p0 >= st.me) continue;                  // was already ahead of me
+    if (p1 <= myPr) continue;                   // still behind me
+    if (p1 - st.me < PASS_BY_MIN_GAP) continue; // a wobble, not an overtake
+    const dx = (c.x || 0) - (me.x || 0), dz = (c.z || 0) - (me.z || 0);
+    const d = Math.hypot(dx, dz);
+    if (d > PASS_BY_MAX_DIST) continue;         // half a lap away is not a pass-by
+    const h = me.h || 0;
+    const side = dx * Math.cos(h) - dz * Math.sin(h);      // + = to my right
+    A.passBy({
+      pan: clamp(side / Math.max(6, d), -1, 1) * 0.8,
+      volume: clamp(1 - d / 70, 0.25, 1) * 0.85
+    });
+  }
+  st.me = myPr;
+}
+
 function updateAudio(mine, rival) {
+  const A = sampleAudio();
+  const t0 = performance.now();
+  // ---- real samples: the LOCAL car only (remote cars stay on the cheap synth) --
+  if (A) {
+    if (A.tick) A.tick();
+    if (mine && mine.p === 1) {
+      const sp = clamp(Math.abs(mine.v) / CFG.maxSpeed, 0, 1);
+      const thr = clamp((mine.th != null ? mine.th : sp) + (mine.n ? 0.35 : 0), 0, 1);
+      const gear = Math.min(5, Math.floor(sp * 6));
+      const rpm = 0.22 + 0.78 * (sp * 6 - gear);
+      if (A.engine) { A.engine.setActive(!mine.fin); A.engine.update(sp, rpm, thr, !!mine.n); }
+      if (A.nitro) A.nitro.set(!!mine.n);
+      const slip = (mine.sl > 3.5 && Math.abs(mine.v) > 6)
+        ? clamp((mine.sl - 3.5) / 9, 0, 1) * clamp(Math.abs(mine.v) / 34, 0, 1)
+        : 0;
+      if (A.drift) A.drift.set(slip);
+      if (A.brake) {
+        const amount = Math.max(localBrakeAmount(), decelAmount(Math.abs(mine.v)));
+        A.brake.trigger(amount);
+      }
+    } else {
+      if (A.engine) { A.engine.setActive(false); A.engine.update(0, 0, 0, false); }
+      if (A.nitro) A.nitro.set(false);
+      if (A.drift) A.drift.set(0);
+      if (A.brake) A.brake.release();
+      brkPrevV = 0; brkPrevT = t0;
+    }
+  }
   if (!audio) return;
   if (audio.ctx.state === 'suspended') { audio.ctx.resume(); return; }
+  const sampleEngine = !!(A && A.engine && A.engine.sampleActive());
   const t = audio.ctx.currentTime;
   [mine, rival].forEach((cs, i) => {
     const e = audio.engines && audio.engines[i];
     if (!e) return;
+    if (i === 0 && sampleEngine) { e.engGain.gain.setTargetAtTime(0, t, 0.05); return; }  // no double engine
     if (!cs || cs.p !== 1) { e.engGain.gain.setTargetAtTime(0, t, 0.1); return; }
     const sp = clamp(Math.abs(cs.v) / CFG.maxSpeed, 0, 1);
     const thr = clamp((cs.th != null ? cs.th : sp) + (cs.n ? 0.35 : 0), 0, 1);
@@ -7382,9 +7641,16 @@ function updateAudio(mine, rival) {
     }
     e.engGain.gain.setTargetAtTime(vol, t, 0.07);
   });
-  const skidAmt = (mine && mine.sl > 5.0 && Math.abs(mine.v) > 7) ? clamp((mine.sl - 5.0) * 0.025, 0, 0.12) : 0;
+  // legacy synth skid / turbine: fallback for the local car, and the only voice
+  // for a REMOTE car. They are silenced whenever the matching real sample is
+  // the thing you can hear, so nothing ever doubles.
+  const sampleDrift = !!(A && A.drift && A.drift.sampleActive());
+  const sampleNitro = !!(A && A.nitro && A.nitro.active());
+  const skidAmt = (!sampleDrift && mine && mine.sl > 5.0 && Math.abs(mine.v) > 7)
+    ? clamp((mine.sl - 5.0) * 0.025, 0, 0.12) : 0;
   audio.skidGain.gain.setTargetAtTime(skidAmt, t, 0.06);
-  audio.nitroGain.gain.setTargetAtTime((mine && mine.n) || (rival && rival.n) ? 0.07 : 0, t, 0.08);
+  const turbine = (!sampleNitro && mine && mine.n) || (rival && rival.n);
+  audio.nitroGain.gain.setTargetAtTime(turbine ? 0.07 : 0, t, 0.08);
 }
 
 // ---------------------------------------------------------------------------
@@ -7712,8 +7978,13 @@ function updateHUD(mine, rival) {
 }
 function updateCountdownVisual() {
   if (!latest || latest.state !== 'countdown' || latest.count == null) return;
-  const n = Math.max(1, Math.ceil(latest.count));
-  if (n !== lastCountInt) { lastCountInt = n; showCount(String(n)); beep(440, 0.16, 'sine', 0.22); }
+  // v173: the server sends count = countVal + (1 - countTimer), so the value is
+  // 1..3 ABOVE the digit being counted: it starts at 4.0 for the "3", 3.0 for
+  // the "2" and 2.0 for the "1". Raw ceil() therefore painted a phantom "4" for
+  // the first second and never showed the "1" at all. ceil(count) - 1 is the
+  // digit the racer should see; the authoritative countdown is untouched.
+  const n = Math.max(1, Math.min(3, Math.ceil(latest.count) - 1));
+  if (n !== lastCountInt) { lastCountInt = n; showCount(String(n)); }
 }
 
 // ---------------------------------------------------------------------------
@@ -8366,6 +8637,7 @@ function frameBody() {
   updateClouds(dt);
   updateArrow(rival);
   updateAudio(mine, rival);
+  checkPassBy(dt);            // v173 opponent pass-by (self-throttled to 10 Hz)
   updateHUD(mine, rival);
   ttHudUpdate(mine); // v61
   maybeSendKeyboard(dt);

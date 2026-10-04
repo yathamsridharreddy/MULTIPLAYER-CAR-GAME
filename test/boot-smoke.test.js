@@ -42,7 +42,8 @@ const SCRIPTS = [
   'js/config.js',
   'js/account.js',
   'js/i18n.js',
-  'js/net.js'
+  'js/net.js',
+  'js/audio.js'   // v173: loaded by index.html before game.js, so the boot path runs it
 ];
 
 // A renderer stand-in with the exact surface game.js touches. Real geometry,
