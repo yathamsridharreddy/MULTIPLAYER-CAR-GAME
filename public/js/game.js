@@ -261,7 +261,6 @@ const sunSprite = (() => {
 
 // world geometry lives in a group we rebuild per map
 const worldGroup = new THREE.Group();
-const puMeshes = []; // v59 pickup visuals
 scene.add(worldGroup);
 
 function makeEnvTexture(night) {
@@ -1598,18 +1597,6 @@ function buildWorld(map) {
   crowdFlashes = [];
   ambientBlimp = null;
 
-  puMeshes.length = 0;
-  if (CORE.pickupSpots) { // v59: visible power-ups at deterministic spots
-    CORE.pickupSpots(map).forEach((sp) => {
-      let m;
-      if (sp.type === 0) m = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.1, 4), new THREE.MeshStandardMaterial({ color: 0x35e0ff, emissive: 0x35e0ff, emissiveIntensity: 1.4 }));
-      else if (sp.type === 1) m = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 10), new THREE.MeshStandardMaterial({ color: 0x3ddc84, emissive: 0x3ddc84, emissiveIntensity: 1.0, transparent: true, opacity: 0.85 }));
-      else m = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.16, 8, 18), new THREE.MeshStandardMaterial({ color: 0xff20c8, emissive: 0xff20c8, emissiveIntensity: 1.2 }));
-      const py = CORE.getTerrainHeight(map, sp.x, sp.z);
-      m.position.set(sp.x, py + 0.8, sp.z);
-      worldGroup.add(m); puMeshes.push(m);
-    });
-  }
 
   // apply theme to sky/lights/fog
   scene.background = new THREE.Color(T.bg);
@@ -6507,7 +6494,6 @@ function processEvents(snap) {
           achCheck({ win: true, map: snap.map });
         }
         setBanner(e.multi ? (tI18n('playerWins', { slot: e.slot }) || `🏁 PLAYER ${e.slot} WINS!`) : (tI18n('finishTime', { time: fmtTime(e.t) }) || `🏁 FINISH — ${fmtTime(e.t)}`)); confetti(); winJingle(); break;
-      case 'pu': { const nm = ['⚡ BOOST', '🛡️ SHIELD', '🌀 SLOW'][e.ptype] || 'PU'; toast(`P${e.slot} grabbed ${nm}!`); beep(880, 0.12, 'sine', 0.2); setTimeout(() => beep(1318.5, 0.18, 'sine', 0.2), 60); break; }
       case 'respawn': if (e.slot === mySlot) { toast('🔄 Back on track'); beep(330, 0.2, 'triangle', 0.18); } break;
       case 'rematch': toast(`🔁 Rematch vote ${e.n}/${e.total}`); break;
       case 'finished':
@@ -6549,7 +6535,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v174';
+const BUILD = 'v175';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -7950,7 +7936,6 @@ function updateHUD(mine, rival) {
   }
   hText(hEl('speed-val'), String(Math.round(Math.abs(mine.v) * 3.6)));
   hText(hEl('gear'), mine.v < -0.5 ? 'R' : (Math.abs(mine.v) < 0.4 ? 'N' : 'D'));
-  hText(hEl('pu-chip'), (mine.pb ? '⚡' : '') + (mine.ps ? '🛡️' : '') + (mine.pl ? '🌀' : '')); // v59
   // v63 close-race intensity chip
   const gc = hEl('gap-chip');
   if (gc) {
@@ -8660,7 +8645,6 @@ function frameBody() {
     ghostUpdate(latest.raceTime);
   } else if (ghostGroup) ghostGroup.visible = false;
   updateParticles(dt);
-  for (let i = 0; i < puMeshes.length; i++) { puMeshes[i].rotation.y += dt * 2.2; puMeshes[i].position.y = 0.8 + Math.sin(performance.now() / 300 + i * 2) * 0.12; if (latest && latest.pu) puMeshes[i].visible = latest.pu[i] === '1'; }
   updateClouds(dt);
   updateArrow(rival);
   updateAudio(mine, rival);

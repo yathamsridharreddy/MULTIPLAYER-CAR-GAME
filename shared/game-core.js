@@ -69,26 +69,6 @@
   // capsule-vs-circle collision against every world collider (tires, trees,
   // buildings). Contact matches the visible car body from every angle, so
   // nothing invisible stops the car and the nose can never punch through.
-  // v59 power-up helpers (server-authoritative; sync-safe)
-  function puTick(car, dt) { car.puB = Math.max(0, car.puB - dt); car.puS = Math.max(0, car.puS - dt); }
-  function puCollect(car, room, ev) {
-    if (!room || room.state !== 'racing' || car.finished) return;
-    for (const pk of room.pickups) {
-      if (!pk.on) continue;
-      const dx = car.x - pk.x, dz = car.z - pk.z;
-      if (dx * dx + dz * dz < 4.84) {
-        pk.on = false; pk.t = 12;
-        if (pk.type === 0) car.puB = 3;                    // BOOST
-        else if (pk.type === 1) car.puSh = true;           // SHIELD
-        else {                                             // SLOW -> opponent
-          let opp = null; for (const o of room.participants()) if (o !== car && (!opp || o.totalProgress() > opp.totalProgress())) opp = o; // v76: target the leader
-          if (opp && opp.puSh) opp.puSh = false; else if (opp) opp.puS = 3;
-        }
-        ev.pu = { x: pk.x, z: pk.z, type: pk.type, slot: car.slot };
-      }
-    }
-  }
-
   function resolveCarColliders(car, colliders, ev) {
     const dirX = Math.sin(car.heading), dirY = Math.cos(car.heading);
     for (const o of colliders) {
@@ -388,7 +368,6 @@
       this.finished = false; this.finishTime = null;
       this._lb = false;
       this.driftScore = 0; this.eliminated = false; this.steerS = 0;
-      this.puB = 0; this.puS = 0; this.puSh = false; // v59 power-up state
     }
 
     resetGrid(time) {
@@ -449,7 +428,6 @@
       let acc = 0;
       if (inp.throttle > 0.02) acc += inp.throttle * CFG.engineAccel * this.cls.acc;
       if (this.nitroActive) acc += CFG.nitroAccel;
-      puTick(this, dt); if (this.puB > 0) acc += 12; // v59 boost
       if (inp.brake > 0.02) acc += speed > 0.6 ? -inp.brake * CFG.brakeDecel : -inp.brake * CFG.reverseAccel;
       acc -= speed * 0.36;
       acc -= Math.sign(speed) * Math.min(Math.abs(speed), 1.7);
@@ -461,7 +439,6 @@
 
       speed = this.vx * dirX + this.vy * dirY;
       let cap = speed >= 0 ? (offroad ? CFG.maxSpeedOffroad : CFG.maxSpeed * this.cls.top) : -CFG.reverseMax;
-      if (this.puB > 0) cap += 10; if (this.puS > 0) cap = Math.min(cap, 12); // v59 boost/slow
       if (speed >= 0 && this.nitroActive) cap += CFG.nitroCapBonus;
       if ((speed > 0 && speed > cap) || (speed < 0 && speed < cap)) {
         this.vx -= dirX * (speed - cap);
@@ -495,7 +472,6 @@
       }
 
       resolveCarColliders(this, colliders, ev);
-      puCollect(this, room, ev); // v59
 
       // barrier walls keep the WHOLE car body on the circuit (props live
       // outside them) — nose, center and tail are all clamped
@@ -559,7 +535,6 @@
       this.track = MAPS[this.mapId];
       this.state = 'waiting';
       this.botSkill = 1; // v45: PRO by default = byte-identical historic bot unless a client opts to ROOKIE
-      this.pickups = pickupSpots(this.track).map((p) => ({ x: p.x, z: p.z, type: p.type, on: true, t: 0 })); // v59
       this.raceTime = 0;
       this.countVal = 0;
       this.countTimer = 0;
@@ -629,7 +604,6 @@
       if (id == null) return false;
       this.mapId = id;
       this.track = MAPS[id];
-      this.pickups = pickupSpots(this.track).map((p) => ({ x: p.x, z: p.z, type: p.type, on: true, t: 0 })); // v59
       this.cars.forEach((c) => { c.setTrack(this.track); c.resetState(0); });
       return true;
     }
@@ -781,7 +755,6 @@
         }
       }
 
-      for (const pk of this.pickups) if (!pk.on) { pk.t -= dt; if (pk.t <= 0) pk.on = true; } // v59 pickup respawn
       if (this._botActive && this.state === 'racing') for (const c of this.cars) if (c._bot && c.participating) this.inputs[c.slot] = this.botInputFor(c); // v76
       this.applyInputs();
       const colliders = this.track.world.colliders;
@@ -790,7 +763,6 @@
         if (this.mode === 'coop' && car.slot === 2) { car.guardFinite(this.raceTime); continue; } // v174: skipped, not unguarded
         const ev = car.update(dt, this.raceTime, this.state, colliders, this);
         if (ev.crash) this.events.push({ type: 'crash', slot: car.slot, x: r3(ev.crash.x), z: r3(ev.crash.z), s: r3(ev.crash.s) });
-        if (ev.pu) this.events.push({ type: 'pu', slot: ev.pu.slot, ptype: ev.pu.type }); // v59
         if (ev.respawn) this.events.push({ type: 'respawn', slot: ev.respawn.slot }); // v59
         if (ev.lap && this.mode === 'elim') {
           const alive = this.cars.filter((c) => c.participating && !c.eliminated && c.slot !== car.slot);
@@ -927,10 +899,8 @@
           drift: Math.round(c.driftScore),
           elim: c.eliminated ? 1 : 0,
           p: c.participating ? 1 : 0,
-          pb: c.puB > 0 ? 1 : 0, ps: c.puSh ? 1 : 0, pl: c.puS > 0 ? 1 : 0,
           dc: (c.cos && c.cos.decal) || 0, wh: (c.cos && c.cos.wheels) || 0, tr: (c.cos && c.cos.trail) || 0, ne: (c.cos && c.cos.neon) || 0, sp: (c.cos && c.cos.sp) || 0, b: (c.cos && c.cos.b) || 0, ti: c.title || ''
         })),
-        pu: this.pickups.map((p) => (p.on ? 1 : 0)).join(''),
         events: this.events.splice(0, this.events.length)
       };
     }
@@ -1062,7 +1032,6 @@
     let acc = 0;
     if (inp.throttle > 0.02) acc += inp.throttle * CFG.engineAccel * this.cls.acc;
     if (this.nitroActive) acc += CFG.nitroAccel;
-    puTick(this, dt); if (this.puB > 0) acc += 12; // v59 boost
     if (inp.brake > 0.02) acc += speed > 0.6 ? -inp.brake * CFG.brakeDecel : -inp.brake * CFG.reverseAccel;
     acc -= speed * 0.36; acc -= Math.sign(speed) * Math.min(Math.abs(speed), 1.7);
     if (offroad) acc -= speed * 1.5;
@@ -1070,7 +1039,6 @@
     this.vx += dirX * acc * dt; this.vy += dirY * acc * dt;
     speed = this.vx * dirX + this.vy * dirY;
     let cap = speed >= 0 ? (offroad ? CFG.maxSpeedOffroad : CFG.maxSpeed * this.cls.top) : -CFG.reverseMax;
-    if (this.puB > 0) cap += 10; if (this.puS > 0) cap = Math.min(cap, 12); // v59 boost/slow
     if (speed >= 0 && this.nitroActive) cap += CFG.nitroCapBonus;
     if ((speed > 0 && speed > cap) || (speed < 0 && speed < cap)) { this.vx -= dirX * (speed - cap); this.vy -= dirY * (speed - cap); speed = cap; }
     const lat = this.vx * rightX + this.vy * rightY;
@@ -1092,7 +1060,6 @@
     this.heading -= yaw * dt;
     if (!held) { this.x += this.vx * dt; this.z += this.vy * dt; }
     resolveCarColliders(this, colliders, ev);
-    puCollect(this, room, ev); // v59
     // barrier — clamps the WHOLE car body (nose, center, tail) so no part of
     // the car can ever clip through the fence, at any angle
     const bc = clampCarToBarrier(this);
@@ -1258,17 +1225,17 @@
 
   (function buildRadialMaps() {
     // v69: maps 1-4 are FULLY NEW circuits — new shapes (harmonic signatures),
-    // new obstacle/pickup layouts, new scenery seeds. Map 0 untouched.
+    // new obstacle layouts, new scenery seeds. Map 0 untouched.
     const defs = [
-      { R0: 110, harms: [{ k: 3, amp: 0.09, ph: 0.8 }, { k: 5, amp: 0.045, ph: 2.1 }], theme: 'neon',   name: 'NEON CITY',        hz: [0.16, 0.41, 0.63, 0.87], pk: [0.27, 0.52, 0.79] },
-      { R0: 117, harms: [{ k: 2, amp: 0.13, ph: 0.5 }, { k: 4, amp: 0.05,  ph: 1.2 }], theme: 'island', name: 'ISLAND MOTORFEST', hz: [0.10, 0.35, 0.60, 0.85], pk: [0.22, 0.50, 0.80] },
-      { R0: 121, harms: [{ k: 2, amp: 0.16, ph: 1.9 }, { k: 3, amp: 0.09,  ph: 0.4 }], theme: 'desert', name: 'CANYON CHICANE',   hz: [0.14, 0.39, 0.64, 0.89], pk: [0.25, 0.55, 0.82] },
-      { R0: 105, harms: [{ k: 3, amp: 0.15, ph: 2.6 }, { k: 6, amp: 0.04,  ph: 0.9 }], theme: 'snow',   name: 'HAIRPIN GP',       hz: [0.18, 0.43, 0.68, 0.93], pk: [0.30, 0.57, 0.84] }
+      { R0: 110, harms: [{ k: 3, amp: 0.09, ph: 0.8 }, { k: 5, amp: 0.045, ph: 2.1 }], theme: 'neon',   name: 'NEON CITY',        hz: [0.16, 0.41, 0.63, 0.87] },
+      { R0: 117, harms: [{ k: 2, amp: 0.13, ph: 0.5 }, { k: 4, amp: 0.05,  ph: 1.2 }], theme: 'island', name: 'ISLAND MOTORFEST', hz: [0.10, 0.35, 0.60, 0.85] },
+      { R0: 121, harms: [{ k: 2, amp: 0.16, ph: 1.9 }, { k: 3, amp: 0.09,  ph: 0.4 }], theme: 'desert', name: 'CANYON CHICANE',   hz: [0.14, 0.39, 0.64, 0.89] },
+      { R0: 105, harms: [{ k: 3, amp: 0.15, ph: 2.6 }, { k: 6, amp: 0.04,  ph: 0.9 }], theme: 'snow',   name: 'HAIRPIN GP',       hz: [0.18, 0.43, 0.68, 0.93] }
     ];
     defs.forEach((d, i) => {
       const t = makeRadialTrack(d.R0, d.harms, 256);
       t.id = 1 + i; t.theme = d.theme; t.name = d.name;
-      t.hazardFracs = d.hz; t.pickupFracs = d.pk; t.hazardSide0 = i % 2; // v69 fresh layouts
+      t.hazardFracs = d.hz; t.hazardSide0 = i % 2; // v69 fresh layouts (v175: power-up layout removed)
       t.world = makeSplineWorld(3000 + i * 131, t, d.theme); // v69 new scenery seed
       MAPS[1 + i] = t;
     });
@@ -1351,25 +1318,6 @@
     return crash;
   }
 
-  // v59: deterministic power-up spots (3 per map, on-road, alternating sides)
-  function pickupSpots(track) {
-    const spots = [];
-    const pkf = track.pickupFracs || [0.2, 0.5, 0.8]; // v69 per-map layouts
-    pkf.forEach((f, i) => {
-      const side = (i % 2 ? 3 : -3);
-      if (track.points) {
-        const P = track.points;
-        const idx = Math.floor(f * P.length); const p = P[idx], p2 = P[(idx + 1) % P.length];
-        let tx = p2.x - p.x, tz = p2.z - p.z; const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
-        spots.push({ x: p.x + (-tz) * side, z: p.z + tx * side, type: i % 3 });
-      } else {
-        const t = f * PI2;
-        spots.push({ x: track.a * Math.cos(t) + (-Math.sin(t)) * side, z: track.b * Math.sin(t) + Math.cos(t) * side, type: i % 3 });
-      }
-    });
-    return spots;
-  }
-
   function trackStart(track, slot) {
     if (track.type === 'spline' && track.points) {
       const P = track.points, p0 = P[0], p1 = P[1];
@@ -1394,11 +1342,11 @@
   // browser caches an old game-core, its drawn track won't match the server's
   // car positions; the client detects this via /version.geom and forces reload.
   const GEOM_ID = (function () {
-    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 9, p: 3, L: m.limC || 0 }))); // k=barrier gen (v69 new circuits), p=powerups, L=boundary spec
+    const s = JSON.stringify(MAPS.map((m) => ({ i: m.id, t: m.theme, a: m.a, b: m.b, y: m.type || 'e', c: m.world.colliders.length, h: m.world.hazards.length, k: 9, L: m.limC || 0 }))); // k=barrier gen (v69 new circuits), L=boundary spec
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
     return (h >>> 0).toString(36);
   })();
 
-  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode, GEOM_ID, pickupSpots, WEATHER_CONDITIONS, getTrackElevation, getTerrainHeight, CAR_PALETTE };
+  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode, GEOM_ID, WEATHER_CONDITIONS, getTrackElevation, getTerrainHeight, CAR_PALETTE };
 });
