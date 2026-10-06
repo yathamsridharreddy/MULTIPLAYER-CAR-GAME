@@ -312,7 +312,11 @@
   // ------------------------------------------------------------------
   // Car physics (pure — no rendering)
   // ------------------------------------------------------------------
-  const ZERO_INPUT = () => ({ steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false });
+  const ZERO_INPUT = () => ({ steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false, attack: false });
+  // v176: the one place a mode string is validated. 'fighter' is Fighter Rush;
+  // every other value behaves exactly as it always did (anything unknown = 'race').
+  const MODES = ['race', 'coop', 'elim', 'drift', 'fighter'];
+  function normMode(m) { return (typeof m === 'string' && MODES.indexOf(m) > 0) ? m : 'race'; }
 
   class Car {
     constructor(slot, startX, track) {
@@ -528,7 +532,8 @@
   class RaceRoom {
     constructor(code, mode, mapId, maxSlots, weather) {
       this.code = code;
-      this.mode = ['coop','elim','drift'].includes(mode) ? mode : 'race';
+      this.mode = normMode(mode);
+      this.fx = null;            // v176: Fighter Rush state, only ever built in that mode
       const wantMap = realMapId(mapId); // v174: own keys only - '__proto__' is not a circuit
       this.mapId = wantMap == null ? 0 : wantMap;
       this.weather = (weather && own(WEATHER_CONDITIONS, weather)) ? weather : 'dry';
@@ -594,7 +599,7 @@
 
     setMode(mode) {
       if (this.state !== 'waiting') return false;
-      this.mode = ['coop','elim','drift'].includes(mode) ? mode : 'race';
+      this.mode = normMode(mode);
       return true;
     }
 
@@ -619,7 +624,8 @@
         throttle: clamp(num(input.throttle), 0, 1),
         brake: clamp(num(input.brake), 0, 1),
         handbrake: !!input.handbrake,
-        nitro: !!input.nitro
+        nitro: !!input.nitro,
+        attack: !!input.attack       // v176: Fighter Rush "IMPACT" - an attempt, never proof of a hit
       };
       this.lastActivity = Date.now();
     }
@@ -652,6 +658,7 @@
         }
       }
       this._botActive = botOn;
+      if (this.mode === 'fighter') fighter.begin(this);   // v176: combat state for this race only
       this.state = 'countdown';
       this.countVal = 3;
       this.countTimer = 0;
@@ -663,6 +670,7 @@
     resetCar(slot) { const car = this.cars[slot - 1]; if (car) car.resetGrid(this.raceTime); }
 
     resetToWaiting() {
+      if (this.mode === 'fighter') this.fx = null;        // v176: leave no fighter state behind
       this.state = 'waiting';
       this.raceTime = 0;
       this.winner = null;
@@ -688,6 +696,12 @@
         for (let s = 1; s <= this.cap; s++) {
           if (this.cars[s - 1]) this.cars[s - 1].input = this.inputs[s] || ZERO_INPUT();
         }
+      }
+      // v176 FIGHTER RUSH: an eliminated car is disabled - its phone keeps sending
+      // frames, so the mask lives at the one place the sim reads input. Dead code
+      // in every other mode (this.fx is null unless a fighter race is running).
+      if (this.fx) for (const f of this.fx.cars) {
+        if (f.dead) { const c = this.cars[f.slot - 1]; if (c) c.input = ZERO_INPUT(); }
       }
     }
 
@@ -795,6 +809,13 @@
         }
       }
 
+      // v176 FIGHTER RUSH: the combat layer runs here - after every car has moved
+      // for this tick (so the airtime model sees final positions) and BEFORE the
+      // car-vs-car separation below, so a Speed Ram is judged on real contact
+      // rather than on cars the physics has already pushed apart. One call, behind
+      // the mode check; every other mode reaches the collision block unchanged.
+      if (this.mode === 'fighter') fighter.tick(this, dt);
+
       // car-vs-car collision — each car is two circles (front + rear) matching
       // its length, so bumping is solid from every angle and cars can never
       // ghost through each other
@@ -865,7 +886,7 @@
     }
 
     snapshot() {
-      return {
+      const snap = {
         type: 'state',
         state: this.state,
         mode: this.mode,
@@ -903,6 +924,10 @@
         })),
         events: this.events.splice(0, this.events.length)
       };
+      // v176: fighter fields exist only while this room IS a fighter room, so no
+      // other mode's wire format gains a byte (see test/fighter-rush.test.js).
+      if (this.mode === 'fighter') fighter.decorate(this, snap);
+      return snap;
     }
   }
 
@@ -1338,6 +1363,439 @@
     return s;
   }
 
+  // ==================================================================
+  // v176 FIGHTER RUSH — "your driving is your weapon"
+  //
+  // A self-contained combat layer that rides ON TOP of the existing simulation.
+  //   * every entry point begins with isActive(room), i.e. mode === 'fighter';
+  //   * every value it owns lives in room.fx, which is null in every other mode
+  //     and is dropped the moment the room goes back to the lobby;
+  //   * it never edits the car physics: it READS speed, slip and the terrain, and
+  //     the only writes it makes to a car are a knockback impulse and the
+  //     elimination flags the 'elim' mode already uses.
+  // Isolation is proven in test/fighter-rush.test.js (a race run in each existing
+  // mode is compared against the same race with this layer absent).
+  //
+  // Charge is earned by DRIVING: sustained speed, real slip (the same slip the
+  // drift score uses), genuine airtime off the terrain and near misses. Nothing
+  // here rewards holding a button - the thresholds are all "you are going fast",
+  // "you are sideways", "you are in the air".
+  //
+  // AIRTIME uses the only vertical information the sim has: the road profile.
+  // A car leaves the ground when the surface falls away faster than gravity can
+  // pull it down: v^2*k > g, where k is the crest's curvature. Measured purely
+  // from the two previous height samples, that test is exactly
+  //   (riseRate(t-1) - riseRate(t)) > g*dt
+  // so it costs one terrain sample per car per tick and no extra state.
+  // ==================================================================
+  const FX = {
+    HP: 100,
+    COST: 40,               // impact charge (0..100) one attack spends
+    SPEED_MIN: 21,          // m/s (~76 km/h) where speed starts building charge
+    SPEED_RATE: 9,          // charge per second at/above that speed
+    DRIFT_RATE: 13,         // charge per second while genuinely sideways
+    DRIFT_SLIP: 3.5,        // the sim's own "this is a drift" slip value
+    NEAR_D: 4.6,            // a pass closer than this is a near miss...
+    NEAR_D_MIN: 2.9,        // ...but touching is not
+    NEAR_CD: 1.6,           // seconds before the same pair can score one again
+    COMBO_WINDOW: 5,        // seconds of good driving a combo survives
+    COMBO_MAX: 20,
+    COMBO_CHG: 4,           // charge a combo step adds
+    COMBO_POWER: 0.08,      // each combo step: +8% attack power (capped below)
+    COMBO_POWER_CAP: 9,     // counted combo steps for power (so max +72%)
+    BIAS_BONUS: 0.28,       // +28% when the charge came mostly from that skill
+    G: 9.81,                // gravity, for the launch test AND the arc
+    AIR_MIN_SPEED: 12,      // m/s: too slow to leave the ground
+    AIR_MIN: 0.28,          // airtime that counts as a real jump
+    AIR_LAT: 6.5,           // only the road corridor is trusted for a launch
+    SLAM_ARM_AIR: 0.12,     // airtime after which IMPACT becomes an Air Slam
+    DRIFT_USE_SLIP: 4.5,    // slip required to fire a Drift Impact
+    DRIFT_USE_SPEED: 8,     // m/s required to fire a Drift Impact
+    DRIFT_R: 9.5, DRIFT_DMG: 17,
+    RAM_TIME: 1.6,          // seconds a Speed Ram stays armed
+    RAM_SPEED: 20,          // m/s required to arm one
+    RAM_R: 1.9,             // the physics' own disc radius, reused for contact
+    RAM_MIN_REL: 4.5,       // closing speed below this is a nudge, not a ram
+    RAM_K: 1.5, RAM_MAX: 34, RAM_MIN_DMG: 4,
+    RAM_AIR_REL: 14,        // a ram this hard throws both cars into the air
+    SLAM_R: 8.5, SLAM_DMG: 21, SLAM_AIR_REF: 0.9,
+    KB_BASE: 5.5, KB_PER_DMG: 0.6, KB_MAX: 17,
+    I_FRAMES: 0.45,         // one hit per target per attack, never a per-tick trickle
+    MAX_HIT: 40,            // no single blow - however well driven - is more than 40% of HP
+    HIT_FLASH: 0.5
+  };
+  const RAM_OFFS = [-1.5, 0, 1.5];   // must match the car-vs-car disc layout
+
+  const fighter = {
+    MODE: 'fighter',
+    TUNE: FX,
+
+    // The one gate. Everything below returns immediately unless this is true.
+    isActive: function (room) { return !!room && room.mode === 'fighter'; },
+
+    // ---- lifecycle ---------------------------------------------------------
+    begin: function (room) {
+      const cars = [];
+      for (let i = 0; i < room.cap; i++) {
+        cars.push({
+          slot: i + 1,
+          hp: FX.HP, chg: 0, combo: 0, comboT: 0,
+          d: 0, s: 0, a: 0,                 // charge built by drift / speed / air
+          air: 0, ay: 0, fvy: 0, ph: null, rise: 0, cool: 0, th: null,   // airtime
+          ram: 0, slam: false, atk: '', hit: 0, iT: 0, dead: false,
+          driftT: 0, driftCounted: false,
+          nmT: [0, 0, 0, 0, 0, 0], _atkPrev: false, _botT: 1.5
+        });
+      }
+      room.fx = { cars, alive: 0, contest: false, deaths: 0, order: [] };
+      let fighters = 0;
+      for (const c of room.cars) if (c.participating) fighters++;
+      room.fx.alive = fighters;
+      room.fx.contest = fighters >= 2;      // a lone driver practises, they do not "win" instantly
+      // Fighter Rush is not a lap race: the primary objective is last car standing,
+      // so no car may complete a race distance and stop driving mid-fight.
+      for (const c of room.cars) c.maxLaps = 9999;
+      return room.fx;
+    },
+
+    // ---- per-tick combat ---------------------------------------------------
+    tick: function (room, dt) {
+      if (!this.isActive(room) || !room.fx || room.state !== 'racing') return;
+      const cars = room.cars, fx = room.fx;
+      for (let i = 0; i < cars.length; i++) {
+        const car = cars[i], f = fx.cars[i];
+        if (!f) continue;
+        if (f.hit > 0) f.hit -= dt;
+        if (f.iT > 0) f.iT -= dt;
+        if (f.dead) { this._wreck(car); continue; }
+        this._air(room, car, f, dt);
+        this._earn(room, car, f, dt);
+        this._decay(f, dt);
+        this._attack(room, car, f, dt);
+        this._ram(room, car, f, dt);
+      }
+      this._nearMisses(room, dt);
+      this._win(room);
+    },
+
+    // ---- airtime: jumps are real, and they come from the terrain ----------
+    _air: function (room, car, f, dt) {
+      const track = room.track;
+      if (!track) return;
+      const h = getTerrainHeight(track, car.x, car.z);
+      // Lateral distance from the centreline. Inside the corridor the surface IS the
+      // road profile; outside it the road blends into the natural terrain, and that
+      // blend is where the height samples step (measured: 1-14 m/s of apparent
+      // "slope change" on a car at walking pace). A crest is only trusted on the road.
+      const lat = this._lat(room, car, f);
+      if (f.air > 0) {
+        f.fvy -= FX.G * dt;
+        f.ay += f.fvy * dt;
+        f.air += dt;
+        if (f.ay > h) return;                       // still flying
+        const air = f.air;
+        f.air = 0; f.ay = 0; f.fvy = 0; f.rise = 0; f.ph = h; f.cool = 0.5;
+        if (air < FX.AIR_MIN) return;
+        const sp = Math.abs(car.forwardSpeed());
+        if (f.slam) { f.slam = false; f.atk = ''; this._slam(room, car, f, air); return; }
+        const clean = car.slip < 3.2 && sp > FX.SPEED_MIN * 0.7;
+        this._step(room, car, f, clean ? 'land' : 'landrough', clean ? 'PERFECT LANDING' : 'LANDING');
+        room.events.push({ type: 'fxAir', slot: car.slot, air: r3(air), perfect: clean ? 1 : 0, x: r3(car.x), z: r3(car.z) });
+        return;
+      }
+      const rise = f.ph == null ? 0 : (h - f.ph) / dt;
+      if (f.cool > 0) f.cool -= dt;
+      if (Math.abs(lat) > FX.AIR_LAT) { f.rise = rise; f.ph = h; return; }
+      // v^2 * curvature > g, written with the two samples we already have, plus the
+      // guards that make it a CREST rather than a sampling artefact: the car must be
+      // fast, the ground must not already have been falling, it must be falling
+      // clearly now, and the car must have touched down recently enough to be on it.
+      // The threshold is a fraction of gravity rather than all of it, because the
+      // 30 Hz sampling smooths a crest: measured on the real circuits with a
+      // full-throttle driver on the racing line, 0.6 gives HAIRPIN GP (the hilliest
+      // circuit) ~3.9 launches per lap and NEON CITY ~1.2, always between 160 and
+      // 187 km/h - and exactly 0 spurious launches below 12 m/s, because the blend
+      // artefacts that produced those all live outside the road corridor.
+      if (f.ph != null && f.cool <= 0 && Math.abs(car.forwardSpeed()) > FX.AIR_MIN_SPEED &&
+          f.rise > -0.25 && (f.rise - rise) > FX.G * dt * 0.6) {
+        f.air = 0.0001; f.ay = h; f.fvy = Math.max(0, Math.min(9, f.rise));
+        this._step(room, car, f, 'jump', 'JUMP');
+        room.events.push({ type: 'fxJump', slot: car.slot, x: r3(car.x), z: r3(car.z), v: r3(f.fvy) });
+      }
+      f.rise = rise; f.ph = h;
+    },
+
+    // ---- charge: earned by driving, never by holding a button --------------
+    _earn: function (room, car, f, dt) {
+      const sp = Math.abs(car.forwardSpeed());
+      if (sp > FX.SPEED_MIN) {
+        const k = Math.min(1, (sp - FX.SPEED_MIN) / 12);
+        const g = FX.SPEED_RATE * k * dt;
+        f.chg = Math.min(100, f.chg + g); f.s += g;
+      }
+      if (car.slip > FX.DRIFT_SLIP && sp > 6) {
+        const k = Math.min(1, (car.slip - FX.DRIFT_SLIP) / 6 + 0.35);
+        const g = FX.DRIFT_RATE * k * dt;
+        f.chg = Math.min(100, f.chg + g); f.d += g;
+        f.driftT += dt;
+        if (f.driftT > 1.1 && !f.driftCounted) { f.driftCounted = true; this._step(room, car, f, 'drift', 'DRIFT'); }
+      } else { f.driftT = 0; f.driftCounted = false; }
+      if (f.air > 0) {                                // airtime is worth something too
+        const g = FX.SPEED_RATE * 0.5 * dt;
+        f.chg = Math.min(100, f.chg + g); f.a += g;
+      }
+    },
+
+    _decay: function (f, dt) {
+      if (f.comboT > 0) { f.comboT -= dt; if (f.comboT <= 0) { f.combo = 0; f.comboT = 0; } }
+    },
+
+    _step: function (room, car, f, what, label) {
+      f.combo = Math.min(FX.COMBO_MAX, f.combo + 1);
+      f.comboT = FX.COMBO_WINDOW;
+      f.chg = Math.min(100, f.chg + FX.COMBO_CHG);
+      room.events.push({ type: 'fxCombo', slot: car.slot, n: f.combo, what: label || what });
+    },
+
+    _power: function (f) {
+      return 1 + Math.min(f.combo, FX.COMBO_POWER_CAP) * FX.COMBO_POWER;
+    },
+    _bias: function (f, kind) {
+      const tot = f.d + f.s + f.a;
+      if (tot <= 0.001) return 1;
+      const share = kind === 'drift' ? f.d / tot : (kind === 'ram' ? f.s / tot : f.a / tot);
+      return 1 + FX.BIAS_BONUS * share;
+    },
+
+    // ---- attacks -----------------------------------------------------------
+    _attack: function (room, car, f, dt) {
+      const inp = car.input || ZERO_INPUT();
+      const pressed = !!inp.attack;
+      const rising = pressed && !f._atkPrev;
+      f._atkPrev = pressed;
+      let want = rising;
+      if (!want && car._bot) {                 // the AI fights too (solo / short-handed rooms)
+        f._botT -= dt;
+        if (f._botT <= 0 && f.chg >= FX.COST) { want = true; f._botT = 1.4 + Math.random() * 1.6; }
+      }
+      if (!want) return;
+      if (f.chg < FX.COST) {
+        if (rising) room.events.push({ type: 'fxNo', slot: car.slot, why: 'charge' });
+        return;
+      }
+      const sp = Math.abs(car.forwardSpeed());
+      if (f.air > FX.SLAM_ARM_AIR) {                       // airborne -> Air Slam, armed now
+        f.chg -= FX.COST; f.slam = true; f.atk = 'air';
+        room.events.push({ type: 'fxAtk', slot: car.slot, kind: 'air', armed: 1, x: r3(car.x), z: r3(car.z), r: FX.SLAM_R });
+        return;
+      }
+      if (car.slip > FX.DRIFT_USE_SLIP && sp > FX.DRIFT_USE_SPEED) { this._driftImpact(room, car, f); return; }
+      if (sp > FX.RAM_SPEED) {
+        f.chg -= FX.COST; f.ram = FX.RAM_TIME; f.atk = 'ram';
+        room.events.push({ type: 'fxAtk', slot: car.slot, kind: 'ram', armed: 1, x: r3(car.x), z: r3(car.z) });
+        return;
+      }
+      // the attack depends on HOW you are driving - a stationary car has none
+      if (rising) room.events.push({ type: 'fxNo', slot: car.slot, why: 'context' });
+    },
+
+    _driftImpact: function (room, car, f) {
+      f.chg -= FX.COST;
+      f.atk = 'drift'; f.hit = 0;
+      const dmg = FX.DRIFT_DMG * this._power(f) * this._bias(f, 'drift');
+      room.events.push({ type: 'fxAtk', slot: car.slot, kind: 'drift', armed: 0, x: r3(car.x), z: r3(car.z), r: FX.DRIFT_R });
+      this._area(room, car, f, FX.DRIFT_R, dmg, 'drift');
+    },
+
+    _slam: function (room, car, f, air) {
+      const gain = Math.min(1.5, air / FX.SLAM_AIR_REF);
+      const dmg = FX.SLAM_DMG * this._power(f) * this._bias(f, 'air') * (0.7 + 0.5 * gain);
+      room.events.push({ type: 'fxAtk', slot: car.slot, kind: 'slam', armed: 0, air: r3(air), x: r3(car.x), z: r3(car.z), r: FX.SLAM_R });
+      this._area(room, car, f, FX.SLAM_R, dmg, 'slam');
+    },
+
+    // 360-degree shockwave: everything alive inside R takes it, everything just
+    // outside R earned the dodge.
+    _area: function (room, car, f, R, dmg, kind) {
+      for (const o of room.cars) {
+        if (o === car || !o.participating) continue;
+        const of = room.fx.cars[o.slot - 1];
+        if (!of || of.dead) continue;
+        const dx = o.x - car.x, dz = o.z - car.z;
+        const d = Math.hypot(dx, dz);
+        if (d < R) {
+          const fall = 1 - 0.45 * (d / R);
+          const nx = dx / (d || 1), nz = dz / (d || 1);
+          const J = Math.min(FX.KB_MAX, FX.KB_BASE + dmg * FX.KB_PER_DMG * 0.6);
+          this._hit(room, o, car.slot, dmg * fall, nx * J, nz * J, kind);
+        } else if (d < R * 1.9) {
+          this._step(room, o, of, 'dodge', 'DODGED');
+        }
+      }
+    },
+
+    // Speed Ram: the hit is a real contact, and its damage is the closing speed.
+    _ram: function (room, car, f, dt) {
+      if (f.ram <= 0) return;
+      f.ram -= dt;
+      if (f.ram <= 0) { f.ram = 0; if (f.atk === 'ram') f.atk = ''; return; }
+      const dirX = Math.sin(car.heading), dirZ = Math.cos(car.heading);
+      for (const o of room.cars) {
+        if (o === car || !o.participating) continue;
+        const of = room.fx.cars[o.slot - 1];
+        if (!of || of.dead) continue;
+        const odx = Math.sin(o.heading), odz = Math.cos(o.heading);
+        let best = null;
+        for (const a of RAM_OFFS) for (const b of RAM_OFFS) {
+          const px = car.x + dirX * a, pz = car.z + dirZ * a;
+          const qx = o.x + odx * b, qz = o.z + odz * b;
+          const dx = qx - px, dz = qz - pz;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < FX.RAM_R * FX.RAM_R) {
+            const d = Math.sqrt(d2) || 1e-3;
+            const pen = FX.RAM_R - d;
+            if (!best || pen > best.pen) best = { pen, nx: dx / d, nz: dz / d };
+          }
+        }
+        if (!best) continue;
+        const rel = Math.max(0, -((o.vx - car.vx) * best.nx + (o.vy - car.vy) * best.nz));
+        if (rel < FX.RAM_MIN_REL) continue;            // a slow bump must NOT ram
+        const dmg = clamp((rel - FX.RAM_MIN_REL) * FX.RAM_K, 0, FX.RAM_MAX) * this._power(f) * this._bias(f, 'ram');
+        if (dmg < FX.RAM_MIN_DMG) continue;
+        const J = Math.min(FX.KB_MAX, FX.KB_BASE + dmg * FX.KB_PER_DMG * 0.7);
+        this._hit(room, o, car.slot, dmg, best.nx * J, best.nz * J, 'ram');
+        if (rel > FX.RAM_AIR_REL) this._launch(room, o, of, rel * 0.16);   // a hard ram lifts both cars
+        car.vx *= 0.88; car.vy *= 0.88;                                    // ...and costs the rammer speed
+        room.events.push({ type: 'fxAtk', slot: car.slot, kind: 'ram', armed: 0, rel: r3(rel), x: r3(o.x), z: r3(o.z), r: FX.RAM_R });
+        f.ram = 0; f.atk = '';
+        break;
+      }
+    },
+
+    // lateral distance to the centreline (0 in the middle of the road)
+    _lat: function (room, car, f) {
+      const T = room.track;
+      if (!T) return 99;
+      if (T.type === 'spline' && T.nearest) {
+        const n = T.nearest(car.x, car.z, f.th);
+        f.th = n.th;
+        return n.lat;
+      }
+      return ellipseProj(car.x, car.z, T.a, T.b).lat;
+    },
+
+    _launch: function (room, car, f, vUp) {
+      if (f.air > 0 || !room.track) return;
+      const h = getTerrainHeight(room.track, car.x, car.z);
+      f.air = 0.0001; f.ay = h; f.fvy = Math.max(0, Math.min(9, vUp)); f.ph = h; f.rise = 0;
+    },
+
+    // ---- damage & elimination (authoritative: the client never sends any of this)
+    _hit: function (room, victim, bySlot, dmg, kx, kz, kind) {
+      const vf = room.fx.cars[victim.slot - 1];
+      if (!vf || vf.dead || vf.iT > 0 || !(dmg > 0)) return 0;
+      if (dmg > FX.MAX_HIT) dmg = FX.MAX_HIT;      // a great combo must not one-shot a full-health car
+      vf.iT = FX.I_FRAMES;
+      vf.hit = FX.HIT_FLASH;
+      vf.hp = Math.max(0, vf.hp - dmg);
+      vf.combo = 0; vf.comboT = 0;                 // being hit breaks the combo
+      victim.vx += kx; victim.vy += kz;            // fighter-only knockback impulse
+      room.events.push({
+        type: 'fxHit', slot: victim.slot, by: bySlot, kind,
+        dmg: Math.round(dmg), hp: Math.round(vf.hp),
+        x: r3(victim.x), z: r3(victim.z), kx: r3(kx), kz: r3(kz)
+      });
+      if (vf.hp <= 0) {
+        vf.dead = true; vf.ram = 0; vf.slam = false; vf.atk = '';
+        victim.eliminated = true; victim.participating = false;   // the same flags 'elim' already uses
+        room.fx.deaths++;
+        room.fx.order.push(victim.slot);
+        room.fx.alive = Math.max(0, room.fx.alive - 1);
+        room.events.push({ type: 'fxDown', slot: victim.slot, by: bySlot, left: room.fx.alive });
+        room.setBanner('💥 P' + victim.slot + ' ELIMINATED');
+      }
+      return dmg;
+    },
+
+    // a knocked-out car is a wreck: no input (masked in applyInputs), rolling to a stop
+    _wreck: function (car) {
+      car.vx *= 0.93; car.vy *= 0.93; car.slip *= 0.9;
+    },
+
+    _nearMisses: function (room, dt) {
+      const cars = room.cars, fx = room.fx;
+      for (let i = 0; i < cars.length; i++) {
+        const a = cars[i], fa = fx.cars[i];
+        if (!fa || fa.dead || !a.participating) continue;
+        for (let j = i + 1; j < cars.length; j++) {
+          const b = cars[j], fb = fx.cars[j];
+          if (!fb || fb.dead || !b.participating) continue;
+          if (fa.nmT[b.slot - 1] > 0 || fb.nmT[a.slot - 1] > 0) continue;
+          const d = Math.hypot(a.x - b.x, a.z - b.z);
+          if (d >= FX.NEAR_D || d <= FX.NEAR_D_MIN) continue;
+          if (Math.abs(a.forwardSpeed()) > FX.SPEED_MIN * 0.75) { this._step(room, a, fa, 'near', 'NEAR MISS'); fa.nmT[b.slot - 1] = FX.NEAR_CD; }
+          if (Math.abs(b.forwardSpeed()) > FX.SPEED_MIN * 0.75) { this._step(room, b, fb, 'near', 'NEAR MISS'); fb.nmT[a.slot - 1] = FX.NEAR_CD; }
+        }
+      }
+      for (const f of fx.cars) for (let k = 0; k < 6; k++) if (f.nmT[k] > 0) f.nmT[k] -= dt;
+    },
+
+    // ---- last car standing -------------------------------------------------
+    _win: function (room) {
+      const fx = room.fx;
+      let alive = 0;
+      for (const c of room.cars) { const f = fx.cars[c.slot - 1]; if (f && !f.dead && c.participating) alive++; }
+      fx.alive = alive;
+      if (!fx.contest || alive > 1) return;
+      room.winner = null;
+      for (const c of room.cars) { const f = fx.cars[c.slot - 1]; if (f && !f.dead && c.participating) room.winner = c.slot; }
+      room.state = 'finished';
+      room.setBanner(room.winner ? '🏆 FIGHTER RUSH — P' + room.winner + ' WINS' : '🏆 FIGHTER RUSH — DRAW');
+      room.events.push({ type: 'results', order: this.results(room), fighter: 1 });
+    },
+
+    results: function (room) {
+      const fx = room.fx;
+      const row = (c) => {
+        const f = fx.cars[c.slot - 1];
+        return {
+          slot: c.slot, name: c.name, color: c.color, finished: false, t: null,
+          best: c.best != null ? r3(c.best) : null,
+          hp: f ? Math.round(f.hp) : 0, dead: f && f.dead ? 1 : 0, fighter: 1
+        };
+      };
+      const hpOf = (c) => { const f = fx.cars[c.slot - 1]; return f ? f.hp : 0; };
+      const alive = room.cars
+        .filter((c) => { const f = fx.cars[c.slot - 1]; return f && !f.dead && c.participating; })
+        .sort((a, b) => (hpOf(b) - hpOf(a)) || (b.totalProgress() - a.totalProgress()));
+      const out = alive.map(row);
+      for (let i = fx.order.length - 1; i >= 0; i--) {       // last eliminated = best of the dead
+        const c = room.cars[fx.order[i] - 1];
+        if (c) out.push(row(c));
+      }
+      return out;
+    },
+
+    decorate: function (room, snap) {
+      const fx = room.fx;
+      snap.fm = {
+        alive: fx ? fx.alive : 0,
+        contest: fx && fx.contest ? 1 : 0,
+        cost: FX.COST, hpMax: FX.HP
+      };
+      for (const c of snap.cars) {
+        const f = fx ? fx.cars[c.s - 1] : null;
+        c.fx = f ? {
+          hp: Math.round(f.hp), ch: Math.round(f.chg), cb: f.combo,
+          rd: f.chg >= FX.COST ? 1 : 0,
+          air: f.air > 0 ? 1 : 0, ay: r3(f.ay),
+          at: f.atk || '', rm: f.ram > 0 ? 1 : 0,
+          ht: f.hit > 0 ? 1 : 0, dead: f.dead ? 1 : 0
+        } : null;
+      }
+    }
+  };
+
   // Geometry fingerprint: client and server must agree on track layout. If a
   // browser caches an old game-core, its drawn track won't match the server's
   // car positions; the client detects this via /version.geom and forces reload.
@@ -1348,5 +1806,5 @@
     return (h >>> 0).toString(36);
   })();
 
-  return { CFG, MAPS, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode, GEOM_ID, WEATHER_CONDITIONS, getTrackElevation, getTerrainHeight, CAR_PALETTE };
+  return { CFG, MAPS, MODES, normMode, clamp, fmtTime, mulberry32, radialDistToTrack, ellipseProj, generateWorld, WORLD, Car, RaceRoom, ZERO_INPUT, makeRoomCode, GEOM_ID, WEATHER_CONDITIONS, getTrackElevation, getTerrainHeight, CAR_PALETTE, SRFighter: fighter };
 });

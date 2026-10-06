@@ -2982,7 +2982,11 @@ function acceptMapChoice(m) {
 }
 // every START now carries the chosen track + identity (see acceptMapChoice)
 function startPayload() {
-  return Object.assign({ type: 'start', map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload());
+  const p = { type: 'start', map: selectedMap, laps: (prefs && prefs.laps) || 3 };
+  // v176: an on-demand room is created by this message, so the selected mode has
+  // to ride with it. Time trial / practice keep running a plain race.
+  if (!TT.on) p.mode = (viewMode === 'split' ? 'race' : viewMode);
+  return Object.assign(p, identityPayload());
 }
 // v93: ship every identity this browser owns, the way the club calls do, so a
 // grudge recorded under the verified account uuid is still found when the poll
@@ -4478,9 +4482,10 @@ function clearCount() {
   el.textContent = '';
 }
 let pendingSettle = []; // v73 server-settled XP/rating rows
-function showResults(order) {
+function showResults(order, kind) {
   if (TT.on) return; // v61: TT/practice use their own overlay
   lastResults = order;
+  const isFighter = kind === 'fighter' || (latest && latest.mode === 'fighter');
   const rows = $('results-rows'); rows.innerHTML = '';
   const medals = ['🥇', '🥈', ''];
   const winner = order[0];
@@ -4488,15 +4493,28 @@ function showResults(order) {
     const div = document.createElement('div');
     div.className = 'rrow' + (i === 0 ? ' win' : '');
     const colHex = '#' + (c.color != null ? c.color : (c.slot === 1 ? 0xe10600 : 0x0d47c8)).toString(16).padStart(6, '0');
-    div.innerHTML = `<span class="medal">${medals[i] || ''}</span>` +
-      `<span class="rname" style="color:${colHex}">${escapeHtml(c.name || ('PLAYER ' + c.slot))}</span>` +
-      `<span class="rtime">${c.finished ? fmtTime(c.t) : 'DNF'}</span>` +
-      `<span class="rbest">best lap ${c.best != null ? fmtTime(c.best) : '--:--.--'}</span>`;
+    if (isFighter) {
+      // v176: a fighter result is health, not a lap time
+      const tag = c.dead ? (tI18n('frOut') || 'OUT') : ((c.hp != null ? c.hp : 0) + ' HP');
+      div.innerHTML = `<span class="medal">${medals[i] || ''}</span>` +
+        `<span class="rname" style="color:${colHex}">${escapeHtml(c.name || ('PLAYER ' + c.slot))}</span>` +
+        `<span class="rtime">${c.dead ? '—' : (tI18n('frSurvivor') || 'SURVIVOR')}</span>` +
+        `<span class="rbest">${tag}</span>`;
+    } else {
+      div.innerHTML = `<span class="medal">${medals[i] || ''}</span>` +
+        `<span class="rname" style="color:${colHex}">${escapeHtml(c.name || ('PLAYER ' + c.slot))}</span>` +
+        `<span class="rtime">${c.finished ? fmtTime(c.t) : 'DNF'}</span>` +
+        `<span class="rbest">best lap ${c.best != null ? fmtTime(c.best) : '--:--.--'}</span>`;
+    }
     rows.appendChild(div);
   });
   // v141: textContent escapes by itself - escapeHtml() here printed the raw entity
   // ("O&#39;Brien") for any name containing & < > or an apostrophe
-  setIcoLabel($('results-title'), winner ? `${winner.name || ('PLAYER ' + winner.slot)} WINS!` : 'RACE RESULTS');
+  setIcoLabel($('results-title'), winner
+    ? (isFighter
+      ? (tI18n('frWinner', { name: winner.name || ('PLAYER ' + winner.slot) }) || ('🏆 FIGHTER RUSH — ' + (winner.name || ('PLAYER ' + winner.slot)) + ' WINS'))
+      : `${winner.name || ('PLAYER ' + winner.slot)} WINS!`)
+    : (isFighter ? (tI18n('frNoSurvivors') || 'FIGHTER RUSH — NO SURVIVORS') : 'RACE RESULTS'));
   // Podium celebration & fanfare
   const myRes = order.find((c) => (c.slot || c.s) === mySlot);
   if (myRes) {
@@ -6517,7 +6535,56 @@ function processEvents(snap) {
           }
         }
         toast(`P${e.slot} finished — ${fmtTime(e.t)}`); break;
-      case 'results': showResults(e.order); break;
+      // ---- v176 FIGHTER RUSH: authoritative combat events ------------------
+      // Only ever emitted while the room's mode is 'fighter'.
+      case 'fxAtk': {
+        if (e.kind === 'drift' || e.kind === 'slam') frRing(e.kind, e.x, e.z, e.r);
+        if (e.armed && e.slot === mySlot) beep(e.kind === 'air' ? 520 : 660, 0.18, 'square', 0.16);
+        if (!e.armed && e.kind === 'ram') { if (e.slot === mySlot) beep(180, 0.25, 'sawtooth', 0.2); if (e.rel) spawnSparks(e.x, e.z, Math.min(1, e.rel / 28)); }
+        break;
+      }
+      case 'fxHit': {
+        frRing('drift', e.x, e.z, e.kind === 'slam' ? 7 : 5.5);
+        spawnSparks(e.x, e.z, Math.min(1, (e.dmg || 10) / 30));
+        if (e.slot === mySlot) {
+          frFlashHit(false);
+          toast((tI18n('frTook', { n: e.dmg }) || ('−' + e.dmg + ' HP')));
+          beep(150, 0.16, 'square', 0.22);
+          try { if (navigator.vibrate) navigator.vibrate(35); } catch (err) {}
+        } else if (e.by === mySlot) {
+          toast((tI18n('frDealt', { n: e.dmg, slot: e.slot, hp: e.hp }) || ('💥 −' + e.dmg + ' HP on P' + e.slot)));
+          beep(880, 0.12, 'sine', 0.2);
+        }
+        frHitSound(e.dmg, e.x, e.z, e.slot === mySlot);
+        break;
+      }
+      case 'fxDown': {
+        if (e.slot === mySlot) { frFlashHit(true); frFollowSlot = 0; }
+        setBanner(tI18n('frDown', { slot: e.slot }) || ('💥 P' + e.slot + ' ELIMINATED'));
+        toast((tI18n('frDownToast', { slot: e.slot, left: e.left }) || ('P' + e.slot + ' is out — ' + e.left + ' left')));
+        beep(180, 0.4, 'triangle', 0.24);
+        break;
+      }
+      case 'fxAir': {
+        spawnSmoke(e.x, (curMap ? getSurfaceY(curMap, e.x, e.z) : 0) + 0.4, e.z, 0, 0, 0.35, false);
+        if (e.slot === mySlot) toast(e.perfect ? (tI18n('frPerfectLand') || '✨ PERFECT LANDING') : (tI18n('frLand') || 'LANDED'));
+        break;
+      }
+      case 'fxJump': {
+        if (e.slot === mySlot) toast(tI18n('frJump') || '🛫 JUMP!');
+        break;
+      }
+      case 'fxCombo': {
+        if (e.slot === mySlot && e.n >= 2) { toast('COMBO x' + e.n + '  ' + (e.what || '')); beep(440 + Math.min(e.n, 9) * 40, 0.07, 'sine', 0.12); }
+        break;
+      }
+      case 'fxNo': {
+        if (e.slot !== mySlot) break;
+        toast(e.why === 'charge' ? (tI18n('frNoCharge') || 'IMPACT not charged yet — keep driving') : (tI18n('frNoState') || 'IMPACT needs a drift, high speed or airtime'));
+        beep(240, 0.1, 'triangle', 0.12);
+        break;
+      }
+      case 'results': showResults(e.order, e.fighter ? 'fighter' : null); break;
     }
   }
   if (snap.banner && snap.banner.seq !== lastBannerSeq && snap.banner.text) lastBannerSeq = snap.banner.seq;
@@ -6535,7 +6602,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v175';
+const BUILD = 'v176';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -6837,7 +6904,10 @@ function backToLobbyAction() {
 }
 function ensureRoomCreated() {
   if (!roomCode || roomCode === '·····') {
-    net.send(Object.assign({ type: 'create_room', mode: viewMode === 'split' ? 'race' : 'race', map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload()));
+    // v176: this used to hardcode 'race' on BOTH sides of the ternary, so a mode
+    // picked before the room existed was silently dropped. It now sends the mode
+    // the player actually selected (Local Duel still maps to a plain race).
+    net.send(Object.assign({ type: 'create_room', mode: viewMode === 'split' ? 'race' : viewMode, map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload()));
   }
 }
 function sendMeta() { if (net.isOpen()) net.send(Object.assign({ type: 'meta' }, identityPayload())); }
@@ -7027,7 +7097,7 @@ window.addEventListener('blur', () => keys.clear());
 let kbAccum = 0;
 
 // v80 mobile solo on-screen touch controls
-const touchInput = { l: 0, r: 0, u: 0, d: 0, nitro: false };
+const touchInput = { l: 0, r: 0, u: 0, d: 0, nitro: false, impact: false };
 // v173: on-screen pedals feed their own brake memory; the two sources are merged
 // in localBrakeAmount() so a keyboard player who taps the pedal is not zeroed out.
 let localTouchBrake = 0;
@@ -7056,6 +7126,7 @@ wireTouchBtn('tc-right', () => { touchInput.r = 1; }, () => { touchInput.r = 0; 
 wireTouchBtn('tc-gas', () => { touchInput.u = 1; }, () => { touchInput.u = 0; });
 wireTouchBtn('tc-brake', () => { touchInput.d = 1; refreshTouchBrake(); }, () => { touchInput.d = 0; refreshTouchBrake(); });
 wireTouchBtn('tc-nitro', () => { touchInput.nitro = true; }, () => { touchInput.nitro = false; });
+wireTouchBtn('tc-impact', () => { touchInput.impact = true; }, () => { touchInput.impact = false; });  // v176 Fighter Rush
 
 // USB/BT gamepad (additive — only used when a pad is connected, keyboard still works)
 function readGamepad() {
@@ -7069,7 +7140,11 @@ function readGamepad() {
     const brake = gp.buttons[6] ? gp.buttons[6].value : ((gp.buttons[1] && gp.buttons[1].pressed) ? 1 : 0);
     const handbrake = !!(gp.buttons[2] && gp.buttons[2].pressed);
     const nitro = !!((gp.buttons[5] && gp.buttons[5].pressed) || (gp.buttons[3] && gp.buttons[3].pressed));
-    if (steer || throttle || brake || handbrake || nitro || (gp.axes[0] && Math.abs(gp.axes[0]) > 0.05)) return { steer: Math.max(-1, Math.min(1, steer)), throttle, brake, handbrake, nitro };
+    // v176 AUDIT FIX: the pad had no IMPACT at all - a gamepad racer could drive
+    // in Fighter Rush but never attack. L1 (button 4) was the only free shoulder.
+    // The field is only ever CONSUMED inside Fighter Rush (see maybeSendKeyboard).
+    const attack = !!(gp.buttons[4] && gp.buttons[4].pressed);
+    if (steer || throttle || brake || handbrake || nitro || attack || (gp.axes[0] && Math.abs(gp.axes[0]) > 0.05)) return { steer: Math.max(-1, Math.min(1, steer)), throttle, brake, handbrake, nitro, attack };
   }
   return null;
 }
@@ -7085,6 +7160,10 @@ function maybeSendKeyboard(dt) {
   let throttle = (keys.has('ArrowUp') || keys.has('KeyW') || touchInput.u) ? 1 : 0;
   let brake = (keys.has('ArrowDown') || keys.has('KeyS') || touchInput.d) ? 1 : 0;
   let handbrake = keys.has('Space'), nitro = keys.has('ShiftLeft') || keys.has('ShiftRight') || touchInput.nitro;
+  // v176 FIGHTER RUSH: the IMPACT press. The HELD level is sent (one field, no extra
+  // messages); the server edge-detects the press, so holding the button is still one
+  // attempt, and the server decides whether it was a legal, charged attack.
+  let attack = frActive() ? frAttackHeld() : false;     // v176: one name, and never called outside Fighter Rush
   const gp = readGamepad();
   if (gp) {
     if (gp.steer) steer = gp.steer;
@@ -7092,11 +7171,14 @@ function maybeSendKeyboard(dt) {
     brake = Math.max(brake, gp.brake);
     handbrake = handbrake || gp.handbrake;
     nitro = nitro || gp.nitro;
+    if (gp.attack && frActive()) attack = true;         // v176 AUDIT FIX: L1, fighter only
   }
   // v173: the wire carries no brake flag, so remember the racer's own pedal for
   // the brake edge (updateAudio); the handbrake counts as braking too.
   localKeyBrake = Math.max(brake, handbrake ? 0.6 : 0);
-  net.send({ type: 'input', steer, throttle, brake, handbrake, nitro });
+  const frame = { type: 'input', steer, throttle, brake, handbrake, nitro };
+  if (frActive()) frame.attack = attack;    // the field only exists in Fighter Rush
+  net.send(frame);
 }
 
 // ---------------------------------------------------------------------------
@@ -7779,7 +7861,11 @@ function placeCar(slot, cs, dt) {
       }
     }
   }
-  const curY = curMap ? getSurfaceY(curMap, v.netX, v.netZ) : 0;
+  // v176: in Fighter Rush the server publishes the airborne height (cs.fx.ay) and
+  // the car rides that arc instead of the surface. cs.fx is absent in every other
+  // mode, so curY is the plain surface height there.
+  const curY = (curMap ? getSurfaceY(curMap, v.netX, v.netZ) : 0)
+    + (cs.fx && cs.fx.air && cs.fx.ay ? Math.max(0, Math.min(14, cs.fx.ay - (curMap ? getSurfaceY(curMap, v.netX, v.netZ) : 0))) : 0);
   const fwdDirX = Math.sin(v.netH), fwdDirZ = Math.cos(v.netH);
   const yFwd = curMap ? getSurfaceY(curMap, v.netX + fwdDirX * 1.5, v.netZ + fwdDirZ * 1.5) : 0;
   const yBwd = curMap ? getSurfaceY(curMap, v.netX - fwdDirX * 1.5, v.netZ - fwdDirZ * 1.5) : 0;
@@ -7905,6 +7991,169 @@ const hEl = (id) => HUD[id] || (HUD[id] = $(id));
 function hText(el, v) { if (el && el.__t !== v) { el.__t = v; el.textContent = v; } }
 function hHTML(el, v) { if (el && el.__h !== v) { el.__h = v; el.innerHTML = v; } }
 function hStyle(el, k, v) { if (el && el['__s' + k] !== v) { el['__s' + k] = v; el.style[k] = v; } }
+
+// ===========================================================================
+// v176 FIGHTER RUSH — client side
+//
+// Everything here is behind frActive(), which is true only while the room's
+// authoritative mode is 'fighter'. Nothing in this block runs, shows or sends
+// anything in the other modes: the HUD panel stays hidden, no fighter event is
+// handled, and the input frame carries no `attack` field.
+// The SERVER owns health, charge, hits and eliminations - this side only reads
+// the snapshot and draws/announces it.
+// ===========================================================================
+const FR_MAX_RINGS = 8;
+const frRings = [];              // pooled expanding shockwave rings
+let frRingGeo = null;
+function frActive() { return !!(latest && latest.mode === 'fighter' && latest.fm); }
+function frMine() { return (latest && latest.cars) ? latest.cars[mySlot - 1] : null; }
+function frMyFx() { const c = frMine(); return c && c.fx ? c.fx : null; }
+function frAliveList() {
+  if (!latest || !latest.cars) return [];
+  return latest.cars.filter((c) => c.p === 1 && !(c.fx && c.fx.dead));
+}
+
+function frRing(kind, x, z, radius) {
+  if (typeof THREE === 'undefined' || !scene) return;
+  if (!frRingGeo) frRingGeo = new THREE.RingGeometry(0.72, 1.0, 40);
+  let slot = frRings.find((r) => !r.alive);
+  if (!slot) {
+    if (frRings.length >= FR_MAX_RINGS) return;             // hard cap: never unbounded
+    const mat = new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+    const mesh = new THREE.Mesh(frRingGeo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.visible = false;
+    worldGroup.add(mesh);
+    slot = { alive: false, mesh, mat, t: 0, life: 1, r: 1 };
+    frRings.push(slot);
+  }
+  const col = kind === 'drift' ? 0xff2e54 : (kind === 'slam' ? 0xffaa00 : 0x00f0ff);
+  slot.mat.color.setHex(col);
+  slot.mat.opacity = 0.85;
+  slot.mesh.position.set(x, (curMap ? getSurfaceY(curMap, x, z) : 0) + 0.35, z);
+  slot.alive = true; slot.t = 0; slot.life = kind === 'slam' ? 0.75 : 0.55; slot.r = radius || 8;
+  slot.mesh.visible = true;
+}
+// heavy impacts reuse the existing crash library through the same helper the
+// races already use, so a fighter hit gets the SAME treatment as any other crash:
+// your own is loud and panned at you, a rival's ducks with distance from the
+// camera, the rate limit alternates crash_1/crash_2, and a build with no samples
+// falls back to the legacy thud instead of going silent.
+function frHitSound(dmg, x, z, mine) {
+  try { playCrashSfx(Math.min(1, (dmg || 10) / 26), !!mine, x, z); } catch (e) {}
+}
+function frUpdateRings(dt) {
+  for (const r of frRings) {
+    if (!r.alive) continue;
+    r.t += dt;
+    const k = r.t / r.life;
+    if (k >= 1) { r.alive = false; r.mesh.visible = false; continue; }
+    const scale = (0.35 + 0.65 * k) * r.r;
+    r.mesh.scale.set(scale, scale, 1);
+    r.mat.opacity = 0.85 * (1 - k);
+  }
+}
+
+// damage feedback: a red vignette that fades, never a permanent overlay
+let frHitT = 0, frHitDown = false;
+function frFlashHit(down) {
+  const el = $('fr-hit');
+  if (!el) return;
+  frHitT = down ? 0.9 : 0.5; frHitDown = !!down;
+  el.classList.add('on');
+  if (down) el.classList.add('down');
+}
+function frUpdateHit(dt) {
+  if (frHitT <= 0) return;
+  frHitT -= dt;
+  if (frHitT > 0) return;
+  const el = $('fr-hit');
+  if (el) { el.classList.remove('on'); if (frHitDown) el.classList.remove('down'); }
+  frHitDown = false;
+}
+
+// one IMPACT control for every input device: E / R on a keyboard, the on-screen
+// button on a touch screen, and the phone's own button (which sends its own frame)
+function frAttackHeld() {
+  return keys.has('KeyE') || keys.has('KeyR') || !!touchInput.impact;
+}
+
+function frUpdateHud(dt) {
+  const panel = $('fr-hud');
+  const dead = $('fr-dead');
+  const hitEl = $('fr-hit');
+  if (!frActive()) {                       // every other mode: nothing fighter is visible
+    if (panel && !panel.hidden) { panel.hidden = true; }
+    if (dead && !dead.hidden) dead.hidden = true;
+    if (hitEl && hitEl.classList.contains('on')) { hitEl.classList.remove('on'); hitEl.classList.remove('down'); }
+    frHitT = 0;
+    const ti = $('tc-impact'); if (ti) ti.hidden = true;
+    for (const r of frRings) { if (r.alive) { r.alive = false; r.mesh.visible = false; } }
+    frFollowSlot = 0;
+    frLastCombo = 0;
+    return;
+  }
+  if (panel && panel.hidden) panel.hidden = false;
+  const fx = frMyFx();
+  const mineS = frMine();
+  const alive = frAliveList().length;
+  if (fx) {
+    hStyle($('fr-hp-fill'), 'width', Math.max(0, Math.min(100, fx.hp)) + '%');
+    hText($('fr-hp-txt'), Math.round(fx.hp) + '%');
+    hStyle($('fr-en-fill'), 'width', Math.max(0, Math.min(100, fx.ch)) + '%');
+    hText($('fr-en-txt'), Math.round(fx.ch) + '%');
+    // v176 AUDIT FIX: the bars are real progressbars now. The value is written only
+    // when the whole percent changes, so assistive tech can read them without the
+    // 30 Hz tick writing to the DOM every frame.
+    const hpNow = Math.round(fx.hp), chNow = Math.round(fx.ch);
+    const hpBar = $('fr-hp-bar'), enBar = $('fr-en-bar');
+    if (hpBar && hpBar.__v !== hpNow) { hpBar.__v = hpNow; hpBar.setAttribute('aria-valuenow', String(Math.max(0, Math.min(100, hpNow)))); }
+    if (enBar && enBar.__v !== chNow) { enBar.__v = chNow; enBar.setAttribute('aria-valuenow', String(Math.max(0, Math.min(100, chNow)))); }
+    hText($('fr-combo'), 'COMBO x' + (fx.cb || 0));
+    const cbEl = $('fr-combo'); if (cbEl && cbEl.__hot !== (fx.cb > 0 ? 1 : 0)) { cbEl.__hot = fx.cb > 0 ? 1 : 0; cbEl.dataset.hot = fx.cb > 0 ? '1' : '0'; }
+    const ready = fx.rd === 1;
+    const rEl = $('fr-ready');
+    if (rEl) {
+      hText(rEl, ready ? 'IMPACT READY' : 'CHARGING');
+      if (rEl.__r !== (ready ? 1 : 0)) { rEl.__r = ready ? 1 : 0; rEl.dataset.ready = ready ? '1' : '0'; }
+    }
+    if (panel && panel.__r !== (ready ? 1 : 0)) { panel.__r = ready ? 1 : 0; panel.dataset.ready = ready ? '1' : '0'; }
+    const state = fx.dead ? 'out' : (fx.rm ? 'ramming' : (fx.air ? 'airborne' : (fx.at === 'air' ? 'slamArmed' : '')));
+    if (state) {
+      const msg = state === 'out' ? tI18n('frEliminated') || 'ELIMINATED'
+        : state === 'ramming' ? tI18n('frRam') || 'SPEED RAM!'
+        : state === 'airborne' ? (tI18n('frAir') || 'AIRBORNE — press IMPACT')
+        : (tI18n('frSlamArmed') || 'SLAM ARMED — land on a rival');
+      hText($('fr-hint'), msg);
+    } else {
+      hText($('fr-hint'), tI18n('frHint') || 'Build impact by driving: speed, drifting, jumps, near misses');
+    }
+    const isTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
+    const showImpact = isTouch && !SPEC_ROOM && !fx.dead && (latest.state === 'racing' || latest.state === 'countdown')
+      && (!latest.controllers || !latest.controllers[mySlot]);
+    const ti = $('tc-impact');
+    if (ti) {
+      if (ti.hidden === showImpact) ti.hidden = !showImpact;
+      if (ti.__r !== (ready ? 1 : 0)) { ti.__r = ready ? 1 : 0; ti.dataset.ready = ready ? '1' : '0'; }
+    }
+    // eliminated -> keep watching the fight instead of a parked car
+    if (fx.dead && !SPEC_ROOM) {
+      const list = frAliveList().slice().sort((a, b) => (b.fx.hp + (b.pr || 0) * 100) - (a.fx.hp + (a.pr || 0) * 100));
+      frFollowSlot = list.length ? list[0].s : 0;
+    } else if (!frFollowSlot) frFollowSlot = 0;
+    if (dead) {
+      const show = fx.dead && !SPEC_ROOM;
+      if (dead.hidden === show) dead.hidden = !show;
+      if (show) hText(dead.querySelector('span'), (tI18n('frSpectating') || 'SPECTATING — last car standing wins'));
+    }
+  }
+  hText($('fr-alive'), 'ALIVE ' + alive + '/' + (latest.cars ? latest.cars.filter((c) => c.p === 1).length : 0));
+  frUpdateRings(dt);
+  frUpdateHit(dt);
+}
+let frFollowSlot = 0;
+let frLastCombo = 0;
+
 let hudPill1 = null, hudPill2 = null;
 function updateHUD(mine, rival) {
   if (!latest || !mine) return;
@@ -7957,17 +8206,39 @@ function updateHUD(mine, rival) {
   const order = standingsFrom(latest);
   const myRank = order.findIndex((c) => c.s === mySlot);
   const LT = raceLapsTotal();
-  let raceStr =
-    `<span id="lapchip">LAP ${Math.min(mine.lap + 1, LT)}<small>/${LT}</small></span>` +
-    (order.length > 1 && myRank >= 0 ? `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">${ordinal(myRank + 1).toUpperCase()}</span>` : '');
-  if (latest.mode === 'drift') raceStr += `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">DRIFT ${mine.drift || 0}</span>`;
+  let raceStr;
+  if (latest.mode === 'fighter') {
+    // v176: Fighter Rush is last-car-standing, so the lap/position chips are
+    // replaced by the one number that matters in this mode.
+    const alive = latest.cars.filter((c) => c.p === 1 && !(c.fx && c.fx.dead)).length;
+    raceStr = `<span id="lapchip">FIGHTER RUSH<small> LAST CAR STANDING</small></span>` +
+      `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">ALIVE ${alive}/${latest.cars.filter((c) => c.p === 1).length}</span>`;
+  } else {
+    raceStr =
+      `<span id="lapchip">LAP ${Math.min(mine.lap + 1, LT)}<small>/${LT}</small></span>` +
+      (order.length > 1 && myRank >= 0 ? `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">${ordinal(myRank + 1).toUpperCase()}</span>` : '');
+    if (latest.mode === 'drift') raceStr += `<span id="poschip" class="${mySlot === 1 ? 'c1' : 'c2'}">DRIFT ${mine.drift || 0}</span>`;
+  }
   hHTML(hEl('raceinfo'), raceStr);
   const row = (c) => `L${Math.min(c.lap + 1, LT)}  ${c.ll != null ? fmtTime(c.ll) : '--:--.--'}  <span class="dim">best ${c.best != null ? fmtTime(c.best) : '--:--.--'}</span>`;
   // v76 live ranking from authoritative snapshot (finished first, then progress)
   const rankCols = ['#ff6b6b', '#64b5f6', '#ffd479', '#7ee78a', '#ff8ae2', '#7ee7ff'];
   const val = (c) => (c.fin ? 1e7 - (c.ft || 0) : (c.pr || 0));
   const ord2 = latest.cars.filter((c) => c.p === 1).slice().sort((a, b) => val(b) - val(a));
-  hHTML(hEl('lap-p1'), ord2.map((c, i) => `<b style="color:${rankCols[i % 6]}">${i + 1}</b> ${c.s === mySlot ? 'YOU' : escapeHtml(c.nm || ('P' + c.s))} <span class="dim">L${Math.min(c.lap + 1, LT)}</span>`).join('<br>'));
+  if (latest.mode === 'fighter') {
+    const fm = latest.cars.filter((c) => c.p === 1).slice().sort((a, b) => {
+      const ad = a.fx && a.fx.dead ? 1 : 0, bd = b.fx && b.fx.dead ? 1 : 0;
+      if (ad !== bd) return ad - bd;                      // the dead are listed last
+      return ((b.fx ? b.fx.hp : 0) - (a.fx ? a.fx.hp : 0)) || (val(b) - val(a));
+    });
+    hHTML(hEl('lap-p1'), fm.map((c, i) => {
+      const hp = c.fx ? Math.round(c.fx.hp) : 0;
+      const tag = c.fx && c.fx.dead ? '<span class="dim">OUT</span>' : `<span class="dim">${hp} HP</span>`;
+      return `<b style="color:${rankCols[i % 6]}">${i + 1}</b> ${c.s === mySlot ? 'YOU' : escapeHtml(c.nm || ('P' + c.s))} ${tag}`;
+    }).join('<br>'));
+  } else {
+    hHTML(hEl('lap-p1'), ord2.map((c, i) => `<b style="color:${rankCols[i % 6]}">${i + 1}</b> ${c.s === mySlot ? 'YOU' : escapeHtml(c.nm || ('P' + c.s))} <span class="dim">L${Math.min(c.lap + 1, LT)}</span>`).join('<br>'));
+  }
   hStyle(hEl('lap-p2'), 'display', 'none');
   hStyle(hEl('speedlines'), 'opacity', String(prefs.rm ? 0 : clamp((Math.abs(mine.v) - 26) / 34, 0, 0.6)));
   const isTouchDev = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
@@ -8451,7 +8722,10 @@ document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click'
   viewMode = m;
   document.querySelectorAll('.mode-btn').forEach((x) => x.classList.toggle('active', x === b));
   if (m === 'split') { splitScreen = true; net.send({ type: 'mode', mode: 'race' }); toast('🏁 LOCAL DUEL — connect 2 phones, press START'); }
-  else { splitScreen = false; net.send({ type: 'mode', mode: m }); }
+  else if (m === 'fighter') {                                   // v176
+    splitScreen = false; net.send({ type: 'mode', mode: 'fighter' });
+    toast(tI18n('frModeToast') || '⚔️ FIGHTER RUSH — your driving is your weapon. Last car standing wins.');
+  } else { splitScreen = false; net.send({ type: 'mode', mode: m }); }
   const div = $('split-divider'); if (div) div.style.display = splitScreen ? '' : 'none';
 }));
 document.querySelectorAll('.map-btn').forEach((b) => b.addEventListener('click', () => net.send({ type: 'map', map: parseInt(b.dataset.map, 10) })));
@@ -8632,6 +8906,11 @@ function frameBody() {
     }
   }
   const mine = interpState(mySlot);
+  // v176 FIGHTER RUSH: once knocked out the player keeps watching - the camera
+  // follows the current leader instead of their own parked car. Zero in every
+  // other mode, so `camCar` is simply `mine` everywhere else.
+  let camCar = mine;
+  if (frActive() && frFollowSlot) { const f = interpState(frFollowSlot); if (f) camCar = f; }
   let rival = null; // v76: nearest other racer
   if (latest && latest.cars) {
     const myC = latest.cars[mySlot - 1];
@@ -8650,9 +8929,10 @@ function frameBody() {
   updateAudio(mine, rival);
   checkPassBy(dt);            // v173 opponent pass-by (self-throttled to 10 Hz)
   updateHUD(mine, rival);
+  frUpdateHud(dt);            // v176: no-ops (and hides itself) outside Fighter Rush
   ttHudUpdate(mine); // v61
   maybeSendKeyboard(dt);
-  if (splitScreen) { renderSplit(dt); } else { updateCamera(dt, mine, rival); renderMain(); }
+  if (splitScreen) { renderSplit(dt); } else { updateCamera(dt, camCar || mine, rival); renderMain(); }
   if (!bootHidden) {
     bootHidden = true;
     const bs = document.getElementById('boot-splash');

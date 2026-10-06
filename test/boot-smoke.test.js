@@ -401,3 +401,310 @@ test('v140: an unavailable WebGL renderer explains itself instead of dying silen
   assert.ok(errors.some((e) => /WebGL unavailable/i.test(e)), 'the failure is reported as an error, not swallowed');
 });
 
+
+/* ============================================================================
+   v176 FIGHTER RUSH — the client half, run for real.
+
+   The simulation tests (test/fighter-rush.test.js) prove what the SERVER
+   decides. This section proves what a browser does with it, and it is the part
+   that would have caught a plain typo in a helper name: the whole real client is
+   booted, a real fighter snapshot stream is ingested, and the HUD, the input
+   frame and the event handling are inspected afterwards.
+   ========================================================================== */
+
+// a fighter wire frame, exactly as shared/game-core.js decorates it
+function frCar(slot, opts) {
+  const o = opts || {};
+  return {
+    s: slot, x: -40 + slot * 3, z: 5, h: 0.1, v: 22, sl: 0, st: 0, th: 1, n: 0, m: 0,
+    lap: 0, ll: null, best: null, fin: 0, ft: null, p: o.p == null ? 1 : o.p, pr: 0,
+    drift: 0, elim: 0, col: 0xe10600, dc: 0, wh: 0, tr: 0, b: 1, nm: 'FIGHTER ' + slot,
+    fx: {
+      hp: o.hp == null ? 82 : o.hp, ch: o.ch == null ? 65 : o.ch, cb: o.cb == null ? 4 : o.cb,
+      rd: o.rd == null ? 1 : o.rd, air: o.air || 0, ay: 0, at: o.at || '',
+      rm: o.rm || 0, ht: o.ht || 0, dead: o.dead || 0
+    }
+  };
+}
+function fighterState(over) {
+  return Object.assign({
+    type: 'state', code: 'FIGHT', mode: 'fighter', map: 0, state: 'racing', raceTime: 12.5,
+    controllers: {}, bot: false, weather: 'clear', laps: 3,
+    fm: { alive: 2, contest: 1, cost: 40, hpMax: 100 },
+    cars: [frCar(1), frCar(2, { hp: 61, ch: 12, cb: 0, rd: 0 })],
+    events: []
+  }, over || {});
+}
+const inputFrames = (ws) => ws.sent.map((s) => { try { return JSON.parse(s); } catch (e) { return null; } })
+  .filter((m) => m && m.type === 'input');
+const settleFrames = async (n) => { for (let i = 0; i < (n || 6); i++) await new Promise((r) => setTimeout(r, 20)); };
+
+test('v176: a fighter snapshot drives the fighter HUD, and a race snapshot hides it', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  const $ = (id) => window.document.getElementById(id);
+  const ws = sockets[0];
+  ws._open();
+  ws._msg({ type: 'welcome', role: 'screen', slot: 1, code: 'FIGHT', mode: 'fighter', state: 'waiting' });
+
+  // nothing fighter-ish is visible in a normal race
+  ws._msg({ type: 'state', code: 'FIGHT', mode: 'race', map: 0, state: 'racing', controllers: {}, cars: [{ s: 1, x: 0, z: 0, h: 0, v: 20, p: 1, nm: 'A', lap: 0, pr: 0 }], events: [] });
+  await settleFrames(4);
+  assert.equal($('fr-hud').hidden, true, 'the fighter HUD is hidden in a race');
+  assert.equal($('fr-dead').hidden, true, 'and so is the knocked-out banner');
+
+  // now the fighter stream
+  ws._msg(fighterState());
+  await settleFrames(6);
+  assert.equal($('fr-hud').hidden, false, 'the fighter HUD is shown in Fighter Rush');
+  assert.equal($('fr-hp-txt').textContent, '82%', 'health bar reads the snapshot');
+  assert.equal($('fr-hp-fill').style.width, '82%');
+  assert.equal($('fr-en-txt').textContent, '65%');
+  assert.equal($('fr-en-fill').style.width, '65%');
+  assert.equal($('fr-combo').textContent, 'COMBO x4');
+  assert.equal($('fr-ready').textContent, 'IMPACT READY', 'the impact meter says when the charge is ready');
+  assert.equal($('fr-ready').dataset.ready, '1');
+  assert.equal($('fr-alive').textContent, 'ALIVE 2/2', 'the remaining-fighter count is on screen');
+  const ri = $('raceinfo').textContent || '';
+  assert.match(ri, /FIGHTER RUSH/, 'the mode banner replaces the lap chip');
+  assert.match(ri, /ALIVE 2\/2/);
+
+  // charging state
+  ws._msg(fighterState({ cars: [frCar(1, { ch: 10, rd: 0 }), frCar(2)] }));
+  await settleFrames(3);
+  assert.equal($('fr-ready').textContent, 'CHARGING');
+  assert.equal($('fr-ready').dataset.ready, '0');
+
+  // back to a race: everything fighter must disappear again
+  ws._msg({ type: 'state', code: 'FIGHT', mode: 'race', map: 0, state: 'racing', controllers: {}, cars: [{ s: 1, x: 0, z: 0, h: 0, v: 20, p: 1, nm: 'A', lap: 0, pr: 0 }], events: [] });
+  await settleFrames(4);
+  assert.equal($('fr-hud').hidden, true, 'switching back to a race mode hides the fighter HUD');
+  assert.equal($('fr-dead').hidden, true);
+  assert.deepStrictEqual(errors, [], 'the stream raised: ' + errors.join(' | '));
+});
+
+test('v176: IMPACT is a real input, and only ever exists in Fighter Rush', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  const ws = sockets[0];
+  ws._open();
+  ws._msg({ type: 'welcome', role: 'screen', slot: 1, code: 'FIGHT', mode: 'fighter', state: 'racing' });
+  ws._msg(fighterState());
+  await settleFrames(6);
+
+  const key = (type, code) => window.dispatchEvent(new window.KeyboardEvent(type, { code, bubbles: true }));
+  key('keydown', 'KeyE');
+  await settleFrames(4);
+  let frames = inputFrames(ws);
+  assert.ok(frames.length > 0, 'the keyboard really is driving the car over the wire');
+  assert.equal(frames[frames.length - 1].attack, true, 'holding IMPACT sends attack:true');
+  key('keyup', 'KeyE');
+  await settleFrames(4);
+  frames = inputFrames(ws);
+  assert.equal(frames[frames.length - 1].attack, false, 'releasing it sends attack:false - it is a level, the server edge-detects it');
+
+  // the same keys in a plain race must never put an attack on the wire
+  ws._msg({ type: 'state', code: 'FIGHT', mode: 'race', map: 0, state: 'racing', controllers: {}, cars: [{ s: 1, x: 0, z: 0, h: 0, v: 20, p: 1, nm: 'A', lap: 0, pr: 0 }], events: [] });
+  await settleFrames(3);
+  const before = inputFrames(ws).length;
+  key('keydown', 'KeyE');
+  await settleFrames(6);
+  frames = inputFrames(ws).slice(before);
+  assert.ok(frames.length > 0, 'the race is still sending input');
+  for (const f of frames) {
+    assert.equal(Object.prototype.hasOwnProperty.call(f, 'attack'), false, 'no attack field leaks into a race frame');
+  }
+  assert.deepStrictEqual(errors, [], 'raised: ' + errors.join(' | '));
+});
+
+test('v176: hits, eliminations and the victory screen are drawn from server events', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  const $ = (id) => window.document.getElementById(id);
+  const ws = sockets[0];
+  ws._open();
+  ws._msg({ type: 'welcome', role: 'screen', slot: 1, code: 'FIGHT', mode: 'fighter', state: 'racing' });
+  ws._msg(fighterState());
+  await settleFrames(4);
+
+  // a rival's attack connects with me: vignette + the damage toast
+  ws._msg(fighterState({ events: [{ type: 'fxAtk', slot: 2, kind: 'ram', armed: 0, rel: 26, x: -30, z: 5, r: 1.9 }] }));
+  await settleFrames(2);
+  ws._msg(fighterState({ cars: [frCar(1, { hp: 42, ht: 1 }), frCar(2)], events: [
+    { type: 'fxHit', slot: 1, by: 2, kind: 'ram', dmg: 40, hp: 42, x: -30, z: 5, kx: 0, kz: 0 }
+  ] }));
+  await settleFrames(3);
+  assert.equal($('fr-hit').classList.contains('on'), true, 'taking a hit flashes the damage vignette');
+  assert.equal($('fr-hp-txt').textContent, '42%', 'and the health bar follows it down');
+
+  // every other fighter event must be ingested (particles, rings, toasts, audio)
+  ws._msg(fighterState({ events: [
+    { type: 'fxCombo', slot: 1, n: 5, what: 'PERFECT LANDING' },
+    { type: 'fxJump', slot: 1, x: -30, z: 5, v: 6 },
+    { type: 'fxAir', slot: 1, air: 0.8, perfect: 1, x: -30, z: 5 },
+    { type: 'fxNo', slot: 1, why: 'charge' },
+    { type: 'fxAtk', slot: 1, kind: 'drift', armed: 0, x: -30, z: 5, r: 9.5 },
+    { type: 'fxAtk', slot: 1, kind: 'slam', armed: 0, air: 0.9, x: -30, z: 5, r: 8.5 }
+  ] }));
+  await settleFrames(4);
+
+  // I get knocked out: the KO banner, then the spectator camera on a live car
+  ws._msg(fighterState({ fm: { alive: 1, contest: 1, cost: 40, hpMax: 100 }, cars: [frCar(1, { hp: 0, ch: 0, cb: 0, rd: 0, dead: 1 }), frCar(2, { hp: 61 })], events: [
+    { type: 'fxDown', slot: 1, by: 2, left: 1 }
+  ] }));
+  await settleFrames(4);
+  assert.equal($('fr-dead').hidden, false, 'the knocked-out banner is shown');
+  assert.match($('fr-dead').textContent || '', /SPECTATING/i);
+  assert.equal($('fr-alive').textContent, 'ALIVE 1/2');
+  assert.deepStrictEqual(errors, [], 'raised: ' + errors.join(' | '));
+
+  // and the match ends with the fighter results table
+  ws._msg(fighterState({ state: 'finished', fm: { alive: 1, contest: 1, cost: 40, hpMax: 100 }, events: [
+    { type: 'results', fighter: 1, order: [
+      { slot: 2, name: 'FIGHTER 2', color: 0x0d47c8, finished: false, t: null, best: null, hp: 61, dead: 0, fighter: 1 },
+      { slot: 1, name: 'FIGHTER 1', color: 0xe10600, finished: false, t: null, best: null, hp: 0, dead: 1, fighter: 1 }
+    ] }
+  ] }));
+  await settleFrames(5);
+  assert.equal($('fr-hit').classList.contains('on'), false || true, 'no crash while ending');
+  const title = $('results-title').textContent || '';
+  assert.match(title, /FIGHTER RUSH/, 'the end screen is labelled as Fighter Rush (got: ' + title + ')');
+  assert.deepStrictEqual(errors, [], 'raised: ' + errors.join(' | '));
+});
+
+// AUDIT phase 14: a racer chooses their own name, so every place the client renders
+// someone else's name is an injection surface. The server caps the length; the
+// escaping has to happen here. This drives the real client with hostile names and
+// asserts nothing executes and nothing becomes markup.
+test('v176: a hostile racer name is rendered as text, never as markup', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  const $ = (id) => window.document.getElementById(id);
+  const ws = sockets[0];
+  const EVIL = '<img src=x onerror="window.__pwned=1"><script>window.__pwned2=1</script>';
+  ws._open();
+  ws._msg({ type: 'welcome', role: 'screen', slot: 1, code: 'FIGHT', mode: 'fighter', state: 'racing' });
+  ws._msg(fighterState({ cars: [frCar(1), Object.assign(frCar(2), { nm: EVIL })] }));
+  await settleFrames(5);
+
+  // the match ends with an evil name in the results order and in the banner
+  ws._msg(fighterState({ state: 'finished', fm: { alive: 1, contest: 1, cost: 40, hpMax: 100 }, events: [
+    { type: 'results', fighter: 1, order: [
+      { slot: 2, name: EVIL, color: 0x0d47c8, finished: false, t: null, best: null, hp: 61, dead: 0, fighter: 1 },
+      { slot: 1, name: 'ME', color: 0xe10600, finished: false, t: null, best: null, hp: 0, dead: 1, fighter: 1 }
+    ] }
+  ] }));
+  await settleFrames(6);
+
+  assert.equal(window.__pwned, undefined, 'no onerror handler ran');
+  assert.equal(window.__pwned2, undefined, 'no script element ran');
+  assert.equal(window.document.querySelectorAll('#results-rows img, #results-rows script').length, 0, 'no element was injected into the results table');
+  assert.equal($('banner').querySelectorAll('img, script').length, 0, 'and none into the winner banner');
+  const text = ($('results-rows').textContent || '') + ($('banner').textContent || '');
+  assert.ok(text.includes('<img src=x'), 'the hostile name is shown literally instead');
+  assert.deepStrictEqual(errors, [], 'raised: ' + errors.join(' | '));
+});
+
+test('v176: the on-screen IMPACT button appears for a touch device, and never for a race', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  const $ = (id) => window.document.getElementById(id);
+  Object.defineProperty(window, 'ontouchstart', { value: null, configurable: true });
+  const ws = sockets[0];
+  ws._open();
+  ws._msg({ type: 'welcome', role: 'screen', slot: 1, code: 'FIGHT', mode: 'fighter', state: 'racing' });
+  ws._msg(fighterState());
+  await settleFrames(6);
+  assert.equal($('tc-impact').hidden, false, 'a touch device gets the IMPACT control');
+  assert.equal($('tc-impact').dataset.ready, '1', 'and it shows when the charge is ready');
+
+  ws._msg(fighterState({ cars: [frCar(1, { ch: 5, rd: 0 }), frCar(2)] }));
+  await settleFrames(3);
+  assert.equal($('tc-impact').dataset.ready, '0');
+
+  // pressing the on-screen button is what sends the attack: hold it down, and the
+  // very next input frame must carry it - exactly like the physical phone button
+  const btn = $('tc-impact');
+  btn.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+  await settleFrames(4);
+  let frames = inputFrames(ws);
+  assert.ok(frames.length > 0, 'the touch controls drive the car');
+  assert.equal(frames[frames.length - 1].attack, true, 'holding the on-screen IMPACT sends attack:true');
+  btn.dispatchEvent(new window.PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+  await settleFrames(4);
+  frames = inputFrames(ws);
+  assert.equal(frames[frames.length - 1].attack, false, 'letting go stops it (no stuck input)');
+
+  ws._msg({ type: 'state', code: 'FIGHT', mode: 'race', map: 0, state: 'racing', controllers: {}, cars: [{ s: 1, x: 0, z: 0, h: 0, v: 20, p: 1, nm: 'A', lap: 0, pr: 0 }], events: [] });
+  await settleFrames(4);
+  assert.equal($('tc-impact').hidden, true, 'the button is gone outside Fighter Rush');
+  assert.deepStrictEqual(errors, [], 'raised: ' + errors.join(' | '));
+});
+
+// v176 AUDIT FIX: the pad could drive but never attack. L1 (button 4) is IMPACT,
+// and the field must still only exist while the room is a fighter room.
+test('v176: a gamepad can use the IMPACT charge (L1), and only in Fighter Rush', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  const ws = sockets[0];
+  // one connected pad, nothing pressed except L1
+  const pad = { connected: true, axes: [0, 0, 0, 0], buttons: Array.from({ length: 16 }, () => ({ pressed: false, value: 0 })) };
+  Object.defineProperty(window.navigator, 'getGamepads', { value: () => [pad], configurable: true });
+  pad.buttons[4] = { pressed: true, value: 1 };
+  ws._open();
+  ws._msg({ type: 'welcome', role: 'screen', slot: 1, code: 'FIGHT', mode: 'fighter', state: 'racing' });
+  ws._msg(fighterState());
+  await settleFrames(6);
+  let frames = inputFrames(ws);
+  assert.ok(frames.length > 0, 'the pad is read every input frame');
+  assert.equal(frames[frames.length - 1].attack, true, 'L1 sends attack:true');
+
+  // release it: no stuck attack
+  pad.buttons[4] = { pressed: false, value: 0 };
+  await settleFrames(4);
+  frames = inputFrames(ws);
+  assert.equal(frames[frames.length - 1].attack, false, 'releasing L1 stops the attack');
+
+  // and the very same pad in a race sends no attack field at all
+  ws._msg({ type: 'state', code: 'FIGHT', mode: 'race', map: 0, state: 'racing', controllers: {}, cars: [{ s: 1, x: 0, z: 0, h: 0, v: 20, p: 1, nm: 'A', lap: 0, pr: 0 }], events: [] });
+  pad.buttons[4] = { pressed: true, value: 1 };
+  await settleFrames(5);
+  frames = inputFrames(ws);
+  assert.ok(frames.length > 0);
+  assert.ok(!('attack' in frames[frames.length - 1]), 'a race frame never carries the attack field');
+  assert.deepStrictEqual(errors, [], 'raised: ' + errors.join(' | '));
+});
+
+// v176 AUDIT FIX: assistive tech can read the bars on demand, and the live region is
+// the footer only - the bars repaint every frame, so a polite region around them would
+// have announced non-stop.
+test('v176: the health and energy bars are readable progressbars, with no chatty live region', { skip: SKIP }, async (t) => {
+  const { window, errors, sockets, dom } = boot();
+  t.after(() => dom.window.close());
+  const $ = (id) => window.document.getElementById(id);
+  const ws = sockets[0];
+  ws._open();
+  ws._msg({ type: 'welcome', role: 'screen', slot: 1, code: 'FIGHT', mode: 'fighter', state: 'racing' });
+  ws._msg(fighterState());
+  await settleFrames(6);
+  assert.equal($('fr-hud').getAttribute('aria-live'), null, 'the panel itself is not a live region');
+  assert.equal($('fr-hud').querySelector('.fr-foot').getAttribute('aria-live'), 'polite', 'the footer is, so ready/eliminated are announced');
+  for (const [bar, val] of [['fr-hp-bar', 'fr-hp-fill'], ['fr-en-bar', 'fr-en-fill']]) {
+    assert.equal($(bar).getAttribute('role'), 'progressbar', bar + ' is a progressbar');
+    assert.equal($(bar).getAttribute('aria-valuemin'), '0');
+    assert.equal($(bar).getAttribute('aria-valuemax'), '100');
+    assert.ok($(bar).getAttribute('aria-labelledby'), bar + ' is labelled');
+    assert.ok($(val), 'the visual fill is still there');
+  }
+  // the fixture racer is at 82 % health and 65 % charge
+  assert.equal($('fr-hp-bar').getAttribute('aria-valuenow'), '82', 'health reads what the server sent');
+  assert.equal($('fr-en-bar').getAttribute('aria-valuenow'), '65', 'so does the charge');
+  ws._msg(fighterState({ cars: [frCar(1, { hp: 55, ch: 33 }), frCar(2)] }));
+  await settleFrames(4);
+  assert.equal($('fr-hp-bar').getAttribute('aria-valuenow'), '55', 'damage moves the readable value');
+  assert.equal($('fr-en-bar').getAttribute('aria-valuenow'), '33', 'so does the charge');
+  assert.equal($('fr-hp-txt').textContent, '55%', 'and the visible percentage agrees');
+  // the desktop hint exists and names a key
+  assert.equal($('fr-key').textContent.trim(), 'E', 'a keyboard player is told which key attacks');
+  assert.deepStrictEqual(errors, [], 'raised: ' + errors.join(' | '));
+});

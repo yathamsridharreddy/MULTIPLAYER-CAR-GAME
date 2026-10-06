@@ -2403,6 +2403,99 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
   transition: width 0.12s linear;
 }
 
+/* ===========================================================================
+   v176 FIGHTER RUSH — "your driving is your weapon"
+   The panel is hidden by default and shown only while the active mode is
+   Fighter Rush, so every other mode's HUD is exactly what it was.
+   =========================================================================== */
+#fr-hud {
+  position: absolute;
+  left: 16px;
+  bottom: 128px;
+  width: 260px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--bg-glass-highlight);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  font-family: var(--font-display);
+  z-index: 6;
+  pointer-events: none;
+}
+#fr-hud[hidden] { display: none; }
+.fr-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.fr-row:last-child { margin-bottom: 0; }
+.fr-lbl {
+  width: 52px; flex: 0 0 52px;
+  font-size: 9px; letter-spacing: 0.08em; font-weight: 700;
+  color: var(--text-dim, rgba(255, 255, 255, 0.55));
+}
+.fr-bar {
+  flex: 1 1 auto; height: 9px; border-radius: var(--radius-pill);
+  background: var(--bg-glass-inset); overflow: hidden;
+  border: 1px solid var(--bg-glass-highlight);
+}
+.fr-fill { height: 100%; width: 100%; border-radius: var(--radius-pill); transition: width 0.14s linear; }
+.fr-fill.hp { background: linear-gradient(90deg, var(--apex-crimson) 0%, #ff7a3c 55%, var(--velocity-gold) 100%); box-shadow: 0 0 12px var(--apex-crimson-glow); }
+.fr-fill.en { background: linear-gradient(90deg, #0284c7 0%, var(--cyber-cyan) 60%, var(--boost-emerald) 100%); box-shadow: 0 0 12px var(--cyber-cyan-glow); }
+#fr-hp-txt, #fr-en-txt { font-size: 10px; font-weight: 700; min-width: 34px; text-align: right; }
+.fr-foot { justify-content: space-between; gap: 6px; margin-top: 2px; }
+.fr-combo { font-size: 11px; font-weight: 800; color: var(--velocity-gold); letter-spacing: 0.04em; }
+.fr-combo[data-hot="1"] { text-shadow: 0 0 10px var(--velocity-gold-glow); }
+.fr-ready { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; color: var(--text-dim, rgba(255, 255, 255, 0.55)); }
+.fr-ready[data-ready="1"] { color: var(--boost-emerald); text-shadow: 0 0 12px var(--boost-emerald-glow); animation: frReady 0.9s infinite alternate; }
+.fr-alive { font-size: 10px; font-weight: 700; color: var(--cyber-cyan); }
+.fr-hint { margin-top: 6px; font-size: 9px; line-height: 1.35; color: var(--text-dim, rgba(255, 255, 255, 0.5)); }
+#fr-hud[data-ready="1"] .fr-hint { display: none; }
+@keyframes frReady { from { opacity: 0.65; } to { opacity: 1; } }
+
+/* damage feedback: a red flash when the LOCAL car is hit */
+#fr-hit {
+  position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(255, 46, 84, 0) 35%, rgba(255, 46, 84, 0.55) 100%);
+    transition: opacity 0.18s ease-out;
+}
+#fr-hit.on { opacity: 1; transition: opacity 0.04s linear; }
+#fr-hit.down { background: radial-gradient(ellipse at center, rgba(255, 46, 84, 0.15) 20%, rgba(120, 0, 20, 0.75) 100%); }
+
+/* eliminated: a quiet banner, the player keeps watching the fight */
+#fr-dead {
+  position: absolute; left: 50%; top: 18%; transform: translateX(-50%);
+  text-align: center; font-family: var(--font-display); z-index: 7; pointer-events: none;
+}
+#fr-dead[hidden] { display: none; }
+#fr-dead b { display: block; font-size: 26px; font-weight: 900; color: var(--apex-crimson); letter-spacing: 0.06em; text-shadow: 0 0 18px var(--apex-crimson-glow); }
+#fr-dead span { display: block; margin-top: 4px; font-size: 11px; letter-spacing: 0.05em; color: rgba(255, 255, 255, 0.7); }
+
+/* touch IMPACT button (only ever unhidden in Fighter Rush) */
+.tc-btn.tc-impact { background: linear-gradient(180deg, rgba(255, 122, 60, 0.35), rgba(255, 46, 84, 0.35)); border-color: var(--apex-crimson); }
+.tc-btn.tc-impact[data-ready="0"] { opacity: 0.45; }
+
+/* mobile / small screens: the panel sits above the speedo and stays readable */
+@media (max-width: 760px) {
+  #fr-hud { left: 8px; right: 8px; width: auto; bottom: 92px; padding: 8px 10px; }
+  .fr-lbl { width: 46px; flex-basis: 46px; font-size: 8px; }
+  .fr-hint { display: none; }
+  #fr-dead { top: 12%; }
+  #fr-dead b { font-size: 20px; }
+}
+@media (max-width: 420px) {
+  #fr-hud { bottom: 86px; }
+  .fr-lbl { width: 40px; flex-basis: 40px; }
+}
+
+/* v176: the keyboard hint. A desktop player has no IMPACT button on screen, so the
+   footer carries the key; a touch device has the real button instead, and a phone or
+   tablet never sees this. Purely additive - it sits inside the fighter-only panel. */
+.fr-key {
+  margin-left: auto; padding: 1px 7px; border-radius: 5px; font: 700 11px/1.6 'Rajdhani', system-ui, sans-serif;
+  color: #cfe9ff; background: rgba(120, 200, 255, 0.12); border: 1px solid rgba(120, 200, 255, 0.35);
+  letter-spacing: 0.04em;
+}
+@media (pointer: coarse) { .fr-key { display: none; } }
+
 #nitro-fill.burn {
   background: linear-gradient(90deg, #ff2e54 0%, #ff8500 50%, #ffd479 100%);
   box-shadow: 0 0 24px var(--apex-crimson);

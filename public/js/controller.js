@@ -6,7 +6,8 @@ const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dz = (v) => (Math.abs(v) < 0.07 ? 0 : v);
 
-const state = { steer: 0, throttle: 0, brake: 0, hb: false, nitro: false, slot: null, full: false, gyro: false };
+const state = { steer: 0, throttle: 0, brake: 0, hb: false, nitro: false, impact: false, slot: null, full: false, gyro: false };
+let ctrlMode = '';   // v176: the room's authoritative mode, from telemetry
 let vibOn = true; try { vibOn = localStorage.getItem('sr_vib') !== '0'; } catch (e) {}
 function vibrate(ms) { try { if (vibOn && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
 
@@ -114,6 +115,10 @@ function holdButton(id, down, up) {
 }
 holdButton('btn-hb', () => { state.hb = true; }, () => { state.hb = false; });
 holdButton('btn-nitro', () => { state.nitro = true; vibrate(30); }, () => { state.nitro = false; });
+// v176 FIGHTER RUSH: IMPACT. A press is sent straight away (not on the next 33 ms
+// tick) so a quick tap is never swallowed, and the server decides whether the
+// attack was legal - the phone only ever reports the intent.
+holdButton('btn-impact', () => { state.impact = true; vibrate(25); sendInput(); }, () => { state.impact = false; });
 holdButton('btn-cam', () => net.send({ type: 'button', action: 'cam', pressed: true }));
 holdButton('btn-reset', () => net.send({ type: 'button', action: 'reset', pressed: true }));
 holdButton('btn-horn', () => net.send({ type: 'button', action: 'horn', pressed: true }));
@@ -153,6 +158,13 @@ const net = new RoomLink({
       $('speed-val').textContent = d.speed;
       $('nitro-fill').style.width = (d.nitro || 0) + '%';
       const bits = [];
+      ctrlMode = d.mode || '';
+      // v176: the IMPACT control exists only while a Fighter Rush match is running
+      const imp = $('btn-impact');
+      if (imp) {
+        const want = ctrlMode === 'fighter';
+        if (imp.hidden === want) imp.hidden = !want;
+      }
       if (d.mode === 'race' || d.mode === 'elim' || d.mode === 'drift') bits.push('Lap ' + (d.lap || ''));
       if (d.rank) bits.push(d.rank);
       if (d.best) bits.push('Best ' + d.best);
@@ -190,7 +202,7 @@ const net = new RoomLink({
 // car driving itself on the track.
 function releaseAll() {
   state.steer = state.throttle = state.brake = 0;
-  state.hb = state.nitro = false;
+  state.hb = state.nitro = false; state.impact = false;   // v176
   heldButtons.forEach((el) => el.classList.remove('pressed'));
   heldButtons.clear();
   for (const rel of stickReleases) rel();
@@ -219,10 +231,13 @@ $('join-btn').addEventListener('click', () => { const c = $('room-input').value.
 $('room-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('join-btn').click(); });
 
 // send input at ~30 Hz
-setInterval(() => {
+function sendInput() {
   if (!net.isOpen() || state.full || state.slot == null) return;
-  net.send({ type: 'input', steer: dz(state.steer), throttle: dz(state.throttle), brake: dz(state.brake), handbrake: state.hb, nitro: state.nitro });
-}, 33);
+  const frame = { type: 'input', steer: dz(state.steer), throttle: dz(state.throttle), brake: dz(state.brake), handbrake: state.hb, nitro: state.nitro };
+  if (ctrlMode === 'fighter') frame.attack = state.impact;   // v176: only in Fighter Rush
+  net.send(frame);
+}
+setInterval(sendInput, 33);
 
 // v140 PRODUCTION FIX — a phone that slept is not necessarily still connected.
 // This used to only zero the stick on hide. On most phones the socket is a zombie

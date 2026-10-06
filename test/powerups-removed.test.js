@@ -105,7 +105,12 @@ test('v175: the removal is documented and the version moved with it', () => {
   const readme = read('README.md');
   assert.match(readme, /- \*\*v175\*\* — the power-ups are gone/);
   const build = (GAME.match(/const BUILD = '(v\d+)'/) || [])[1];
-  assert.equal(build, 'v175', 'the client changed, so returning users must be sent the new build');
+  // v176: the version moved again, so this asserts the intent instead of the digit -
+  // the marker must have advanced past v175, the newest README entry must be that
+  // same version, and every caching surface must agree with it.
+  const newest = (readme.match(/^- \*\*(v\d+)\*\* —/m) || [])[1];
+  assert.notEqual(build, 'v175', 'the client changed, so returning users must be sent a new build');
+  assert.equal(newest, build, 'the newest README entry documents the build that ships');
   const audio = read('public/js/audio.js');
   assert.equal((audio.match(/const BUILD = '(v\d+)'/) || [])[1], build);
   assert.equal((read('public/sw.js').match(/const CACHE = 'sridhar-rush-(v\d+)'/) || [])[1], build);

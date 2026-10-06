@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap" media="print" onload="this.media='all'"/>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@400;700&display=swap"/></noscript>
-  <link rel="stylesheet" href="css/style.css?v=175"/>
+  <link rel="stylesheet" href="css/style.css?v=176"/>
 </head>
 <body>
   <div id="boot-splash">
@@ -87,6 +87,34 @@
       <div id="lap-p2"></div>
     </div>
 
+    <!-- v176 FIGHTER RUSH: only ever shown while the active mode is Fighter Rush.
+         Health / impact charge / combo / attack-ready, plus who is left. -->
+    <!-- v176: the bars are progressbars (a screen reader can read them on demand);
+         the live region is the footer only, because the bars repaint every frame and
+         a polite region on the whole panel would announce continuously. -->
+    <div id="fr-hud" hidden>
+      <div class="fr-row fr-hp">
+        <span class="fr-lbl" id="fr-hp-lbl" data-i18n="frHealth">HEALTH</span>
+        <div class="fr-bar" id="fr-hp-bar" role="progressbar" aria-labelledby="fr-hp-lbl" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="fr-hp-fill" class="fr-fill hp"></div></div>
+        <b id="fr-hp-txt">100%</b>
+      </div>
+      <div class="fr-row fr-en">
+        <span class="fr-lbl" id="fr-en-lbl" data-i18n="frEnergy">ENERGY</span>
+        <div class="fr-bar" id="fr-en-bar" role="progressbar" aria-labelledby="fr-en-lbl" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="fr-en-fill" class="fr-fill en"></div></div>
+        <b id="fr-en-txt">0%</b>
+      </div>
+      <div class="fr-row fr-foot" aria-live="polite">
+        <span id="fr-combo" class="fr-combo">COMBO x0</span>
+        <span id="fr-ready" class="fr-ready" data-i18n="frCharging">CHARGING</span>
+        <span id="fr-alive" class="fr-alive">ALIVE 0/0</span>
+        <span id="fr-key" class="fr-key" title="Keyboard: press E (or R) to use the impact charge" aria-hidden="true">E</span>
+      </div>
+      <div id="fr-hint" class="fr-hint" data-i18n="frHint">Build impact by driving: speed, drifting, jumps, near misses</div>
+    </div>
+
+    <div id="fr-hit" aria-hidden="true"></div>
+    <div id="fr-dead" hidden><b data-i18n="frEliminated">ELIMINATED</b><span data-i18n="frSpectating">SPECTATING — last car standing wins</span></div>
+
     <div id="arrow" style="display:none">
       <svg width="34" height="26" viewBox="0 0 34 26"><path d="M2 13 L22 13 M14 4 L24 13 L14 22" stroke="currentColor" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="dist"></span>
@@ -103,6 +131,7 @@
       <button id="tc-right" class="tc-btn" aria-label="Steer right"><img class="ico-img ico-img-lg" src="img/ico/arrow-right.svg" alt=""/></button>
     </div>
     <div class="tc-group tc-right">
+      <button id="tc-impact" class="tc-btn tc-impact" aria-label="Impact attack" hidden><img class="ico-img ico-img-lg" src="img/ico/flame.svg" alt=""/></button>
       <button id="tc-nitro" class="tc-btn tc-nitro" aria-label="Nitro"><img class="ico-img ico-img-lg" src="img/ico/nitro.svg" alt=""/></button>
       <button id="tc-brake" class="tc-btn tc-brake" aria-label="Brake / Reverse"><img class="ico-img ico-img-lg" src="img/ico/arrow-down.svg" alt=""/></button>
       <button id="tc-gas" class="tc-btn tc-gas" aria-label="Accelerate"><img class="ico-img ico-img-lg" src="img/ico/arrow-up.svg" alt=""/></button>
@@ -405,6 +434,7 @@
             <button class="mode-btn" data-mode="split"><span><span class="ico" data-i="race-flag" aria-hidden="true"></span><span data-i18n="modeSplit">LOCAL DUEL</span></span><em data-i18n="modeSplitSub">Split-Screen</em></button>
             <button class="mode-btn" data-mode="elim"><span><span class="ico" data-i="x" aria-hidden="true"></span><span data-i18n="modeElim">ELIMINATION</span></span><em data-i18n="modeElimSub">Knockout Lap</em></button>
             <button class="mode-btn" data-mode="drift"><span><span class="ico" data-i="wind" aria-hidden="true"></span><span data-i18n="modeDrift">DRIFT SCORE</span></span><em data-i18n="modeDriftSub">Points Battle</em></button>
+            <button class="mode-btn" data-mode="fighter"><span><span class="ico" data-i="swords" aria-hidden="true"></span><span data-i18n="modeFighter">FIGHTER RUSH</span></span><em data-i18n="modeFighterSub">Last Car Standing</em></button>
           </div>
           <div id="split-divider" style="display:none"></div>
 
@@ -733,11 +763,11 @@
   </div>
 
   <script defer src="js/vendor/three.min.js"></script>
-  <script defer src="js/vendor/GLTFLoader.js?v=175"></script>
-  <script defer src="js/car-models.js?v=175"></script>
+  <script defer src="js/vendor/GLTFLoader.js?v=176"></script>
+  <script defer src="js/car-models.js?v=176"></script>
   <script defer src="js/vendor/qrcode.js"></script>
-  <script defer src="js/game-core.js?v=175"></script>
-  <script defer src="js/progression.js?v=175"></script>
+  <script defer src="js/game-core.js?v=176"></script>
+  <script defer src="js/progression.js?v=176"></script>
   <script src="js/config.js"></script>
   <script>
   // v119 ACCOUNT GATE: when this deploy has Supabase keys configured, the game
@@ -753,11 +783,11 @@
     } catch (e) {}
   })();
   </script>
-  <script defer src="js/account.js?v=175"></script>
-  <script defer src="js/i18n.js?v=175"></script>
-  <script defer src="js/net.js?v=175"></script>
-  <script defer src="js/audio.js?v=175"></script>
-  <script defer src="js/game.js?v=175"></script>
+  <script defer src="js/account.js?v=176"></script>
+  <script defer src="js/i18n.js?v=176"></script>
+  <script defer src="js/net.js?v=176"></script>
+  <script defer src="js/audio.js?v=176"></script>
+  <script defer src="js/game.js?v=176"></script>
   <script>
   // PWA (v36): register service worker + show INSTALL button when the browser allows it
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {

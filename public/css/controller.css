@@ -287,6 +287,20 @@ button.tool.on {
   box-shadow: 0 0 16px rgba(0, 240, 255, 0.3);
 }
 
+/* v176 FIGHTER RUSH: the IMPACT control. Hidden unless the room's mode is fighter. */
+.btn.impact {
+  border-color: var(--apex-crimson, #ff2e54);
+  color: var(--apex-crimson, #ff2e54);
+  background: radial-gradient(circle at 50% 30%, rgba(255, 46, 84, 0.28), rgba(120, 0, 20, 0.08));
+  box-shadow: 0 0 16px rgba(255, 46, 84, 0.35);
+}
+
+.btn.impact.pressed {
+  background: var(--apex-crimson, #ff2e54);
+  color: #05070c;
+  box-shadow: 0 0 30px var(--apex-crimson, #ff2e54);
+}
+
 .btn.nitro.pressed {
   background: var(--cyber-cyan);
   color: #05070c;

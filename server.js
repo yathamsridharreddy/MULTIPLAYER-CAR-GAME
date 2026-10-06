@@ -5083,7 +5083,8 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
         // Object.prototype; the 30 Hz tick then threw on every frame (lbGet),
         // which froze every other race on the server. Validate it like `case 'map'`.
         const helloMap = validMapId(msg.map);
-        entry = newRoom(msg.mode === 'coop' ? 'coop' : 'race', helloMap == null ? 0 : helloMap, msg.mode === 'coop' ? 2 : 6); // v76
+        const hm = core.normMode(msg.mode); // v176: one validator for every mode string
+        entry = newRoom(hm, helloMap == null ? 0 : helloMap, hm === 'coop' ? 2 : 6); // v76
       }
       if (msg.role === 'spec') {
         if (entry.specs.size >= 16) { sendJSON(client.ws, { type: 'error', code: 'spec-full' }); setTimeout(() => { try { client.ws.close(); } catch (e) {} }, 300); return; } // v79 N-07
@@ -5148,7 +5149,7 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
         handleLeave(client);
         if (old.screens.size === 0 && old.controllers.size === 0) rooms.delete(old.room.code);
       }
-      const mode = msg.mode === 'coop' ? 'coop' : (['elim', 'drift'].includes(msg.mode) ? msg.mode : 'race');
+      const mode = core.normMode(msg.mode); // v176: adds 'fighter', keeps every existing mapping
       const mapId = parseInt(msg.map, 10) || 0;
       const cap = mode === 'coop' ? 2 : (parseInt(msg.cap, 10) || 6);
       const entry = newRoom(mode, mapId, cap);
@@ -5281,7 +5282,7 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
     }
     case 'start': {
       if (!client.entry && (client.role === 'screen' || client.role === 'lobby')) {
-        const mode = msg.mode === 'coop' ? 'coop' : 'race';
+        const mode = core.normMode(msg.mode); // v176: an on-demand room honours the selected mode
         const entry = newRoom(mode, validMapId(msg.map), mode === 'coop' ? 2 : 6); // v93 the chosen track, not map 0
         joinRoom(client, entry, 'screen', msg);
         // v93: the client now ships its identity with start, so an on-demand room
@@ -5627,7 +5628,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v175', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v176', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {
