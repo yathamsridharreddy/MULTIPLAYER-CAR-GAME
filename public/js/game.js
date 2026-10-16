@@ -51,11 +51,11 @@ function lerpAngle(a, b, t) {
 
 function loadPrefs() {
   try { return Object.assign({
-    name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true,
+    name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, nameAuto: false,
     quality: 'high', music: true, mute: false, fpsmeter: false, rm: false, cb: false, ar: true, ghost: false, racingLine: true, fx: true, lang: 'en', hdLobby: true, sens: 1,
     volMaster: 100, volMusic: 70, volSfx: 100   // v173 mixer
   }, JSON.parse(localStorage.getItem('sr_prefs') || '{}')); }
-  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true, sens: 1, volMaster: 100, volMusic: 70, volSfx: 100 }; }
+  catch (e) { return { name: '', color: 0xe10600, cls: 'velocity', laps: 3, bot: true, nameAuto: false, quality: 'high', music: true, mute: false, fpsmeter: false, racingLine: true, sens: 1, volMaster: 100, volMusic: 70, volSfx: 100 }; }
 }
 let prefs = loadPrefs();
 function savePrefs() { try { localStorage.setItem('sr_prefs', JSON.stringify(prefs)); } catch (e) {} }
@@ -86,7 +86,15 @@ if (typeof window !== 'undefined' && window.SRAudio && window.SRAudio.attachPref
 if (!(prefs.sens >= 0.5 && prefs.sens <= 1.5)) prefs.sens = 1;
 else prefs.sens = Math.round(prefs.sens * 20) / 20; // snap to the slider's 5% step so thumb and readout agree
 if (!prefs.pid) { prefs.pid = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); savePrefs(); }
-if (!prefs.name) { prefs.name = 'RACER-' + prefs.pid.slice(1, 5).toUpperCase(); savePrefs(); }
+if (!prefs.name) {
+  // v178: this is a LABEL this browser generated for an anonymous device, not an
+  // identity. It is remembered as generated so it can never be shown AS the
+  // account's name and never written TO the account (both happened - see the v178
+  // note above paintIdentity()).
+  prefs.name = 'RACER-' + prefs.pid.slice(1, 5).toUpperCase();
+  prefs.nameAuto = true;
+  savePrefs();
+}
 
 // ---------------------------------------------------------------------------
 // Renderer / scene
@@ -3303,10 +3311,60 @@ function bindDriverNameField() {
   el._srNameBound = true;
   if (!el.value) el.value = prefs.name || '';
   el.addEventListener('input', () => {
-    prefs.name = el.value.trim(); savePrefs(); sendMeta();
+    prefs.name = el.value.trim(); prefs.nameAuto = false;   // v178: a chosen name
+    savePrefs(); sendMeta();
+    syncAccountMirror();   // v178: so the chip (and the wire name) is never the old one
+    paintAccountChip();    // v178: the lobby shows the new name at once, not after a reload
     persistDriverName();   // v144: keep the account's name in step, debounced
   });
   return el;
+}
+
+// ---------------------------------------------------------------------------
+// v178 THE ACCOUNT NAME, HONESTLY.
+//
+// Reported: "the user account name is not visualising correctly - it shows
+// something like racer". Reproduced with the real client against a fake Supabase
+// (see test/account-name-display.test.js): two DEVICE-level facts were being
+// mistaken for ACCOUNT-level ones.
+//
+//   1. `prefs.name` starts life as a label this browser generated ("RACER-4F2A").
+//      v144 wrote it to the account whenever the profiles read had not answered -
+//      so an expired token, an RLS refusal or a network blip renamed the racer's
+//      account to the placeholder, and that placeholder is what every screen then
+//      showed (chip, grid, leaderboards, results).
+//   2. The chip was only painted at boot and from the account dialog, so renaming
+//      yourself left the OLD name sitting in the lobby.
+//
+// One label function and one painter now own it, and the generated name is marked -
+// BOTH ways, because every device that has run the game before v178 carries the
+// generated label in localStorage without the flag: the label is a pure function of
+// the device pid, so it can still be recognised exactly (no guessing at names).
+function nameIsGenerated() {
+  const n = String(prefs.name || '').trim();
+  if (!n || prefs.nameAuto === true) return true;
+  return n === ('RACER-' + String(prefs.pid || '').slice(1, 5).toUpperCase());
+}
+function localNameIsChosen() { return !nameIsGenerated(); }
+function accountChipLabel() {
+  const acc = window.SRAccount;
+  const an = (acc && acc.name && acc.name()) || '';
+  if (an) return an;                                    // the account's name always wins
+  if (!nameIsGenerated()) return prefs.name || 'racer'; // a name the racer chose here
+  // signed in, the account has not answered yet, and all this browser holds is a
+  // generated label: show the part of the account we CAN read instead of inventing
+  // a racer name.
+  const em = (acc && acc.email && acc.email()) || '';
+  return (em.indexOf('@') > 0 ? em.split('@')[0] : '') || prefs.name || 'racer';
+}
+function paintAccountChip() { try { setIcoLabel($('account-chip'), accountChipLabel()); } catch (e) {} }
+// The account's local mirror is what the UI reads synchronously - the chip, and
+// identityPayload()'s name on the wire. A name the racer has just typed is the
+// newest truth available, so the mirror follows the edit at once; only the debounced
+// saveName() reaches the database.
+function syncAccountMirror() {
+  const acc = window.SRAccount;
+  if (acc && acc.loggedIn && acc.loggedIn() && acc.setName) acc.setName(prefs.name);
 }
 
 // v144: put the racer's identity on screen BEFORE any snapshot, and adopt the
@@ -3317,25 +3375,35 @@ function paintIdentity() {
   try {
     const acc = window.SRAccount;
     const signedIn = !!(acc && acc.loggedIn && acc.loggedIn());
-    const paintChip = () => {
-      const chip = $('account-chip');
-      if (chip) setIcoLabel(chip, (signedIn && acc.name && acc.name()) || prefs.name || 'racer');
-    };
-    paintChip();
+    paintAccountChip();
     bindDriverNameField();
     const el = $('inp-name');
     if (el && !el.value) el.value = prefs.name || '';
     if (!signedIn || !(acc && acc.session)) return;
-    acc.session().then((s) => {
-      if (!s || !s.name || s.name === prefs.name) return;
-      prefs.name = s.name;
-      savePrefs();
-      const f = $('inp-name');
-      if (f && document.activeElement !== f) f.value = s.name;
-      const chip = $('account-chip');
-      if (chip) setIcoLabel(chip, s.name);
-      sendMeta();
+    let tries = 0;
+    // Adopt what the account says. Returns true when the account ANSWERED the name
+    // question (even if the answer is "no name yet"), so a read that failed is
+    // never mistaken for an account that has no name.
+    const adopt = (s) => {
+      if (!s) return false;
+      if (s.name && s.name !== prefs.name) {
+        prefs.name = s.name; prefs.nameAuto = false;
+        savePrefs();
+        const f = $('inp-name');
+        if (f && document.activeElement !== f) f.value = s.name;
+        sendMeta();
+      }
+      paintAccountChip();
+      return !!s.known;
+    };
+    const once = () => acc.session().then((s) => {
+      if (adopt(s) || !s) return;
+      // The account did not answer (RLS, a dead token, offline). Keep asking for a
+      // while - the chip corrects itself with no action from the racer - and write
+      // NOTHING to the account in the meantime.
+      if (tries++ < 2) setTimeout(once, 3000 * tries);
     }).catch(() => {});
+    once();
   } catch (e) { console.warn('[lobby] identity paint failed', e); }
 }
 
@@ -3349,6 +3417,7 @@ function persistDriverName() {
   clearTimeout(_nameSaveTimer);
   _nameSaveTimer = setTimeout(async () => {
     const r = await acc.saveName(prefs.name);
+    paintAccountChip();   // v178: the account's name is what the chip shows
     if (!r || r.ok) { if (r && r.ok && !r.local) toast('Driver name saved to your account'); return; }
     if (r.error === 'TAKEN') toast('That driver name is taken - pick another');
     else if (r.error === 'BADNAME') toast(r.msg || 'Use 3+ letters, numbers or _ in the driver name');
@@ -3409,14 +3478,15 @@ function wireLobbyV2() {
       // the sign-in controls works for a guest, so a missing account SDK must never
       // hide CLUBS, BADGES, BOUNTIES or GARAGE.
       applyAccountRowVisibility(accountRowVisibility(accountsOn, signedIn), $);
-      const chip0 = $('account-chip'); if (chip0) setIcoLabel(chip0, prefs.name || 'racer');   // v121: no guest identity anywhere
+      paintAccountChip();   // v178: one painter, so the chip can never disagree with prefs.name
       if (!accountsOn) return;
 
-      const chip = $('account-chip'), btn = $('account-btn'), out = $('account-out'), dlg = $('account-dlg');
+      const btn = $('account-btn'), out = $('account-out'), dlg = $('account-dlg');
       function paint(s) {
         applyAccountRowVisibility(accountRowVisibility(true, !!s), $);
-        // v130: show driver identity (prefs.name) not email — name from account OR driver identity, email only as last resort
-        if (chip) setIcoLabel(chip, s ? (s.name || prefs.name || (s.email || 'racer').split('@')[0]) : (prefs.name || 'racer'));
+        // v130/v178: show driver identity - the account's name, then a name chosen on
+        // this device; email only when there is nothing else to show.
+        paintAccountChip();
         sendMeta();
       }
       // v144: the account's name is the racer's name, so the lobby is correct on
@@ -3426,7 +3496,10 @@ function wireLobbyV2() {
       acc.session().then(async (s) => {
         if (!s) { paint(s); return; }
         if (s.name && s.name !== prefs.name) { prefs.name = s.name; savePrefs(); syncNameInput(); }
-        if (!s.name) { await acc.saveName(prefs.name || (s.email ? s.email.split('@')[0] : '')); }
+        // v178: seed the account's name ONLY from a name the racer actually chose,
+        // and only when the account itself answered. v144 also invented a name from
+        // the email local part and, on a failed read, wrote the generated label.
+        if (!s.name && s.known && localNameIsChosen()) { await acc.saveName(prefs.name); }
         paint(await acc.session());
       }).catch(() => {});
       // Guarded: a throw here aborts the rest of the lobby wiring, and the account
@@ -3444,7 +3517,8 @@ function wireLobbyV2() {
       const nameField = $('acc-name');
       if (nameField) nameField.addEventListener('input', () => {
         if (!(acc.loggedIn && acc.loggedIn())) return;
-        prefs.name = nameField.value.trim(); savePrefs(); syncNameInput(); persistDriverName();
+        prefs.name = nameField.value.trim(); prefs.nameAuto = false; savePrefs();
+        syncNameInput(); syncAccountMirror(); paintAccountChip(); persistDriverName();
       });
       const accClose = $('acc-close'); if (accClose) accClose.addEventListener('click', () => { if (dlg) dlg.hidden = true; });
       if (out) out.addEventListener('click', () => { acc.logout(); location.replace('auth.html'); });  // v122: sign out returns to the gate
@@ -3462,7 +3536,10 @@ function wireLobbyV2() {
             // this, signing in from a second device upserted the profile with
             // whatever that device had locally, renaming the account.
             const n = await acc.adoptName();
-            if (!n) { await acc.saveName(nm); }         // account with no profile row yet
+            // v178: only when the account ANSWERED that it has no name - and only
+            // with a name the racer chose. A failed read used to rename the account
+            // to this device's generated label here.
+            if (!n && acc.nameKnown() && localNameIsChosen()) { await acc.saveName(nm); }
             if (acc.name()) { prefs.name = acc.name(); savePrefs(); syncNameInput(); }
             if (dlg) dlg.hidden = true;
             paint(await acc.session());
@@ -6620,7 +6697,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v177';
+const BUILD = 'v178';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';

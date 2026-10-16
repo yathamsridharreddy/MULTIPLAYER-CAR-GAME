@@ -60,6 +60,14 @@
     name: () => { try { return localStorage.getItem(NKEY) || ''; } catch (e) { return ''; } },
     setName: (n) => { try { localStorage.setItem(NKEY, String(n).slice(0, 16)); } catch (e) {} },
 
+    // v178: did the ACCOUNT itself answer the name question? loadProfile() cannot
+    // tell "this account has no name" from "the read failed" (an expired token, an
+    // RLS refusal, offline) - both leave prof null. v144 read that as "no name" and
+    // wrote the DEVICE's generated label ("RACER-4F2A") into the account, renaming
+    // a real racer for good. true only after a profiles read actually answered for
+    // the signed-in uid.
+    nameKnown: () => !!(profLoaded && ses && ses.uid && profUid === ses.uid),
+
     // v144: read the account's stored name (profiles.display_name, falling back to
     // the username handle). Returns the row, or null when the account has none.
     // A database that has not had supabase-migration-v144.sql run yet answers 400
@@ -164,7 +172,7 @@
       // caller - the lobby chip, identityPayload(), the club lookups - gets the
       // racer's real name without having to know where it is stored.
       await this.adoptName();
-      return { uid: ses.uid, email: ses.email, name: this.name() };
+      return { uid: ses.uid, email: ses.email, name: this.name(), known: this.nameKnown() };
     },
 
     async signup(email, password, name) {
