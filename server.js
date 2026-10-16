@@ -4926,17 +4926,29 @@ function joinRoom(client, entry, role, msg) {
     let slot = 0;
     const reqSlot = (msg && msg.slot != null) ? parseInt(msg.slot, 10) : 0;
     if (reqSlot >= 1 && reqSlot <= room.cap) {
-      // If requested slot already had an old controller socket, clean it up
-      for (const [ws, s] of entry.controllers.entries()) {
-        if (s === reqSlot && ws !== client.ws) {
-          try { ws.close(); } catch (e) {}
-          entry.controllers.delete(ws);
-          room.setController(reqSlot, false);
-        }
+      // If requested slot already had an old controller socket, clean it up -
+      // but ONLY when that socket is stale (or belongs to the same phone).
+      //
+      // v177 LOCAL DUEL FIX: the screen's QR link carries the SCREEN's own slot
+      // (&slot=1), so the second phone to scan the same QR asked for a seat that
+      // was already driven. The old code closed the first phone's socket and gave
+      // the seat to the newcomer, which left car 1 with one driver, car 2 with
+      // none, and a Local Duel that could never fill its second seat. A live seat
+      // owned by a DIFFERENT phone is now respected: the newcomer falls through to
+      // the first free slot. A reconnect (the pid block above already replaced the
+      // same phone's socket) and any stale/pid-less socket still behave as before.
+      const holder = [...entry.controllers.entries()].find(([ws, s]) => s === reqSlot && ws !== client.ws) || null;
+      const holderPid = holder ? (Object.keys(entry.controllerPids || {}).find((k) => entry.controllerPids[k] === holder[0]) || null) : null;
+      const stolenFromAnotherPhone = !!(holder && holder[0].readyState === 1 && pid && holderPid && holderPid !== pid);
+      if (holder && !stolenFromAnotherPhone) {
+        try { holder[0].close(); } catch (e) {}
+        entry.controllers.delete(holder[0]);
+        room.setController(reqSlot, false);
       }
-      slot = reqSlot;
-    } else {
-      // Otherwise assign first open controller slot
+      slot = stolenFromAnotherPhone ? 0 : reqSlot;
+    }
+    if (!slot) {
+      // Otherwise assign the first open controller slot
       for (let s = 1; s <= room.cap; s++) {
         if (!room.controllers[s]) {
           slot = s;
@@ -5283,7 +5295,11 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
     case 'start': {
       if (!client.entry && (client.role === 'screen' || client.role === 'lobby')) {
         const mode = core.normMode(msg.mode); // v176: an on-demand room honours the selected mode
-        const entry = newRoom(mode, validMapId(msg.map), mode === 'coop' ? 2 : 6); // v93 the chosen track, not map 0
+        // v177: `cap` was honoured by create_room but not by this on-demand path, so
+        // a one-tap START always built a 6-seat room - which is how a 2-player Local
+        // Duel ended up with six cars (the empty seats became bots). Absent cap =
+        // exactly the old behaviour (6, or 2 for coop).
+        const entry = newRoom(mode, validMapId(msg.map), mode === 'coop' ? 2 : (parseInt(msg.cap, 10) || 6)); // v93 the chosen track, not map 0
         joinRoom(client, entry, 'screen', msg);
         // v93: the client now ships its identity with start, so an on-demand room
         // seats the real driver (name / class / colour / sensitivity / laps)
@@ -5628,7 +5644,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v176', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v177', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {

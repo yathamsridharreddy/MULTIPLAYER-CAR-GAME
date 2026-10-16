@@ -73,11 +73,24 @@ test('a held key can never survive into the next race', () => {
   assert.ok(!/if \(isInput\) return/.test(keyup[0]),
     'a release that lands while a dialog input has focus must still count - ' +
     'dropping it is exactly how the nitro got stuck on');
-  assert.match(GAME, /window\.addEventListener\('blur', \(\) => keys\.clear\(\)\)/,
+  // v177: every guaranteed release now goes through one helper (blur, hidden tab,
+  // a fresh countdown, the chequered flag), so this asserts the wire-up AND that
+  // the helper really does clear the held keys - the old assertion matched the
+  // inlined `keys.clear()` that the helper replaced.
+  assert.match(GAME, /window\.addEventListener\('blur', \(\) => releaseHeldInputs\(\)\)/,
     'releasing outside the window fires no keyup at all');
+  const rel = /function releaseHeldInputs\(\) \{[\s\S]*?\n\}/.exec(GAME);
+  assert.ok(rel, 'releaseHeldInputs() must exist');
+  assert.match(rel[0], /keys\.clear\(\)/, 'and it must clear every held key');
+  assert.match(rel[0], /touchInput\.(l|r|u|d) = /, 'and every held on-screen pedal');
+  const hidden = /if \(document\.hidden\) \{[\s\S]*?return;\n  \}/.exec(GAME);
+  assert.match(hidden[0], /releaseHeldInputs\(\)/,
+    'a tab that is hidden must release held input (its keyup never arrives)');
   const ingest = /function ingestSnapshot\(snap\) \{[\s\S]*?const now = performance\.now\(\);/.exec(GAME);
-  assert.match(ingest[0], /snap\.state === 'countdown'[\s\S]*keys\.clear\(\)/,
+  assert.match(ingest[0], /snap\.state === 'countdown'[\s\S]*releaseHeldInputs\(\)/,
     'and a fresh countdown drops whatever is still held');
+  assert.match(ingest[0], /snap\.state === 'finished'[\s\S]*releaseHeldInputs\(\)/,
+    'as does the chequered flag, so a throttle key cannot hold the next race');
 });
 
 test('the client reacts to live revenge pushes', () => {

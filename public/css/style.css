@@ -991,6 +991,42 @@ h1 span {
 /* ============================================================================
    Game Mode Selector
    ========================================================================== */
+/* v177: #split-divider was in the markup with a display toggle and NO rule in any
+   stylesheet, so the Local Duel separator never actually appeared. It now marks
+   where the two-player setup begins. */
+#split-divider {
+  height: 2px;
+  margin: 0 0 16px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--cyber-cyan), var(--apex-crimson));
+  opacity: 0.55;
+}
+
+/* v177 LOCAL DUEL setup state. The mode used to start with one car and no sign
+   that the split screen's right half was nobody; this line names both seats and
+   both drivers while the room waits, and updates as phones connect. */
+#duel-setup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--cyber-cyan);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-dim, #9fb0c9);
+}
+#duel-setup[hidden] { display: none; }
+#duel-setup b {
+  color: var(--cyber-cyan);
+  font-size: 11px;
+  letter-spacing: 0.6px;
+}
+
 .modes {
   display: flex;
   gap: 8px;

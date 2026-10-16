@@ -2981,12 +2981,30 @@ function acceptMapChoice(m) {
   return map;
 }
 // every START now carries the chosen track + identity (see acceptMapChoice)
+// ---------------------------------------------------------------------------
+// v177 LOCAL DUEL - exactly two seats and no AI fill.
+//
+// The mode card used to flip nothing but a local `splitScreen` flag: the room was
+// still created with the relay's default capacity of SIX, and `bot: true` rode
+// along inside identityPayload(). RaceRoom._begin() turns every human-less seat
+// into a bot, so a mode sold as a two-player split screen started with six cars
+// on the grid - four of them driven by the AI. Local Duel keeps its plain-race
+// simulation (the relay still sees mode 'race'); only the room SIZE and the AI
+// fill are Local Duel's business, so nothing here changes Solo / Rival /
+// Elimination, whose rooms are created exactly as before.
+const DUEL_CAP = 2;
+function isLocalDuel() { return viewMode === 'split'; }
+// Fields every Local Duel room-creating message must carry. Spread LAST, so the
+// identity payload's `bot` cannot re-enable the AI fill.
+function duelRoomOpts() { return isLocalDuel() ? { cap: DUEL_CAP, bot: false } : {}; }
+
 function startPayload() {
   const p = { type: 'start', map: selectedMap, laps: (prefs && prefs.laps) || 3 };
   // v176: an on-demand room is created by this message, so the selected mode has
   // to ride with it. Time trial / practice keep running a plain race.
   if (!TT.on) p.mode = (viewMode === 'split' ? 'race' : viewMode);
-  return Object.assign(p, identityPayload());
+  // v177: an on-demand Local Duel room is 2-seat with the AI fill off
+  return Object.assign(p, identityPayload(), duelRoomOpts());
 }
 // v93: ship every identity this browser owns, the way the club calls do, so a
 // grudge recorded under the verified account uuid is still found when the poll
@@ -6602,7 +6620,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v176';
+const BUILD = 'v177';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -6643,6 +6661,8 @@ const net = new RoomLink({
   onWelcome(msg) {
     if (msg.role === 'lobby' || msg.type === 'lobby_welcome' || !msg.code || msg.slot === 0) {
       mySlot = 0; roomCode = '·····';
+      roomCap = 0;                            // v177: no room, no duel room
+      syncDuelView();
       releaseRoomState();  // v155: back to setting up our own race
       clearRoomHop();      // v91: the exit completed (or we are parked in the pool)
       syncRoomButtons();
@@ -6704,6 +6724,9 @@ const net = new RoomLink({
         seatedInRoom = true;
         adoptSeatCar(msg.players);
         applyRoomRoster(msg.players, msg.cap, msg);
+        // v177: the room's capacity is what identifies a Local Duel room (2 seats),
+        // so a reload or a second screen lands in the right view instead of guessing
+        if (msg.cap != null) { roomCap = parseInt(msg.cap, 10) || 0; syncDuelView(); }
         if (typeof renderRoomLobby === 'function') renderRoomLobby(msg);
         else if (typeof window.renderRoomLobby === 'function') window.renderRoomLobby(msg);
         break;
@@ -6721,8 +6744,8 @@ const net = new RoomLink({
       case 'joined': if (msg.role === 'spec' && !SPEC_ROOM) { mySlot = 0; document.body.classList.add('spec'); toast('👁️ Race in progress — spectating. Drive the next race!'); } break;
       case 'settle': pendingSettle = msg.rows || []; break;
       case 'settle-warn': toast('⚠ Reward sync delayed — server retrying safely.'); break;
-      case 'controller-joined': setConnected(msg.slot, true); toast(`📱 Player ${msg.slot} joystick connected`); break;
-      case 'controller-left': setConnected(msg.slot, false); toast(`Player ${msg.slot} joystick disconnected`); break;
+      case 'controller-joined': setConnected(msg.slot, true); toast(`📱 Player ${msg.slot} joystick connected`); renderDuelSetup(); break;
+      case 'controller-left': setConnected(msg.slot, false); toast(`Player ${msg.slot} joystick disconnected`); renderDuelSetup(); break;
       case 'horn': playHorn(); break;
       case 'cam': if (msg.slot === mySlot) cycleCamera(); break;
       case 'pong': {
@@ -6886,6 +6909,8 @@ function exitRoom() {
   const res0 = $('results'); if (res0) res0.classList.add('hidden');
   // optimistic: the relay answers with lobby_welcome and onWelcome finishes the reset
   mySlot = 0; roomCode = '·····';
+  roomCap = 0;                    // v177: no room means no Local Duel room
+  syncDuelView();
   syncRoomButtons();
   const rc1 = $('room-code'); if (rc1) rc1.textContent = '·····';
   const sb = $('slot-badge'); if (sb) sb.style.display = 'none';
@@ -6907,7 +6932,8 @@ function ensureRoomCreated() {
     // v176: this used to hardcode 'race' on BOTH sides of the ternary, so a mode
     // picked before the room existed was silently dropped. It now sends the mode
     // the player actually selected (Local Duel still maps to a plain race).
-    net.send(Object.assign({ type: 'create_room', mode: viewMode === 'split' ? 'race' : viewMode, map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload()));
+    // v177: Local Duel asks for a 2-seat room with the AI fill off (duelRoomOpts)
+    net.send(Object.assign({ type: 'create_room', mode: viewMode === 'split' ? 'race' : viewMode, map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload(), duelRoomOpts()));
   }
 }
 function sendMeta() { if (net.isOpen()) net.send(Object.assign({ type: 'meta' }, identityPayload())); }
@@ -6984,7 +7010,10 @@ function ingestSnapshot(snap) {
   const newRace = !!(snap && snap.state === 'countdown' && prevState !== 'countdown');
   // v111: a fresh countdown means a fresh race - drop every held key so no
   // stale nitro/steering from the previous session drives this one
-  if (newRace) keys.clear();
+  if (newRace) releaseHeldInputs();
+  // v176/v177: the race is over - the throttle key that finished the race must not
+  // sit there holding throttle through the results screen and into the rematch
+  if (snap && snap.state === 'finished' && prevState !== 'finished') releaseHeldInputs();
   // v173: claim the countdown BEFORE processEvents() shows the first "3", so
   // race_start.mp3 starts first and the synthetic 440 Hz tick never fires.
   const A = sampleAudio();
@@ -7019,6 +7048,9 @@ function ingestSnapshot(snap) {
   snaps.push({ t: now, snap });
   if (snaps.length > 150) snaps.splice(0, snaps.length - 150);
   latest = snap;
+  // v177: the room's mode and the second driver are what the Local Duel view and its
+  // setup line depend on, and both can change under us at any snapshot
+  syncDuelView();
   if (A && prevState !== snap.state) setAudio();   // lobby bed out of a race, back in the lobby
   processEvents(snap);
 
@@ -7093,7 +7125,7 @@ window.addEventListener('keyup', (e) => {
 });
 // releasing a key outside the window (alt-tab, click on another app) fires no
 // keyup at all; without this the held key survives into the next race too
-window.addEventListener('blur', () => keys.clear());
+window.addEventListener('blur', () => releaseHeldInputs());
 let kbAccum = 0;
 
 // v80 mobile solo on-screen touch controls
@@ -7185,6 +7217,9 @@ function maybeSendKeyboard(dt) {
 // Camera (v84 Modern Dynamic Player-Anchored Chase System)
 // ---------------------------------------------------------------------------
 let camMode = 0;
+// v177: the split view is owned by setSplitScreen()/syncDuelView() (see below the
+// camera block). It used to be switched on by the mode card and by nothing else,
+// so it stayed on after leaving Local Duel.
 let splitScreen = false;
 const lookTarget = new THREE.Vector3(A - 2.8, 1, 0);
 let smoothedCamAngle = 0;
@@ -7209,34 +7244,176 @@ const _camUpVec = new THREE.Vector3();
 const _aimDir = new THREE.Vector3();
 const _aimPos = new THREE.Vector3();
 
-function aimChaseInstant(cs) {
+// ---------------------------------------------------------------------------
+// v177 LOCAL DUEL - where the shaking came from, and the fix.
+//
+// TRACED, then measured: the split renderer aimed the ONE shared camera with
+// aimChaseInstant(), which wrote
+//     _aimPos.set(cx, 0, cz);   camera.position.y = 2.7;
+// The wire snapshot carries x, z and heading but NO height, so the car's height
+// was taken as 0 and the camera was pinned to an absolute world height of 2.7 m.
+// HIGHLAND RUSH runs from -8.46 m to +3.90 m and 24 % of the racing line is
+// higher than 2.7 m, so for a quarter of every lap the split view was drawn from
+// INSIDE the ground, in the dips it floated 8-11 m above the car, and every crest
+// snapped the horizon. It also skipped the chase-camera smoothing completely
+// (updateCamera lerps with 1 - exp(-rate*dt)), ignored the camera mode and the
+// speed-based framing, never decayed the collision shake, and drew outside the
+// glLost guard.
+//
+// The FIX keeps the design - one camera, two halves, left = P1 (slot 1) and
+// right = P2 (slot 2) - and gives each half its own smoothed state advanced by
+// dt, exactly like the single-view chase cam. Nothing is snapped: the STATE is
+// what moves smoothly, and the shared camera is simply placed at that state
+// immediately before its own half is drawn, so the two halves never fight over
+// one lerp. Each car's height comes from the same source updateCamera uses.
+const splitCam = [
+  { pos: new THREE.Vector3(), look: new THREE.Vector3(), angle: 0, fov: 60, sp: 0, ready: false },
+  { pos: new THREE.Vector3(), look: new THREE.Vector3(), angle: 0, fov: 60, sp: 0, ready: false }
+];
+function splitCamReset() { for (const s of splitCam) s.ready = false; }
+function updateSplitCam(half, cs, dt) {
+  const st = splitCam[half];
   const v = carVisuals[cs.s];
-  const cx = (v && v.netInit) ? v.netX : cs.x, cz = (v && v.netInit) ? v.netZ : cs.z, ch = (v && v.netInit) ? v.netH : cs.h;
-  smoothedCamAngle = ch;
-  camInit = true;
-  _aimDir.set(Math.sin(ch), 0, Math.cos(ch));
-  _aimPos.set(cx, 0, cz);
-  camera.position.copy(_aimPos).addScaledVector(_aimDir, -7.6);
-  camera.position.y = 2.7;
-  lookTarget.copy(_aimPos).addScaledVector(_aimDir, 6.0).add(_camUpVec.set(0, 1.15, 0));
-  camera.lookAt(lookTarget);
+  const cx = (v && v.netInit) ? v.netX : cs.x;
+  const cz = (v && v.netInit) ? v.netZ : cs.z;
+  const ch = (v && v.netInit) ? v.netH : cs.h;
+  // v177: the car's own height - the bug was reading the wire (x/z/heading only)
+  // and assuming y = 0. A car that is not on the grid this frame has its visual
+  // hidden (and its height is whatever it was), so the road surface is used then.
+  const drawn = (v && v.group && v.group.visible !== false) ? v.group.position.y : null;
+  const cy = (drawn != null && isFinite(drawn)) ? drawn : (curMap ? getSurfaceY(curMap, cx, cz) : 0);
+  const sp = st.sp = clamp(Math.abs(cs.v || 0) / CFG.maxSpeed, 0, 1.3);
+  if (!st.ready) {
+    st.angle = ch;
+    st.pos.set(cx, cy + 2.7, cz);
+    st.look.set(cx, cy + 1.15, cz);
+    st.fov = 60;
+    st.ready = true;
+  }
+  // smoothed heading, exactly like the single-view camera (no per-frame snap)
+  st.angle = lerpAngle(st.angle, ch, 1 - Math.exp(-7.5 * dt));
+  _aimDir.set(Math.sin(st.angle), 0, Math.cos(st.angle));
+  const dist = 7.6 + sp * 0.9, height = 2.7 - sp * 0.25;
+  _camDesired.set(cx, cy, cz).addScaledVector(_aimDir, -dist).add(_camUpVec.set(0, height, 0));
+  _camDesired.y = Math.max(_camDesired.y, cy + 0.45);       // never under the road
+  st.pos.lerp(_camDesired, 1 - Math.exp(-6.8 * dt));
+  _camLook.set(cx, cy, cz).addScaledVector(_aimDir, 6.0 + sp * 3.0).add(_camUpVec.set(0, 1.15, 0));
+  st.look.lerp(_camLook, 1 - Math.exp(-10.0 * dt));
+  const fovTarget = 60 + sp * 11 + (cs.n ? 5.5 : 0);
+  if (Math.abs(st.fov - fovTarget) > 0.04) st.fov = lerp(st.fov, fovTarget, 1 - Math.exp(-4.8 * dt));
+  return st;
+}
+function applySplitCam(st) {
+  camera.position.copy(st.pos);
+  // the collision / top-speed shake the single-view camera applies, so an impact
+  // still reads on the split screen (Reduced Motion keeps it off, as everywhere)
+  const base = st.sp > 0.85 ? (st.sp - 0.85) * 0.03 : 0;
+  const amp = prefs.rm ? 0 : (shakeAmp + base);
+  if (amp > 0.001) {
+    camera.position.x += (Math.random() - 0.5) * amp;
+    camera.position.y += (Math.random() - 0.5) * amp * 0.4;
+    camera.position.z += (Math.random() - 0.5) * amp;
+  }
+  camera.lookAt(st.look);
+  if (Math.abs(camera.fov - st.fov) > 0.01) { camera.fov = st.fov; camera.updateProjectionMatrix(); }
 }
 function renderSplit(dt) {
-  const w = window.innerWidth, h = window.innerHeight, hh = Math.floor(h / 2);
-  camera.aspect = w / hh; camera.updateProjectionMatrix();
+  if (glLost) return;                    // v141 rule, which the split path used to skip
+  const w = Math.max(1, window.innerWidth || 0), h = Math.max(1, window.innerHeight || 0), hh = Math.floor(h / 2);
   const c1 = interpState(1), c2 = interpState(2);
+  // v177: the single-view camera decays the collision shake; the split path never
+  // did, so one bump left a permanent offset in both halves.
+  shakeAmp = Math.max(0, shakeAmp - shakeAmp * 8.5 * dt);
+  camera.aspect = w / hh; camera.updateProjectionMatrix();
   renderer.setScissorTest(true);
-  renderer.setViewport(0, h - hh, w, hh); renderer.setScissor(0, h - hh, w, hh);
-  if (c1) aimChaseInstant(c1);
-  renderer.render(scene, camera);
-  renderer.setViewport(0, 0, w, hh); renderer.setScissor(0, 0, w, hh);
-  if (c2) aimChaseInstant(c2);
-  renderer.render(scene, camera);
-  renderer.setScissorTest(false);
-  renderer.setViewport(0, 0, w, h);
-  renderer.setScissor(0, 0, w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+  // v177: both halves sample the SAME sun shadow map, so rebuilding it twice per
+  // frame was pure cost. One update per frame is what the single-view path does.
+  const shadowAuto = renderer.shadowMap ? renderer.shadowMap.autoUpdate : null;
+  if (renderer.shadowMap) { renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true; }
+  try {
+    renderer.setViewport(0, h - hh, w, hh); renderer.setScissor(0, h - hh, w, hh);
+    if (c1) applySplitCam(updateSplitCam(0, c1, dt));
+    renderer.render(scene, camera);
+    renderer.setViewport(0, 0, w, hh); renderer.setScissor(0, 0, w, hh);
+    if (c2) applySplitCam(updateSplitCam(1, c2, dt));
+    renderer.render(scene, camera);
+  } finally {
+    if (renderer.shadowMap && shadowAuto != null) renderer.shadowMap.autoUpdate = shadowAuto;
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, w, h); renderer.setScissor(0, 0, w, h);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// v177 LOCAL DUEL - the view flag, and the setup state the mode never had.
+//
+// `splitScreen` used to be set by the mode card and cleared by nobody: leaving
+// Local Duel for Solo or Fighter Rush left the two half-viewports and the per-half
+// camera running for the rest of the session. Every path that changes the view now
+// goes through setSplitScreen(), and the view is re-derived from the ROOM we are
+// seated in (a 2-seat race room is a Local Duel room - that is how a reload, or a
+// phone-driven screen, finds the split view again).
+let roomCap = 0;              // capacity the relay reported for the room we are in
+let viewModeExplicit = false; // the user pressed a mode card in THIS session
+let duelStartPrompt = false;  // "press START again to race alone"
+function roomIsDuelRoom() { return roomCap === DUEL_CAP && !!latest && latest.mode === 'race'; }
+function duelViewWanted() { return roomIsDuelRoom() ? (amHost || isLocalDuel()) : isLocalDuel(); }
+function setSplitScreen(on) {
+  const next = !!on;
+  if (next !== splitScreen) { splitScreen = next; splitCamReset(); }
+  const div = $('split-divider'); if (div) div.style.display = next ? '' : 'none';
+  const box = $('duel-setup'); if (box) { box.hidden = !next; if (next) renderDuelSetup(); }
+  if (!next) duelStartPrompt = false;
+}
+// Keep the view in step with the room. Cheap: it only writes when the answer changed.
+function syncDuelView() {
+  const want = duelViewWanted();
+  if (want !== splitScreen) setSplitScreen(want);
+  else if (splitScreen) renderDuelSetup();
+}
+// Who is on which seat, straight from the ROOM's controller map - never assumed,
+// never from array order. In Local Duel this browser owns a seat of its own (the
+// screen), which is what makes a one-phone duel visible instead of silent.
+function duelSlots() {
+  const ctrl = (latest && latest.controllers) ? latest.controllers : {};
+  const cars = (latest && latest.cars) ? latest.cars : [];
+  const nm = (slot) => { const c = cars[slot - 1]; return (c && c.nm) ? String(c.nm) : ('PLAYER ' + slot); };
+  const mine = (mySlot >= 1 && mySlot <= DUEL_CAP) ? mySlot : 1;
+  // a seat is driven if a phone owns it, or if THIS screen owns it (the screen is a
+  // seat of its own, whichever of the two it got)
+  const driven = (slot) => !!ctrl[slot] || mine === slot;
+  const by = (slot) => (ctrl[slot] ? 'phone' : (mine === slot ? 'this screen' : 'OPEN'));
+  return { names: [nm(1), nm(2)], p1By: by(1), p2By: by(2), ready: driven(1) && driven(2) };
+}
+let duelSetupSig = '';
+let duelConnSig = '';
+function renderDuelSetup() {
+  const line = $('duel-setup-line');
+  if (!line) return;
+  const s = duelSlots();
+  // Who is driving can change at any moment (a phone joins, one drops). Any change
+  // to that invalidates an earlier "race alone" confirmation, so a stale press can
+  // never carry a one-driver start into a different setup.
+  const connSig = s.p1By + '|' + s.p2By + '|' + (s.ready ? 1 : 0);
+  if (connSig !== duelConnSig) { duelConnSig = connSig; duelStartPrompt = false; }
+  const sig = [s.names[0], s.names[1], connSig, duelStartPrompt ? 1 : 0].join('|');
+  if (sig === duelSetupSig) return;   // no per-frame / per-snapshot DOM writes
+  duelSetupSig = sig;
+  let txt = 'P1 CAR 1 - ' + s.names[0] + ' (' + s.p1By + ')   |   P2 CAR 2 - ' + s.names[1] + ' (' + s.p2By + ')';
+  txt += s.ready ? '   |   both drivers connected'
+                 : '   |   waiting for the 2nd driver: scan the phone QR (two phones drive car 1 and car 2)';
+  if (!s.ready && duelStartPrompt) txt += '   |   press START again to race alone';
+  line.textContent = txt;
+}
+// Held input must never survive a context change: a key whose keyup is lost (blur,
+// tab hidden, mode switch, race over) otherwise drives the next car by itself.
+function releaseHeldInputs() {
+  keys.clear();
+  touchInput.l = touchInput.r = touchInput.u = touchInput.d = 0;
+  touchInput.nitro = false; touchInput.impact = false;
+  refreshTouchBrake();
+  kbAccum = 0;
 }
 let photoFinishActive = false;
 let photoFinishTimer = 0;
@@ -8263,6 +8440,31 @@ function updateCountdownVisual() {
 $('start-btn').addEventListener('click', () => {
   clearCount();
   ensureAudio();
+  // -------------------------------------------------------------------------
+  // v177 LOCAL DUEL - never a SILENT one-car start.
+  // A Local Duel room holds exactly two seats (cap 2, AI fill off), so if the
+  // second driver has not connected there is only one car on the grid. The mode
+  // used to start anyway, with no sign that the split screen's right-hand car was
+  // nobody. Now: the first press builds/announces the setup state, the second
+  // press starts a one-driver race explicitly.
+  if (isLocalDuel() && !TT.on) {
+    setSplitScreen(true);
+    if (!roomCode || roomCode === '·····') {
+      ensureRoomCreated();                       // QRs need a real room code
+      duelStartPrompt = true; renderDuelSetup();
+      toast('👥 LOCAL DUEL setup — scan the phone QR with BOTH phones, then press START.');
+      return;
+    }
+    if (!duelSlots().ready) {
+      if (!duelStartPrompt) {
+        duelStartPrompt = true; renderDuelSetup();
+        toast('👥 Waiting for the 2nd driver — car 2 needs a phone. Press START again to race alone.');
+        return;
+      }
+      toast('▶ Starting with one driver — car 2 stays on the grid.');
+    }
+  }
+  duelStartPrompt = false;
   const mode3 = prefs.mode3 || 'mp';
   TT.on = mode3 !== 'mp'; TT.practice = mode3 === 'practice'; TT.done = false;
   if (TT.on) { net.send({ type: 'bot', bot: false }); net.send({ type: 'record', record: !TT.practice }); }
@@ -8721,12 +8923,18 @@ document.querySelectorAll('.mode-btn').forEach((b) => b.addEventListener('click'
   const m = b.dataset.mode;
   viewMode = m;
   document.querySelectorAll('.mode-btn').forEach((x) => x.classList.toggle('active', x === b));
-  if (m === 'split') { splitScreen = true; net.send({ type: 'mode', mode: 'race' }); toast('🏁 LOCAL DUEL — connect 2 phones, press START'); }
+  // v177: the mode card is the ONLY place that decides the local view mode, and it
+  // now goes through setSplitScreen() so the flag, the divider and the two halves'
+  // camera state can never disagree again.
+  viewModeExplicit = true;
+  releaseHeldInputs();                       // a key held across a mode switch is a stuck key
+  setSplitScreen(m === 'split');
+  duelStartPrompt = false;
+  if (m === 'split') { net.send({ type: 'mode', mode: 'race' }); toast('🏁 LOCAL DUEL — 2 cars, 2 phones, split screen. Press START.'); }
   else if (m === 'fighter') {                                   // v176
-    splitScreen = false; net.send({ type: 'mode', mode: 'fighter' });
+    net.send({ type: 'mode', mode: 'fighter' });
     toast(tI18n('frModeToast') || '⚔️ FIGHTER RUSH — your driving is your weapon. Last car standing wins.');
-  } else { splitScreen = false; net.send({ type: 'mode', mode: m }); }
-  const div = $('split-divider'); if (div) div.style.display = splitScreen ? '' : 'none';
+  } else { net.send({ type: 'mode', mode: m }); }
 }));
 document.querySelectorAll('.map-btn').forEach((b) => b.addEventListener('click', () => net.send({ type: 'map', map: parseInt(b.dataset.map, 10) })));
 $('copy-code').addEventListener('click', () => { copyText($('room-code').textContent); toast('Room code copied!'); track('share', undefined, { channel: 'code' }); });
@@ -8737,7 +8945,7 @@ if (createRoomBtn) {
       const q = (typeof tI18n === 'function' ? tI18n('createAnotherConfirm', { code: roomCode }) : null)
         || ('Leave room ' + roomCode + ' and create a new one?');
       if (!confirm(q)) return;
-      net.send(Object.assign({ type: 'create_room', mode: 'race', map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload()));
+      net.send(Object.assign({ type: 'create_room', mode: 'race', map: selectedMap, laps: (prefs && prefs.laps) || 3 }, identityPayload(), duelRoomOpts()));
       armRoomHop('/');
       toast((typeof tI18n === 'function' ? tI18n('creatingRoom') : null) || '🏎️ Creating a new room…');
       return;
@@ -8948,7 +9156,11 @@ function frameBody() {
 // guard in net.js makes that safe), and reset the clock so no giant dt is applied.
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { hiddenAt = performance.now(); return; }
+  if (document.hidden) {
+    hiddenAt = performance.now();
+    releaseHeldInputs();   // v177: a key/pedal held when the tab hides never gets its keyup
+    return;
+  }
   const away = hiddenAt ? (performance.now() - hiddenAt) : 0;
   hiddenAt = 0;
   resizeViewport();

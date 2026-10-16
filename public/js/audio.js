@@ -29,7 +29,7 @@
 (function (root) {
   if (!root) return;
 
-  const BUILD = 'v176';
+  const BUILD = 'v177';
 
   /* ---------- the twelve real assets (local paths only, never a CDN) ------- */
   const MANIFEST = {
