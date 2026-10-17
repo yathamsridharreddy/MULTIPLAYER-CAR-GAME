@@ -2,7 +2,7 @@
   "name": "sridhar-rush",
   "version": "2.2.0",
   "private": true,
-  "description": "Sridhar Rush \u2014 online multiplayer 3D racing; phones as joysticks.",
+  "description": "Sridhar Rush — online multiplayer 3D racing; phones as joysticks.",
   "scripts": {
     "build": "node scripts/vercel-build.js",
     "start": "node server.js",
@@ -21,6 +21,7 @@
     "libpg-query": "^18.1.5"
   },
   "devDependencies": {
-    "jsdom": "^30.1.1"
+    "jsdom": "^30.1.1",
+    "wrangler": "^4.151.1"
   }
 }
