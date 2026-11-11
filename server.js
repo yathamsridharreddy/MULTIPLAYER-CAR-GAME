@@ -4845,7 +4845,8 @@ function controllerTelemetry(entry, ws, slot) {
       nitroOn: !!car.nitroActive,
       state: room.state,
       rank: rank >= 0 ? ['1st', '2nd', '3rd'][rank] || '' : '',
-      banner: room.banner.text
+      banner: room.banner.text,
+      fighter: room.mode === 'fighter' && room.fx && room.fx.cars[slot - 1] ? (() => { const f = room.fx.cars[slot - 1]; return { weapon: f.weapon, ammo: f.ammo, maxAmmo: f.weapon && core.SRFighter.WEAPONS[f.weapon] ? core.SRFighter.WEAPONS[f.weapon].ammo : 0, weaponCooldown: Math.round(f.wCd * 10) / 10, shield: Math.round(f.shieldT * 10) / 10, shieldCooldown: Math.round(f.shieldCd * 10) / 10, dead: f.dead }; })() : null
     }
   });
 }
@@ -5321,7 +5322,10 @@ async function handleMessage(client, msg) {   // v121: async for the no-guest ha
           for (const ws of en.screens) if (ws !== client.ws && !en.ready.has(ws)) allReady = false;
           if (!allReady) { sendJSON(client.ws, { type: 'need-ready', msg: 'waiting for all racers to ready up' }); break; }
         }
-        en.rematch && en.rematch.clear(); en.ready.clear(); en.room.start(); broadcastLobby(en);
+        en.rematch && en.rematch.clear(); en.ready.clear();
+        const started = en.room.start();
+        if (!started && en.room.mode === 'fighter') sendJSON(client.ws, { type: 'error', code: 'fighter-needs-two' });
+        broadcastLobby(en);
       }
       break;
     }
@@ -5590,7 +5594,8 @@ const tickInterval = setInterval(() => {
       }
 
       // telemetry to phones every 5 ticks (~6.7 Hz), 10 in lean mode
-      if (tickCount % (LOW_BW ? 10 : 5) === 0 && entry.controllers.size > 0) {
+      const phoneEveryTicks = room.mode === 'fighter' ? (LOW_BW ? 5 : 3) : (LOW_BW ? 10 : 5);
+      if (tickCount % phoneEveryTicks === 0 && entry.controllers.size > 0) {
         for (const [ws, slot] of entry.controllers) controllerTelemetry(entry, ws, slot);
       }
 
@@ -5644,7 +5649,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 // SAME version (version drift between them causes "ghost" physics bugs)
 app.get('/version', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.json({ build: 'v178', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
+  res.json({ build: 'v179', tickHz: core.CFG.tickHz, geom: core.GEOM_ID, lowBw: LOW_BW });
 });
 
 process.on('uncaughtException', (err) => {

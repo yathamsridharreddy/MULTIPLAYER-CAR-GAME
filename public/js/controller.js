@@ -6,7 +6,7 @@ const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dz = (v) => (Math.abs(v) < 0.07 ? 0 : v);
 
-const state = { steer: 0, throttle: 0, brake: 0, hb: false, nitro: false, impact: false, slot: null, full: false, gyro: false };
+const state = { steer: 0, throttle: 0, brake: 0, hb: false, nitro: false, impact: false, weapon: false, ability: false, slot: null, full: false, gyro: false };
 let ctrlMode = '';   // v176: the room's authoritative mode, from telemetry
 let vibOn = true; try { vibOn = localStorage.getItem('sr_vib') !== '0'; } catch (e) {}
 function vibrate(ms) { try { if (vibOn && navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
@@ -119,6 +119,8 @@ holdButton('btn-nitro', () => { state.nitro = true; vibrate(30); }, () => { stat
 // tick) so a quick tap is never swallowed, and the server decides whether the
 // attack was legal - the phone only ever reports the intent.
 holdButton('btn-impact', () => { state.impact = true; vibrate(25); sendInput(); }, () => { state.impact = false; });
+holdButton('btn-weapon', () => { state.weapon = true; vibrate(18); sendInput(); }, () => { state.weapon = false; });
+holdButton('btn-ability', () => { state.ability = true; vibrate(35); sendInput(); }, () => { state.ability = false; });
 holdButton('btn-cam', () => net.send({ type: 'button', action: 'cam', pressed: true }));
 holdButton('btn-reset', () => net.send({ type: 'button', action: 'reset', pressed: true }));
 holdButton('btn-horn', () => net.send({ type: 'button', action: 'horn', pressed: true }));
@@ -141,6 +143,7 @@ function showBanner(t) {
 
 const net = new RoomLink({
   onWelcome(msg) {
+    releaseAll();
     state.slot = msg.slot;
     $('pads').classList.remove('locked');
     document.body.dataset.player = 'p' + msg.slot;
@@ -158,7 +161,18 @@ const net = new RoomLink({
       $('speed-val').textContent = d.speed;
       $('nitro-fill').style.width = (d.nitro || 0) + '%';
       const bits = [];
+      const oldMode = ctrlMode;
       ctrlMode = d.mode || '';
+      if (oldMode && oldMode !== ctrlMode) { state.impact = state.weapon = state.ability = false; releaseAll(); }
+      const powers = $('fighter-controls');
+      if (powers) powers.hidden = ctrlMode !== 'fighter';
+      const fi = d.fighter;
+      const fire = $('btn-weapon'), shield = $('btn-ability');
+      const active = ctrlMode === 'fighter' && d.state === 'racing' && fi && !fi.dead;
+      if (fire) { fire.disabled = !(active && fi.weapon && fi.ammo > 0 && (fi.weapon === 'machinegun' || fi.weaponCooldown <= 0)); fire.setAttribute('aria-label', fire.disabled ? 'Weapon unavailable' : 'Fire ' + fi.weapon); }
+      if ($('weapon-status')) $('weapon-status').textContent = fi && fi.weapon ? fi.weapon.toUpperCase() + ' · ' + fi.ammo + (fi.weaponCooldown > 0.05 ? ' · ' + fi.weaponCooldown.toFixed(1) + 's' : '') : 'PICK UP';
+      if (shield) { shield.disabled = !(active && fi.shieldCooldown <= 0); shield.setAttribute('aria-label', shield.disabled ? 'Shield unavailable' : 'Activate shield'); }
+      if ($('ability-status')) $('ability-status').textContent = fi && fi.shield > 0 ? 'ACTIVE ' + fi.shield.toFixed(1) + 's' : (fi && fi.shieldCooldown > 0 ? 'COOLDOWN ' + fi.shieldCooldown.toFixed(1) + 's' : 'READY');
       // v176: the IMPACT control exists only while a Fighter Rush match is running
       const imp = $('btn-impact');
       if (imp) {
@@ -202,12 +216,12 @@ const net = new RoomLink({
 // car driving itself on the track.
 function releaseAll() {
   state.steer = state.throttle = state.brake = 0;
-  state.hb = state.nitro = false; state.impact = false;   // v176
+  state.hb = state.nitro = false; state.impact = state.weapon = state.ability = false;   // Fighter-only actions released on mode/visibility changes
   heldButtons.forEach((el) => el.classList.remove('pressed'));
   heldButtons.clear();
   for (const rel of stickReleases) rel();
   if (net.isOpen() && !state.full && state.slot != null) {
-    try { net.send({ type: 'input', steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false }); } catch (e) {}
+    try { net.send({ type: 'input', steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false, attack: false, weapon: false, ability: false }); } catch (e) {}
   }
 }
 window.addEventListener('blur', releaseAll);
@@ -234,7 +248,7 @@ $('room-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('j
 function sendInput() {
   if (!net.isOpen() || state.full || state.slot == null) return;
   const frame = { type: 'input', steer: dz(state.steer), throttle: dz(state.throttle), brake: dz(state.brake), handbrake: state.hb, nitro: state.nitro };
-  if (ctrlMode === 'fighter') frame.attack = state.impact;   // v176: only in Fighter Rush
+  if (ctrlMode === 'fighter') { frame.attack = state.impact; frame.weapon = state.weapon; frame.ability = state.ability; }
   net.send(frame);
 }
 setInterval(sendInput, 33);

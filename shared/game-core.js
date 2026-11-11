@@ -619,24 +619,33 @@
     setInput(slot, input) {
       let steer = clamp(num(input.steer), -1, 1); // v174: numbers only, never NaN
       if (Math.abs(steer) < 0.06) steer = 0; // dead-zone: kills joystick/gyro noise so the car tracks straight
+      const prev = this.inputs[slot] || ZERO_INPUT();
+      const fighterInput = this.mode === 'fighter' && this.state === 'racing';
       this.inputs[slot] = {
         steer,
         throttle: clamp(num(input.throttle), 0, 1),
         brake: clamp(num(input.brake), 0, 1),
         handbrake: !!input.handbrake,
         nitro: !!input.nitro,
-        attack: !!input.attack       // v176: Fighter Rush "IMPACT" - an attempt, never proof of a hit
+        attack: this.mode === 'fighter' && !!input.attack,
+        weapon: this.mode === 'fighter' && !!input.weapon,
+        ability: this.mode === 'fighter' && !!input.ability,
+        attackPress: fighterInput && ((!!input.attack && !prev.attack) || prev.attackPress),
+        weaponPress: fighterInput && ((!!input.weapon && !prev.weapon) || prev.weaponPress),
+        abilityPress: fighterInput && ((!!input.ability && !prev.ability) || prev.abilityPress)
       };
       this.lastActivity = Date.now();
     }
 
     start() {
       if (this.state === 'countdown' || this.state === 'racing') return false;
+      if (this.mode === 'fighter' && this.cars.filter((c) => this.controllers[c.slot] || this.seats[c.slot]).length < 2) return false;
       return this._begin();
     }
     // v61 quick restart: full reset without reconnect (Time Trial / Practice)
     restart() {
       if (this.state === 'countdown') return false;
+      if (this.mode === 'fighter' && this.cars.filter((c) => this.controllers[c.slot] || this.seats[c.slot]).length < 2) return false;
       return this._begin();
     }
     _begin() {
@@ -694,7 +703,9 @@
         };
       } else {
         for (let s = 1; s <= this.cap; s++) {
-          if (this.cars[s - 1]) this.cars[s - 1].input = this.inputs[s] || ZERO_INPUT();
+          if (!this.cars[s - 1]) continue;
+          this.cars[s - 1].input = Object.assign({}, this.inputs[s] || ZERO_INPUT());
+          if (this.mode === 'fighter' && this.inputs[s]) this.inputs[s].attackPress = this.inputs[s].weaponPress = this.inputs[s].abilityPress = false;
         }
       }
       // v176 FIGHTER RUSH: an eliminated car is disabled - its phone keeps sending
@@ -1424,11 +1435,14 @@
     MAX_HIT: 40,            // no single blow - however well driven - is more than 40% of HP
     HIT_FLASH: 0.5
   };
-  const RAM_OFFS = [-1.5, 0, 1.5];   // must match the car-vs-car disc layout
+  const RAM_OFFS = [-1.5, 0, 1.5];
+  const WEAPONS = Object.freeze({ rocket: { ammo: 3, cooldown: 0.8, damage: 30, speed: 42, radius: 5.5 }, machinegun: { ammo: 30, cooldown: 0.12, damage: 5, speed: 58, radius: 1.4 }, mine: { ammo: 2, cooldown: 0.6, damage: 26, speed: 0, radius: 5 }, shockwave: { ammo: 1, cooldown: 1, damage: 24, speed: 0, radius: 9 } });
 
   const fighter = {
     MODE: 'fighter',
     TUNE: FX,
+    WEAPONS,
+
 
     // The one gate. Everything below returns immediately unless this is true.
     isActive: function (room) { return !!room && room.mode === 'fighter'; },
@@ -1444,10 +1458,17 @@
           air: 0, ay: 0, fvy: 0, ph: null, rise: 0, cool: 0, th: null,   // airtime
           ram: 0, slam: false, atk: '', hit: 0, iT: 0, dead: false,
           driftT: 0, driftCounted: false,
-          nmT: [0, 0, 0, 0, 0, 0], _atkPrev: false, _botT: 1.5
+          nmT: [0, 0, 0, 0, 0, 0], _atkPrev: false, _botT: 1.5,
+          weapon: '', ammo: 0, wCd: 0, ability: 'shield', shieldT: 0, shieldCd: 0, kills: 0, deaths: 0,
+          _weaponPrev: false, _abilityPrev: false
         });
       }
-      room.fx = { cars, alive: 0, contest: false, deaths: 0, order: [] };
+      const pickups = [];
+      for (let i = 0; i < 10; i++) {
+        const a = (Math.PI * 2 * i) / 10 + 0.25;
+        pickups.push({ id: i, kind: ['rocket', 'machinegun', 'mine', 'shockwave'][i % 4], x: room.track.a * Math.cos(a), z: room.track.b * Math.sin(a), active: true, respawn: 0 });
+      }
+      room.fx = { cars, alive: 0, contest: false, deaths: 0, order: [], pickups, projectiles: [] };
       let fighters = 0;
       for (const c of room.cars) if (c.participating) fighters++;
       room.fx.alive = fighters;
@@ -1473,7 +1494,9 @@
         this._decay(f, dt);
         this._attack(room, car, f, dt);
         this._ram(room, car, f, dt);
+        this._powerups(room, car, f, dt);
       }
+      this._projectiles(room, dt);
       this._nearMisses(room, dt);
       this._win(room);
     },
@@ -1571,7 +1594,7 @@
     _attack: function (room, car, f, dt) {
       const inp = car.input || ZERO_INPUT();
       const pressed = !!inp.attack;
-      const rising = pressed && !f._atkPrev;
+      const rising = !!(car.input && car.input.attackPress) || (pressed && !f._atkPrev);
       f._atkPrev = pressed;
       let want = rising;
       if (!want && car._bot) {                 // the AI fights too (solo / short-handed rooms)
@@ -1694,6 +1717,7 @@
     _hit: function (room, victim, bySlot, dmg, kx, kz, kind) {
       const vf = room.fx.cars[victim.slot - 1];
       if (!vf || vf.dead || vf.iT > 0 || !(dmg > 0)) return 0;
+      if (vf.shieldT > 0) { room.events.push({ type: 'fxBlocked', slot: victim.slot, by: bySlot, kind }); return 0; }
       if (dmg > FX.MAX_HIT) dmg = FX.MAX_HIT;      // a great combo must not one-shot a full-health car
       vf.iT = FX.I_FRAMES;
       vf.hit = FX.HIT_FLASH;
@@ -1706,7 +1730,8 @@
         x: r3(victim.x), z: r3(victim.z), kx: r3(kx), kz: r3(kz)
       });
       if (vf.hp <= 0) {
-        vf.dead = true; vf.ram = 0; vf.slam = false; vf.atk = '';
+        vf.dead = true; vf.deaths++; vf.ram = 0; vf.slam = false; vf.atk = '';
+        const attacker = room.fx.cars[bySlot - 1]; if (attacker && attacker !== vf) attacker.kills = (attacker.kills || 0) + 1;
         victim.eliminated = true; victim.participating = false;   // the same flags 'elim' already uses
         room.fx.deaths++;
         room.fx.order.push(victim.slot);
@@ -1720,6 +1745,68 @@
     // a knocked-out car is a wreck: no input (masked in applyInputs), rolling to a stop
     _wreck: function (car) {
       car.vx *= 0.93; car.vy *= 0.93; car.slip *= 0.9;
+    },
+
+    _powerups: function (room, car, f, dt) {
+      f.wCd = Math.max(0, f.wCd - dt); f.shieldCd = Math.max(0, f.shieldCd - dt);
+      const shieldWas = f.shieldT; f.shieldT = Math.max(0, f.shieldT - dt);
+      if (shieldWas > 0 && f.shieldT === 0) room.events.push({ type: 'fxShield', slot: car.slot, active: 0 });
+      for (const p of room.fx.pickups) {
+        p.respawn = Math.max(0, p.respawn - dt); if (p.respawn === 0 && !p.active) p.active = true;
+        if (!p.active || Math.hypot(car.x - p.x, car.z - p.z) > 3.2) continue;
+        if (f.weapon === p.kind) f.ammo = Math.min(WEAPONS[p.kind].ammo * 2, f.ammo + WEAPONS[p.kind].ammo);
+        else { f.weapon = p.kind; f.ammo = WEAPONS[p.kind].ammo; }
+        p.active = false; p.respawn = 8;
+        room.events.push({ type: 'fxPickup', slot: car.slot, weapon: f.weapon, ammo: f.ammo, id: p.id });
+      }
+      const input = car.input || ZERO_INPUT();
+      const abilityEdge = !!input.abilityPress || (!!input.ability && !f._abilityPrev);
+      if (abilityEdge && f.shieldCd <= 0 && !f.dead) { f.shieldT = 2.5; f.shieldCd = 10; room.events.push({ type: 'fxShield', slot: car.slot, active: 1 }); }
+      f._abilityPrev = !!input.ability;
+      const fireEdge = !!input.weaponPress || (!!input.weapon && !f._weaponPrev);
+      f._weaponPrev = !!input.weapon;
+      const firing = (f.weapon === 'machinegun' && !!input.weapon && f.wCd <= 0) || fireEdge;
+      if (!firing || f.wCd > 0 || f.ammo <= 0 || !WEAPONS[f.weapon]) return;
+      const spec = WEAPONS[f.weapon]; f.ammo--; f.wCd = spec.cooldown;
+      const dx = Math.sin(car.heading), dz = Math.cos(car.heading);
+      if (f.weapon === 'shockwave') { this._blast(room, car.slot, car.x, car.z, spec.radius, spec.damage, 'shockwave'); }
+      else if (f.weapon === 'mine') room.fx.projectiles.push({ kind: 'mine', owner: car.slot, x: car.x - dx * 2.2, z: car.z - dz * 2.2, vx: 0, vz: 0, life: 20, arm: 1, damage: spec.damage, radius: spec.radius });
+      else room.fx.projectiles.push({ kind: f.weapon, owner: car.slot, x: car.x + dx * 2, z: car.z + dz * 2, vx: dx * spec.speed, vz: dz * spec.speed, life: 2.5, arm: 0, damage: spec.damage, radius: spec.radius });
+      room.events.push({ type: 'fxFire', slot: car.slot, weapon: f.weapon, ammo: f.ammo, x: r3(car.x), z: r3(car.z), heading: r3(car.heading) });
+    },
+    _blast: function (room, owner, x, z, radius, damage, kind) {
+      for (const target of room.cars) {
+        if (target.slot === owner || !target.participating) continue;
+        const tf = room.fx.cars[target.slot - 1]; if (!tf || tf.dead) continue;
+        const dx = target.x - x, dz = target.z - z, d = Math.hypot(dx, dz);
+        if (d > radius) continue;
+        const falloff = Math.max(0.25, 1 - d / (radius * 1.3));
+        this._hit(room, target, owner, damage * falloff, dx / (d || 1) * 6, dz / (d || 1) * 6, kind);
+      }
+      room.events.push({ type: 'fxBlast', by: owner, kind, x: r3(x), z: r3(z), r: radius });
+    },
+    _projectiles: function (room, dt) {
+      const list = room.fx.projectiles;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const p = list[i]; p.life -= dt; p.arm -= dt;
+        if (p.kind === 'mine') {
+          if (p.arm <= 0) {
+            const target = room.cars.find((c) => c.slot !== p.owner && c.participating && Math.hypot(c.x - p.x, c.z - p.z) < 3.2);
+            if (target) { this._blast(room, p.owner, p.x, p.z, p.radius, p.damage, 'mine'); p.life = 0; }
+          }
+        } else {
+          const ox = p.x, oz = p.z; p.x += p.vx * dt; p.z += p.vz * dt;
+          for (const target of room.cars) {
+            if (target.slot === p.owner || !target.participating) continue;
+            const tf = room.fx.cars[target.slot - 1]; if (!tf || tf.dead) continue;
+            if (Math.hypot(target.x - p.x, target.z - p.z) < 2.4 || Math.hypot(target.x - (ox + p.x) / 2, target.z - (oz + p.z) / 2) < 2.4) {
+              this._blast(room, p.owner, p.x, p.z, p.radius, p.damage, p.kind); p.life = 0; break;
+            }
+          }
+        }
+        if (p.life <= 0) list.splice(i, 1);
+      }
+      if (list.length > 64) list.splice(0, list.length - 64);
     },
 
     _nearMisses: function (room, dt) {
@@ -1750,6 +1837,7 @@
       room.winner = null;
       for (const c of room.cars) { const f = fx.cars[c.slot - 1]; if (f && !f.dead && c.participating) room.winner = c.slot; }
       room.state = 'finished';
+      fx.projectiles.length = 0;
       room.setBanner(room.winner ? '🏆 FIGHTER RUSH — P' + room.winner + ' WINS' : '🏆 FIGHTER RUSH — DRAW');
       room.events.push({ type: 'results', order: this.results(room), fighter: 1 });
     },
@@ -1781,7 +1869,9 @@
       snap.fm = {
         alive: fx ? fx.alive : 0,
         contest: fx && fx.contest ? 1 : 0,
-        cost: FX.COST, hpMax: FX.HP
+        cost: FX.COST, hpMax: FX.HP,
+        pickups: fx ? fx.pickups.filter((p) => p.active).map((p) => ({ id: p.id, kind: p.kind, x: r3(p.x), z: r3(p.z) })) : [],
+        projectiles: fx ? fx.projectiles.map((p) => ({ kind: p.kind, x: r3(p.x), z: r3(p.z), owner: p.owner })) : []
       };
       for (const c of snap.cars) {
         const f = fx ? fx.cars[c.s - 1] : null;
@@ -1790,7 +1880,8 @@
           rd: f.chg >= FX.COST ? 1 : 0,
           air: f.air > 0 ? 1 : 0, ay: r3(f.ay),
           at: f.atk || '', rm: f.ram > 0 ? 1 : 0,
-          ht: f.hit > 0 ? 1 : 0, dead: f.dead ? 1 : 0
+          ht: f.hit > 0 ? 1 : 0, dead: f.dead ? 1 : 0,
+          weapon: f.weapon, ammo: f.ammo, shield: r3(f.shieldT), shieldCd: r3(f.shieldCd), kills: f.kills || 0, deaths: f.deaths || 0
         } : null;
       }
     }

@@ -6638,6 +6638,21 @@ function processEvents(snap) {
         if (!e.armed && e.kind === 'ram') { if (e.slot === mySlot) beep(180, 0.25, 'sawtooth', 0.2); if (e.rel) spawnSparks(e.x, e.z, Math.min(1, e.rel / 28)); }
         break;
       }
+      case 'fxPickup':
+        if (e.slot === mySlot) { toast('PICKED UP ' + String(e.weapon || '').toUpperCase() + ' · ' + e.ammo); beep(720, 0.1, 'sine', 0.16); }
+        break;
+      case 'fxFire':
+        if (e.slot === mySlot) beep(e.weapon === 'rocket' ? 300 : 510, 0.08, 'square', 0.13);
+        break;
+      case 'fxShield':
+        if (e.slot === mySlot) { toast(e.active ? 'SHIELD ACTIVE' : 'SHIELD EXPIRED'); beep(e.active ? 620 : 320, 0.18, 'sine', 0.14); }
+        break;
+      case 'fxBlocked':
+        if (e.slot === mySlot) toast('SHIELD BLOCKED ' + String(e.kind || 'HIT').toUpperCase());
+        break;
+      case 'fxBlast':
+        frRing(e.kind === 'shockwave' ? 'slam' : 'drift', e.x, e.z, e.r);
+        break;
       case 'fxHit': {
         frRing('drift', e.x, e.z, e.kind === 'slam' ? 7 : 5.5);
         spawnSparks(e.x, e.z, Math.min(1, (e.dmg || 10) / 30));
@@ -6697,7 +6712,7 @@ const SPEC_ROOM = urlParam('watch'); // v64 read-only spectator
 })();
 // build marker — must match the server's /version build. If the website and
 // the relay run different code you get "ghost" physics; show a warning then.
-const BUILD = 'v178';
+const BUILD = 'v179';
 (function () {
   try {
     const cfg = window.SERVER_URL || 'local';
@@ -6849,6 +6864,7 @@ const net = new RoomLink({
       }
       case 'error':
         if (msg.code === 'no-room') showRoomError('Room not found — it may have closed. Create a new one!');
+        else if (msg.code === 'fighter-needs-two') toast('FIGHTER RUSH needs two connected human players before starting.');
         else if (msg.code === 'host-only') {
           // v155: the room creator owns the race settings. Put the control back to the
           // value the room is actually running, so a refused change leaves nothing
@@ -8258,6 +8274,32 @@ function hStyle(el, k, v) { if (el && el['__s' + k] !== v) { el['__s' + k] = v; 
 // ===========================================================================
 const FR_MAX_RINGS = 8;
 const frRings = [];              // pooled expanding shockwave rings
+const FR_MAX_PROJECTILES = 64;
+const frWorldMarkers = [];
+let frMarkerGeo = null;
+const frMarkerMats = Object.create(null);
+function frUpdateWorldMarkers() {
+  if (typeof THREE === 'undefined' || !worldGroup) return;
+  const fm = frActive() ? latest.fm : null;
+  const pickups = fm && Array.isArray(fm.pickups) ? fm.pickups : [];
+  const shots = fm && Array.isArray(fm.projectiles) ? fm.projectiles : [];
+  const count = Math.min(10, pickups.length) + Math.min(FR_MAX_PROJECTILES, shots.length);
+  if (!frMarkerGeo) frMarkerGeo = new THREE.OctahedronGeometry(0.72, 0);
+  const material = (key, color) => frMarkerMats[key] || (frMarkerMats[key] = new THREE.MeshBasicMaterial({ color, wireframe:true }));
+  const draw = (index, o, type) => {
+    let m = frWorldMarkers[index];
+    if (!m) { m = new THREE.Mesh(frMarkerGeo, material('pickup', 0x50eaff)); m.visible = false; worldGroup.add(m); frWorldMarkers.push(m); }
+    const key = type === 'pickup' ? o.kind : (type === 'mine' ? 'mine' : 'shot');
+    const color = key === 'rocket' ? 0xff4f96 : key === 'machinegun' ? 0x50eaff : key === 'mine' ? 0xff9d39 : key === 'shockwave' ? 0xb377ff : 0xfff36a;
+    m.material = material(key, color); m.visible = true;
+    m.position.set(o.x, (curMap ? getSurfaceY(curMap, o.x, o.z) : 0) + (type === 'pickup' ? 1.35 : 0.8), o.z);
+    m.rotation.y += 0.025; m.scale.setScalar(type === 'pickup' ? 1 : 0.62);
+  };
+  let i = 0;
+  for (let j = 0; j < Math.min(10, pickups.length); j++) draw(i++, pickups[j], 'pickup');
+  for (let j = 0; j < Math.min(FR_MAX_PROJECTILES, shots.length); j++) draw(i++, shots[j], shots[j].kind === 'mine' ? 'mine' : 'shot');
+  for (; i < frWorldMarkers.length; i++) frWorldMarkers[i].visible = false;
+}
 let frRingGeo = null;
 function frActive() { return !!(latest && latest.mode === 'fighter' && latest.fm); }
 function frMine() { return (latest && latest.cars) ? latest.cars[mySlot - 1] : null; }
@@ -8343,6 +8385,7 @@ function frUpdateHud(dt) {
     frHitT = 0;
     const ti = $('tc-impact'); if (ti) ti.hidden = true;
     for (const r of frRings) { if (r.alive) { r.alive = false; r.mesh.visible = false; } }
+    frUpdateWorldMarkers();
     frFollowSlot = 0;
     frLastCombo = 0;
     return;
@@ -8364,6 +8407,8 @@ function frUpdateHud(dt) {
     if (hpBar && hpBar.__v !== hpNow) { hpBar.__v = hpNow; hpBar.setAttribute('aria-valuenow', String(Math.max(0, Math.min(100, hpNow)))); }
     if (enBar && enBar.__v !== chNow) { enBar.__v = chNow; enBar.setAttribute('aria-valuenow', String(Math.max(0, Math.min(100, chNow)))); }
     hText($('fr-combo'), 'COMBO x' + (fx.cb || 0));
+    hText($('fr-weapon'), fx.weapon ? String(fx.weapon).toUpperCase() + ' ' + (fx.ammo || 0) : 'WEAPON —');
+    hText($('fr-shield'), fx.shield > 0 ? 'SHIELD ' + Number(fx.shield).toFixed(1) + 's' : (fx.shieldCd > 0 ? 'SHIELD CD ' + Number(fx.shieldCd).toFixed(1) + 's' : 'SHIELD READY'));
     const cbEl = $('fr-combo'); if (cbEl && cbEl.__hot !== (fx.cb > 0 ? 1 : 0)) { cbEl.__hot = fx.cb > 0 ? 1 : 0; cbEl.dataset.hot = fx.cb > 0 ? '1' : '0'; }
     const ready = fx.rd === 1;
     const rEl = $('fr-ready');
@@ -8402,6 +8447,7 @@ function frUpdateHud(dt) {
     }
   }
   hText($('fr-alive'), 'ALIVE ' + alive + '/' + (latest.cars ? latest.cars.filter((c) => c.p === 1).length : 0));
+  frUpdateWorldMarkers();
   frUpdateRings(dt);
   frUpdateHit(dt);
 }

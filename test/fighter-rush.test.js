@@ -145,12 +145,15 @@ describe('Fighter Rush — mode identity and lifecycle', () => {
     assert.equal(room.mode, 'fighter');
   });
 
-  test('one racer alone practises instead of winning instantly', () => {
-    const room = racing(makeRoom(1, 0));
-    assert.equal(room.fx.contest, false);
-    for (let i = 0; i < 60; i++) room.update(DT);
-    assert.equal(room.state, 'racing', 'a lone fighter is not declared winner');
-    assert.equal(eventsOf(room, 'results').length, 0);
+  test('Fighter Rush refuses to start until two connected human seats are present', () => {
+    const room = makeRoom(1, 0);
+    assert.equal(room.start(), false);
+    assert.equal(room.state, 'waiting');
+    room.setSeat(2, true); room.cars[1].participating = true;
+    assert.equal(room.start(), true);
+    for (let i = 0; i < 95; i++) room.update(DT);
+    assert.equal(room.state, 'racing');
+    assert.equal(room.fx.contest, true);
   });
 
   test('a fighter match cannot be won by laps: race distance is forced out of the way', () => {
