@@ -481,3 +481,11 @@ button.tool.on {
 }
 
 #rotate-hint.show { opacity: 1; }
+
+/* Fighter Rush powers are only revealed by mode telemetry. */
+#fighter-controls { display: flex; gap: 6px; width: 100%; }
+#fighter-controls[hidden] { display: none !important; }
+.fighter-power { flex: 1; min-height: 48px; border: 1px solid rgba(57,245,255,.42); background: linear-gradient(135deg,rgba(10,31,46,.96),rgba(22,13,42,.96)); color: #e9fbff; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
+.fighter-power small { font: 700 9px var(--font-tech); color: #45efff; }
+.fighter-power:disabled { opacity:.43; filter:saturate(.45); }
+.fighter-power:not(:disabled):active, .fighter-power.pressed { border-color:#ff4ad8; box-shadow:0 0 14px rgba(255,74,216,.45); }

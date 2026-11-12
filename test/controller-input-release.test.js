@@ -154,7 +154,7 @@ describe('v174 — the controller can never leave an input stuck', () => {
     assert.equal(st.nitro, false);
     assert.equal(h.btn.classList.contains('pressed'), false);
     const last = JSON.parse(JSON.stringify(h.sent[h.sent.length - 1]));   // cross-realm object
-    assert.deepEqual(last, { type: 'input', steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false });
+    assert.deepEqual(last, { type: 'input', steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false, attack: false, weapon: false, ability: false });
   });
 
   test('blur, pagehide and a hidden tab all run the release path', () => {
